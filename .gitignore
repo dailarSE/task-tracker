@@ -18,3 +18,5 @@ target/
 # Временные файлы ОС
 .DS_Store
 Thumbs.db
+
+secrets/

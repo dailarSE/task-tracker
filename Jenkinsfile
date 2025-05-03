@@ -1,10 +1,12 @@
 pipeline {
-    agent any
+    agent { label 'build-in-agent' }
+
+	tools { maven 'maven 3.9.9' }
 
     stages {
         stage('Build') {
             steps {
-                echo 'Building..'
+                sh 'mvn clean install -B -DskipTests -Dspring-boot.repackage.skip=true'
             }
         }
         stage('Test') {
@@ -16,6 +18,15 @@ pipeline {
             steps {
                 echo 'Deploying....'
             }
+        }
+    }
+	
+	post {
+        success {
+            echo 'Build successful!'
+        }
+        failure {
+            echo 'Build failed!'
         }
     }
 }

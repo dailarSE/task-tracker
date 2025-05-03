@@ -21,6 +21,7 @@
 
 Проект использует монорепозиторий со следующей структурой:
 
+```
 task-tracker/
 ├── task-tracker-backend/ # Бэкенд
 ├── task-tracker-email-sender/ # Сервиса рассылки
@@ -31,6 +32,7 @@ task-tracker/
 ├── docker-compose.yml # Конфигурация окружения Docker Compose
 ├── pom.xml # Корневой (родительский) Maven POM для Java-модулей
 └── README.md # Этот файл
+```
 
 ## Сборка и запуск
 
@@ -56,8 +58,6 @@ tbd
 
 tbd
 
-## Task Tracking
-
-
 ## dev/qa/prod
+
 tbd

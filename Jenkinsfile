@@ -1,6 +1,8 @@
 pipeline {
     agent { label 'build-in-agent' }
-
+    environment {
+        SPRING_PROFILES_ACTIVE = 'ci'
+    }
 	tools { maven 'maven 3.9.9' }
 
     stages {

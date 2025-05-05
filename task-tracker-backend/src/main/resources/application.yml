@@ -1,0 +1,14 @@
+spring:
+  application:
+    name:
+      task-tracker-backend
+  datasource:
+    url: jdbc:postgresql://postgres:5432/task_tracker_db
+    username: devuser
+    password: devpass
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  liquibase:
+    enabled: true
+    change-log: classpath:/db/changelog/db.changelog-master.yaml

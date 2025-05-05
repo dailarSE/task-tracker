@@ -4,11 +4,15 @@ spring:
       task-tracker-backend
   datasource:
     url: jdbc:postgresql://postgres:5432/task_tracker_db
-    username: devuser
-    password: devpass
+    username:
+      file: /run/secrets/postgres_user
+    password:
+      file: /run/secrets/postgres_password
   jpa:
     hibernate:
       ddl-auto: validate
   liquibase:
     enabled: true
     change-log: classpath:/db/changelog/db.changelog-master.yaml
+  logging:
+    level: INFO

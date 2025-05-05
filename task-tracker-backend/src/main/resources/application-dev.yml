@@ -1,0 +1,15 @@
+spring:
+  datasource:
+    username: devuser
+    password: devpass
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format-sql: true
+  logging:
+    level:
+      org.hibernate.SQL: DEBUG
+      org.hibernate.orm.jdbc.bind: TRACE
+      org.springframework.data.jpa.repository.query: DEBUG
+      com.example.tasktracker.backend: DEBUG

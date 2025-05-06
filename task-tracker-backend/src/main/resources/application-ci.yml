@@ -2,12 +2,11 @@ spring:
   datasource:
     username: devuser
     password: devpass
-  logging:
-    level:
-      com.example.tasktracker.backend: DEBUG
-      org.springframework: INFO
-      org.hibernate: WARN
-    pattern: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+logging:
+  level:
+    com.example.tasktracker.backend: DEBUG
+    org.springframework: INFO
+    org.hibernate: WARN
 
 otel:
   sdk:

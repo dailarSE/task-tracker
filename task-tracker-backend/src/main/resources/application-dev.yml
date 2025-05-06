@@ -7,12 +7,16 @@ spring:
     properties:
       hibernate:
         format-sql: true
-  logging:
-    level:
-      org.hibernate.SQL: DEBUG
-      org.hibernate.orm.jdbc.bind: TRACE
-      org.springframework.data.jpa.repository.query: DEBUG
-      com.example.tasktracker.backend: DEBUG
+
+logging:
+  level:
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
+    org.springframework.data.jpa.repository.query: DEBUG
+    com.example.tasktracker.backend: DEBUG
+  structured:
+    format:
+      console:
 
 management:
   endpoints:

@@ -14,17 +14,15 @@ spring:
   liquibase:
     enabled: true
     change-log: classpath:/db/changelog/db.changelog-master.yaml
-  logging:
-    level: INFO
+
+logging:
+  structured:
+    format:
+      console: ecs
+  level:
+    root: INFO
 
 management:
-  otlp:
-    metrics:
-      export:
-        enabled: true
-        url: http://otel-collector:4318/v1/metrics # OTLP/HTTP
-        step: 1m
-
   endpoints:
     web:
       exposure:
@@ -36,3 +34,22 @@ management:
   metrics:
     tags:
       application: ${spring.application.name} # Добавляем имя приложения ко всем метрикам
+
+otel:
+    service:
+      name: ${spring.application.name}
+    exporter:
+      otlp:
+        endpoint: http://otel-collector:4318 # OTLP/HTTP
+    resources:
+      attributes:
+        service.version: ${project.version}
+    instrumentation:
+      common:
+        default-enabled: true
+      micrometer:
+        enabled: true
+      logback-appender:
+        enabled: true
+        experimental:
+          capture-mdc-attributes: "*"

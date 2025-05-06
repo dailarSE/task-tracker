@@ -16,7 +16,7 @@ logging:
     com.example.tasktracker.backend: DEBUG
   structured:
     format:
-      console:
+      console: ecs
 
 management:
   endpoints:
@@ -25,3 +25,8 @@ management:
         include: health, info, prometheus, metrics, env, loggers
   jmx:
     enabled: true
+
+otel:
+  traces:
+    sampler:
+      arg: "1.0"

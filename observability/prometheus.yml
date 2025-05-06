@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s # Как часто собирать метрики
+
+scrape_configs:
+  - job_name: 'otel-collector' # Имя задачи для метрик, собранных OTel Collector
+    scrape_interval: 5s # Можно чаще скрейпить коллектор
+    static_configs:
+      - targets: ['otel-collector:8889'] # Адрес и порт экспортера Prometheus в OTel Collector
+
+  # Можно добавить сюда же скрейпинг с самих сервисов (если /actuator/prometheus включен)
+  # - job_name: 'task-tracker-backend'
+  #   scrape_interval: 10s
+  #   metrics_path: /actuator/prometheus # Стандартный путь Actuator
+  #   static_configs:
+  #     - targets: ['task-tracker-backend:8080'] # Имя сервиса и порт приложения

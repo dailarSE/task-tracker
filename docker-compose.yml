@@ -94,10 +94,87 @@ services:
     # Не требуется сложная 'command' секция как у Confluent.
 
     restart: unless-stopped
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.123.0
+    container_name: otel-collector
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml # Мапим конфиг
+    ports:
+      - "4317:4317" # OTLP gRPC receiver
+      - "4318:4318" # OTLP HTTP receiver
+      - "8889:8889" # Prometheus exporter port (для сбора метрик самим Prometheus)
+      # - "13133:13133" # health_check extension
+      # - "55679:55679" # zpages extension
+    networks:
+      - task-tracker-net
+    depends_on:
+      - tempo
+      - prometheus
+  prometheus:
+    image: prom/prometheus:v3.3.1 
+    container_name: prometheus
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--web.enable-lifecycle"] # Флаг для перезагрузки конфига по API
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml # Мапим конфиг
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - task-tracker-net
+  tempo-init:
+    image: grafana/tempo:main-2345116 # Используем тот же образ Tempo
+    container_name: tempo-init
+    user: root
+    volumes:
+      - tempo_data:/tmp/tempo
+    # Явно указываем entrypoint и команду
+    entrypoint: ["chown"]
+    command: ["-R", "10001:10001", "/tmp/tempo"]
+    # Этот контейнер теперь выполнит только chown и завершится
+  tempo:
+    image: grafana/tempo:main-2345116 # Тот же образ
+    container_name: tempo
+    # user: "10001:10001" # Можно добавить для явности, но chown уже должен сработать
+    command: ["-config.file=/etc/tempo/tempo-config.yaml"]
+    volumes:
+      - ./observability/tempo-config.yaml:/etc/tempo/tempo-config.yaml
+      - tempo_data:/tmp/tempo # Монтируем тот же именованный том
+    ports:
+      - "3200:3200" # Tempo API/UI port
+      # Добавим порты OTLP, так как OTel Collector будет слать сюда трейсы
+    networks:
+      - task-tracker-net
+    depends_on:
+      tempo-init: # Зависит от успешного завершения init контейнера
+        condition: service_completed_successfully # Ждем успешного завершения
+
+  grafana:
+    image: grafana/grafana:12.0.0
+    container_name: grafana
+    volumes:
+      - grafana_data:/var/lib/grafana
+      # Опционально: мапим папку для автоматического провижининга Data Sources
+      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true # Разрешить анонимный доступ для простоты
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin # Дать админские права анониму
+      # - GF_SECURITY_ADMIN_USER=admin # Или настроить пользователя/пароль
+      # - GF_SECURITY_ADMIN_PASSWORD=grafana
+    ports:
+      - "3000:3000" # UI Grafana
+    networks:
+      - task-tracker-net
+    depends_on:
+      - prometheus
+      - tempo
 
 volumes:
   pgdata:
   kafkadata:
+  prometheus_data:
+  grafana_data:
+  tempo_data:
 
 networks:
   task-tracker-net:

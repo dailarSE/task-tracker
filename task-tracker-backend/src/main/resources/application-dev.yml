@@ -13,3 +13,11 @@ spring:
       org.hibernate.orm.jdbc.bind: TRACE
       org.springframework.data.jpa.repository.query: DEBUG
       com.example.tasktracker.backend: DEBUG
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus, metrics, env, loggers
+  jmx:
+    enabled: true

@@ -16,3 +16,23 @@ spring:
     change-log: classpath:/db/changelog/db.changelog-master.yaml
   logging:
     level: INFO
+
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: true
+        url: http://otel-collector:4318/v1/metrics # OTLP/HTTP
+        step: 1m
+
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  # Отключим метрики JMX, если не нужны
+  jmx:
+    enabled: false
+  # Настроим теги, которые будут добавляться ко всем метрикам
+  metrics:
+    tags:
+      application: ${spring.application.name} # Добавляем имя приложения ко всем метрикам

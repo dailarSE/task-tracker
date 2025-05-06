@@ -1,0 +1,36 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus # Имя источника данных для Prometheus
+    type: prometheus
+    access: proxy # Доступ через Grafana backend
+    url: http://prometheus:9090 # Адрес Prometheus внутри Docker сети
+    isDefault: true # Сделать источником по умолчанию для метрик
+
+  - name: Tempo # Имя источника данных для Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200 # Адрес Tempo API
+    basicAuth: false
+    isDefault: false # Не по умолчанию, но доступен
+    jsonData: # Дополнительные настройки для интеграции с другими источниками
+      tracesToMetrics: # Генерировать метрики из трейсов (SPAN metrics)
+        datasourceUid: 'prometheus' # Указать UID Prometheus источника (обычно 'prometheus')
+        tags: [{ key: 'service.name', value: 'service' }, { key: 'job' }]
+        queries:
+          - name: 'Sample query'
+            query: 'sum(rate(traces_spanmetrics_latency_count{$$__tags}[5m])) by (span_name)'
+      serviceMap:
+        datasourceUid: 'prometheus' # Для построения карты сервисов
+      # Можно добавить интеграцию с логами Loki, если он будет
+      # tracesToLogs:
+      #   datasourceUid: 'loki'
+      #   tags: ['job', 'instance', 'pod', 'namespace']
+      #   mappedTags: [{ key: 'service.name', value: 'service' }]
+      #   mapTagNamesEnabled: false
+      #   spanStartTimeShift: '1h'
+      #   spanEndTimeShift: '1h'
+      #   filterByTraceID: true
+      #   filterBySpanID: false
+      lokiSearch:
+        datasourceUid: 'loki' # Указать UID Loki источника

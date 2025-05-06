@@ -1,0 +1,62 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins:
+            - "http://*"
+            - "https://*"
+
+processors:
+  batch:
+    send_batch_size: 1024
+    timeout: 10s
+
+exporters:
+  # --- Экспортер для МЕТРИК ---
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    const_labels:
+      exporter: "otel-collector"
+
+  # --- Экспортер для ТРЕЙСОВ ---
+  otlphttp/tempo:
+    endpoint: http://tempo:4318
+    tls:
+      insecure: true
+
+  # --- Экспортер для ЛОГОВ (опционально) ---
+  # loki:
+  #   endpoint: http://loki:3100/loki/api/v1/push
+
+  # --- Экспортер для отладки (ЗАМЕНА logging на debug) ---
+  debug: # <--- ИЗМЕНЕНО С logging
+    verbosity: detailed # Уровни: basic, normal, detailed
+
+service:
+  pipelines:
+    # --- Pipeline для МЕТРИК ---
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus]
+
+    # --- Pipeline для ТРЕЙСОВ ---
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/tempo, debug] # <--- ИЗМЕНЕНО С logging
+
+    # --- Pipeline для ЛОГОВ (опционально) ---
+    # logs:
+    #   receivers: [otlp]
+    #   processors: [batch]
+    #   exporters: [loki, debug] # <--- ИЗМЕНЕНО С logging
+
+  # extensions: [health_check, pprof, zpages]
+  # telemetry:
+  #   logs:
+  #     level: "debug"

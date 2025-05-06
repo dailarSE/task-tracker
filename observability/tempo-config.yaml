@@ -1,0 +1,47 @@
+server:
+  http_listen_port: 3200 # Порт для API и UI (через Grafana)
+
+distributor:
+  receivers: # Настройка приема данных
+    otlp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:4318
+        grpc:
+          endpoint: 0.0.0.0:4317
+    # zipkin: # Можно включить приемники для других форматов
+    #   endpoint: 0.0.0.0:9411
+    # jaeger:
+    #   protocols:
+    #     grpc:
+    #       endpoint: 0.0.0.0:14250
+    #     thrift_http:
+    #       endpoint: 0.0.0.0:14268
+
+storage: # Настройка хранения трейсов
+  trace:
+    backend: local # Хранить локально на диске
+    local:
+      path: /tmp/tempo/traces # Путь внутри контейнера (соответствует volume mount)
+
+ingester:
+  trace_idle_period: 10s               # Как долго хранить трейсы в памяти перед сбросом на диск
+  max_block_bytes: 1_000_000           # Максимальный размер блока перед сбросом
+  max_block_duration: 5m               # Максимальная длительность блока
+
+compactor:
+  compaction:
+    block_retention: 1h                # Как долго хранить сырые данные (1 час для примера)
+
+metrics_generator: # Tempo может генерировать метрики из трейсов (SPAN metrics)
+  storage:
+    path: /tmp/tempo/generator/wal
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write # Отправляем метрики в Prometheus
+        send_exemplars: true
+
+# Поиск (если используется)
+# querier:
+#   frontend_worker:
+#     grpc_client_config:
+#       endpoint: 127.0.0.1:9095

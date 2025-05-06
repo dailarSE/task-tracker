@@ -1,8 +1,6 @@
 receivers:
   otlp:
     protocols:
-      grpc:
-        endpoint: 0.0.0.0:4317
       http:
         endpoint: 0.0.0.0:4318
         cors:
@@ -51,10 +49,11 @@ service:
       exporters: [otlphttp/tempo, debug] # <--- ИЗМЕНЕНО С logging
 
     # --- Pipeline для ЛОГОВ (опционально) ---
-    # logs:
-    #   receivers: [otlp]
-    #   processors: [batch]
-    #   exporters: [loki, debug] # <--- ИЗМЕНЕНО С logging
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      #TODO exporters: [loki]
+      exporters: [debug] # <--- ИЗМЕНЕНО С logging
 
   # extensions: [health_check, pprof, zpages]
   # telemetry:

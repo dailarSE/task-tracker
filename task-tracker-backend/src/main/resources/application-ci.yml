@@ -9,17 +9,11 @@ spring:
       org.hibernate: WARN
     pattern: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
 
-management:
-  otlp:
-    metrics:
-      export:
-        enabled: false
-    tracing:
-      export:
-        enabled: false
+otel:
+  sdk:
+    disabled: true
 
   endpoints:
     web:
       exposure:
         include: health
-

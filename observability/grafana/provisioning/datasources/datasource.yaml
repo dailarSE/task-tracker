@@ -1,36 +1,49 @@
 apiVersion: 1
 
 datasources:
-  - name: Prometheus # Имя источника данных для Prometheus
+  - name: Prometheus
     type: prometheus
-    access: proxy # Доступ через Grafana backend
-    url: http://prometheus:9090 # Адрес Prometheus внутри Docker сети
-    isDefault: true # Сделать источником по умолчанию для метрик
-
-  - name: Tempo # Имя источника данных для Tempo
-    type: tempo
     access: proxy
-    url: http://tempo:3200 # Адрес Tempo API
+    url: http://prometheus:9090
+    isDefault: true
+    uid: prometheus_ds
+    
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    uid: loki_ds    
+    jsonData:
+      derivedFields:
+        - datasourceUid: tempo_ds
+          matcherRegex: '"traceid":"([0-9a-fA-F]{32})"'
+          name: 'TraceID'
+          url: '$${__value.raw}'
+          urlDisplayLabel: 'View Trace in Tempo'
+
+        - matcherRegex: '"instrumentation_scope":\s*\{\s*"name":"([^"]+)"'
+          name: 'Logger'
+
+        - matcherRegex: '"body":"((?:[^"]|\\")*)"'
+          name: 'Message'
+
+        - matcherRegex: '"severity":"([^"]*)"' # Стандартное поле ECS для уровня лога
+          name: 'Level'
+
+  - name: Tempo
+    type: tempo
+    uid: tempo_ds
+    url: http://tempo:3200
+    access: proxy
     basicAuth: false
-    isDefault: false # Не по умолчанию, но доступен
-    jsonData: # Дополнительные настройки для интеграции с другими источниками
-      tracesToMetrics: # Генерировать метрики из трейсов (SPAN metrics)
-        datasourceUid: 'prometheus' # Указать UID Prometheus источника (обычно 'prometheus')
-        tags: [{ key: 'service.name', value: 'service' }, { key: 'job' }]
-        queries:
-          - name: 'Sample query'
-            query: 'sum(rate(traces_spanmetrics_latency_count{$$__tags}[5m])) by (span_name)'
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: 'loki_ds'
+        spanStartTimeShift: '-30s'
+        spanEndTimeShift: '30s'
+        filterByTraceID: true
+        filterBySpanID: false
+        customQuery: true
+        query: '{service_name="$${__span.tags["service.name"]}"} | json | traceid = "$${__trace.traceId}"'
       serviceMap:
-        datasourceUid: 'prometheus' # Для построения карты сервисов
-      # Можно добавить интеграцию с логами Loki, если он будет
-      # tracesToLogs:
-      #   datasourceUid: 'loki'
-      #   tags: ['job', 'instance', 'pod', 'namespace']
-      #   mappedTags: [{ key: 'service.name', value: 'service' }]
-      #   mapTagNamesEnabled: false
-      #   spanStartTimeShift: '1h'
-      #   spanEndTimeShift: '1h'
-      #   filterByTraceID: true
-      #   filterBySpanID: false
-      lokiSearch:
-        datasourceUid: 'loki' # Указать UID Loki источника
+        datasourceUid: 'prometheus_ds'

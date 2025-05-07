@@ -1,0 +1,54 @@
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+ingester:
+  wal:
+    enabled: true
+    dir: /loki/wal
+  lifecycler:
+    address: 127.0.0.1 # Loki сам определит подходящий интерфейс
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+    # final_sleep: 0s # Можно оставить по умолчанию
+  chunk_idle_period: 1h       # Как долго чанки могут быть неактивны перед сбросом
+  max_chunk_age: 1h           # Максимальный возраст чанка перед сбросом
+  chunk_target_size: 1048576  # 1MB
+  chunk_retain_period: 30s    # Как долго хранить полностью отправленные чанки
+
+schema_config:
+  configs:
+    - from: "2022-01-01" # Дата начала использования схемы
+      store: boltdb-shipper # Тип хранилища для индекса
+      object_store: filesystem # Тип хранилища для чанков (данных логов)
+      schema: v11 # Версия схемы Loki
+      index:
+        prefix: index_ # Префикс для файлов индекса
+        period: 24h # Период для таблиц индекса (как часто создавать новые)
+
+storage_config:
+  boltdb_shipper:
+    active_index_directory: /loki/index # <--- ИЗМЕНЕНО: Используем /loki
+    cache_location: /loki/cache       # <--- ИЗМЕНЕНО: Используем /loki
+    # cache_ttl: 24h # Можно оставить по умолчанию
+  filesystem: # Этот object_store используется И для индекса (через boltdb_shipper), И для чанков
+    directory: /loki/chunks # <--- ИЗМЕНЕНО: Используем /loki
+
+compactor:
+  working_directory: /loki/compactor # <--- ИЗМЕНЕНО: Используем /loki
+  compaction_interval: 10m # Как часто запускать компакцию (можно оставить по умолчанию)
+  # block_retention: 1h # Управляется через table_manager или storage-специфичные настройки
+
+# Отключаем structured metadata для совместимости с текущей схемой v11 и boltdb-shipper
+# Это позволяет Loki запуститься, если OTel Collector шлет логи с расширенными метаданными.
+# Для полной поддержки нужно будет перейти на schema v13+ и index_type: tsdb.
+limits_config:
+  allow_structured_metadata: false
+
+# Настройки хранения (можно раскомментировать и настроить, если нужно ограничить время хранения)
+# table_manager:
+#   retention_deletes_enabled: true # Включить удаление старых данных
+#   retention_period: 720h # Хранить логи 30 дней (30 * 24h)

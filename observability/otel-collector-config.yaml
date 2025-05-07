@@ -25,10 +25,9 @@ exporters:
     endpoint: http://tempo:4318
     tls:
       insecure: true
-
-  # --- Экспортер для ЛОГОВ (опционально) ---
-  # loki:
-  #   endpoint: http://loki:3100/loki/api/v1/push
+  
+  loki:
+    endpoint: http://loki:3100/loki/api/v1/push
 
   # --- Экспортер для отладки (ЗАМЕНА logging на debug) ---
   debug: # <--- ИЗМЕНЕНО С logging
@@ -52,8 +51,7 @@ service:
     logs:
       receivers: [otlp]
       processors: [batch]
-      #TODO exporters: [loki]
-      exporters: [debug] # <--- ИЗМЕНЕНО С logging
+      exporters: [loki, debug] # <--- ИЗМЕНЕНО С logging
 
   # extensions: [health_check, pprof, zpages]
   # telemetry:

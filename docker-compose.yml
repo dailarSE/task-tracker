@@ -169,12 +169,25 @@ services:
       - prometheus
       - tempo
 
+  loki:
+    image: grafana/loki:main-23c4f8d
+    container_name: loki
+    command: [ "-config.file=/etc/loki/local-config.yaml" ]
+    ports:
+      - "3100:3100" # HTTP port Loki
+    volumes:
+      - ./observability/loki-config.yaml:/etc/loki/local-config.yaml # Мапим конфиг Loki
+      - loki_data:/loki
+    networks:
+      - task-tracker-net
+
 volumes:
   pgdata:
   kafkadata:
   prometheus_data:
   grafana_data:
   tempo_data:
+  loki_data:
 
 networks:
   task-tracker-net:

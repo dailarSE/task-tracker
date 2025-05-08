@@ -1,7 +1,3 @@
-spring:
-  datasource:
-    username: devuser
-    password: devpass
 logging:
   level:
     com.example.tasktracker.backend: DEBUG

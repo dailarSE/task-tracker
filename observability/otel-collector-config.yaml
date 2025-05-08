@@ -17,8 +17,6 @@ exporters:
   # --- Экспортер для МЕТРИК ---
   prometheus:
     endpoint: 0.0.0.0:8889
-    const_labels:
-      exporter: "otel-collector"
 
   # --- Экспортер для ТРЕЙСОВ ---
   otlphttp/tempo:
@@ -29,8 +27,7 @@ exporters:
   loki:
     endpoint: http://loki:3100/loki/api/v1/push
 
-  # --- Экспортер для отладки (ЗАМЕНА logging на debug) ---
-  debug: # <--- ИЗМЕНЕНО С logging
+  debug:
     verbosity: detailed # Уровни: basic, normal, detailed
 
 service:
@@ -45,15 +42,10 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlphttp/tempo, debug] # <--- ИЗМЕНЕНО С logging
+      exporters: [otlphttp/tempo, debug]
 
-    # --- Pipeline для ЛОГОВ (опционально) ---
+    # --- Pipeline для ЛОГОВ ---
     logs:
       receivers: [otlp]
       processors: [batch]
-      exporters: [loki, debug] # <--- ИЗМЕНЕНО С logging
-
-  # extensions: [health_check, pprof, zpages]
-  # telemetry:
-  #   logs:
-  #     level: "debug"
+      exporters: [loki, debug]

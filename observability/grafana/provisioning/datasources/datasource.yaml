@@ -47,3 +47,5 @@ datasources:
         query: '{service_name="$${__span.tags["service.name"]}"} | json | traceid = "$${__trace.traceId}"'
       serviceMap:
         datasourceUid: 'prometheus_ds'
+      nodeGraph:
+        enable: false

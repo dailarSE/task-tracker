@@ -8,11 +8,8 @@ logging:
     org.springframework: INFO
     org.hibernate: WARN
 
+#TODO принять решение о минимальном observability стеке на ci. например коллектор с экспортом в stdout и/или файл;
+#TODO  стриминг из коллектора на поднятный Obs stack
 otel:
   sdk:
     disabled: true
-
-  endpoints:
-    web:
-      exposure:
-        include: health

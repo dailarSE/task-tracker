@@ -32,6 +32,14 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- зависит от версии spring-boot-testcontainers и соответственно от версии spring.boot -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>1.20.6</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>io.opentelemetry.instrumentation</groupId>
                 <artifactId>opentelemetry-instrumentation-bom</artifactId>

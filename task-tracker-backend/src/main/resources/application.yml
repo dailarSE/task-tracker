@@ -31,9 +31,6 @@ management:
   jmx:
     enabled: false
   # Настроим теги, которые будут добавляться ко всем метрикам
-  metrics:
-    tags:
-      application: ${spring.application.name} # Добавляем имя приложения ко всем метрикам
 
 otel:
   service:
@@ -41,9 +38,6 @@ otel:
   exporter:
     otlp:
       endpoint: http://otel-collector:4318 # OTLP/HTTP
-  resources:
-    attributes:
-      service.version: ${project.version}
   instrumentation:
     common:
       default-enabled: true

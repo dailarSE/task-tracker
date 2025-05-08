@@ -53,9 +53,9 @@ tbd
     *   **Веб-интерфейс (UI):** `http://prometheus:9090`
     *   **Конфигурация:** `observability/prometheus.yml`
 *   **Grafana (`grafana`):**
-    *   **Роль:** Платформа для визуализации метрик (из Prometheus), трейсов (из Tempo) и **логов (из Loki)**. Позволяет создавать дашборды и исследовать данные.
+    *   **Роль:** Платформа для визуализации метрик (из Prometheus), трейсов (из Tempo) и логов (из Loki). Позволяет создавать дашборды и исследовать данные.
     *   **Веб-интерфейс (UI):** `http://grafana:3000` (По умолчанию может быть настроен анонимный вход с правами администратора).
-    *   **Источники данных (Data Sources):** Автоматически настраиваются для Prometheus, Tempo и **Loki** при первом запуске (через provisioning в `observability/grafana/provisioning/datasources/datasource.yaml`).
+    *   **Источники данных (Data Sources):** Автоматически настраиваются для Prometheus, Tempo и Loki при первом запуске (через provisioning в `observability/grafana/provisioning/datasources/datasource.yaml`).
 *   **Grafana Tempo (`tempo`):**
     *   **Роль:** Высокомасштабируемое хранилище для распределенных трейсов. Хранит трейсы, полученные от OpenTelemetry Collector.
     *   **Доступ:** Преимущественно через секцию "Explore" в Grafana с выбранным источником данных Tempo.
@@ -101,7 +101,7 @@ tbd
 *   **Сэмплинг Трейсов:** Управляется свойством `otel.traces.sampler.arg` (например, `1.0` для сэмплирования всех трейсов в dev-окружении, `0.1` для 10% в prod).
 *   **Логирование:**
     *   **Формат в консоли:** Установлен в JSON ECS через `logging.structured.format.console: ecs` в `application.yml` (для удобства локального просмотра).
-    *   **Экспорт в OTel Collector:** Логи автоматически захватываются и отправляются в OTel Collector.
+    *   **Экспорт в OTel Collector:**  Настроен через автоконфигурируемый OTel Logback Appender (`otel.instrumentation.logback-appender.enabled: true`). Логи автоматически захватываются и отправляются в OTel Collector в формате OTel Log Data Model.
     *   **Включение Trace ID / Span ID:** При активной трассировке, `trace_id` и `span_id` автоматически включаются в экспортируемые логи и доступны в Loki.
 *   **Авто-инструментация OpenTelemetry:** Включена для Spring Web (HTTP-запросы), JDBC (взаимодействие с БД), Logback (логи), Micrometer (метрики) благодаря `opentelemetry-spring-boot-starter` и соответствующим свойствам в `otel.instrumentation.*`.
 

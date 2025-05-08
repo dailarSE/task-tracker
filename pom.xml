@@ -3,7 +3,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-   
+
     <groupId>com.example.tasktracker</groupId>
     <artifactId>task-tracker</artifactId>
     <version>0.0.1-SNAPSHOT</version>
@@ -26,8 +26,8 @@
 
     <modules>
         <module>task-tracker-backend</module>
-        <module>task-tracker-email-sender</module>
-        <module>task-tracker-scheduler</module>
+        <!--<module>task-tracker-email-sender</module>!-->
+        <!--<module>task-tracker-scheduler</module>!-->
     </modules>
 
     <dependencyManagement>

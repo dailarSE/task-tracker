@@ -1,8 +1,9 @@
 logging:
   level:
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
+    org.springframework.data.jpa.repository.query: DEBUG
     com.example.tasktracker.backend: DEBUG
-    org.springframework: INFO
-    org.hibernate: WARN
 
 #TODO принять решение о минимальном observability стеке на ci. например коллектор с экспортом в stdout и/или файл;
 #TODO  стриминг из коллектора на поднятный Obs stack

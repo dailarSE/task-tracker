@@ -15,7 +15,36 @@
 *   **task-tracker-scheduler**: Spring Boot приложение, использующее Spring Scheduler для ежедневной отправки отчетов пользователям через Kafka.
 *   **task-tracker-email-sender**: Spring Boot приложение, слушающее Kafka топик и отправляющее email-уведомления с помощью Spring Mail.
 
-Для хранения данных используется PostgreSQL.
+Для документирования архитектурных решений и визуализации структуры системы используются следующие подходы:
+
+### Architecture Decision Records (ADR)
+
+Ключевые архитектурные решения, принятые в ходе разработки проекта, фиксируются в формате Architecture Decision Records (ADR). Это помогает отслеживать историю принятия решений, их контекст, рассмотренные альтернативы и последствия.
+
+Все ADR хранятся в директории [`docs/adr`](./docs/adr/) данного репозитория. Они сгруппированы по тематическим поддиректориям для удобства навигации. Файлы именуются с использованием временной метки для обеспечения хронологического порядка: `YYYY-MM-DD-HH-MM-описание-решения.md`.
+
+**Основные тематические разделы ADR:**
+*   [`docs/adr/common/`](./docs/adr/common/) - Общие архитектурные решения, затрагивающие весь проект.
+*   [`docs/adr/backend-service/`](./docs/adr/backend-service/) - Решения, специфичные для основного бэкенд-сервиса.
+*   [`docs/adr/database/`](./docs/adr/database/) - Решения, связанные с базами данных и персистентностью.
+*   [`docs/adr/messaging/`](./docs/adr/messaging/) - Решения по брокерам сообщений и асинхронному взаимодействию.
+*   [`docs/adr/observability/`](./docs/adr/observability/) - Решения по стеку мониторинга, логирования и трассировки.
+*   [`docs/adr/ci-cd/`](./docs/adr/ci-cd/) - Решения по непрерывной интеграции и доставке.
+
+### Архитектурные Диаграммы
+
+Визуальное представление архитектуры системы реализуется с помощью диаграмм, преимущественно в нотации C4 Model. Исходные файлы диаграмм (в формате `.drawio`) и их экспортированные версии (например, `.webp`) хранятся в директории [`docs/diagrams`](./docs/diagrams/).
+
+**Основные диаграммы:**
+*   **C4 Level 1: System Context Diagram**
+    *   Описание: Показывает систему "Task Tracker" как черный ящик и ее взаимодействие с пользователями и внешними системами.
+    *   Исходник: [`docs/diagrams/c4-L1-system-context.drawio`](./docs/diagrams/c4-L1-system-context.drawio)
+    *   Просмотр: [`docs/diagrams/c4-L1-system-context.webp`](./docs/diagrams/c4-L1-system-context.webp)
+*   **C4 Level 2: Container Diagram (для "Системы Планировщика Задач")**
+    *   Описание: Детализирует основные "контейнеры" (приложения, хранилища данных, брокеры сообщений) внутри системы "Task Tracker" и их взаимодействия.
+    *   Исходник: [`docs/diagrams/task-tracker-system/c4-L2-containers.drawio`](./docs/diagrams/task-tracker-system/c4-L2-containers.drawio)
+    *   Просмотр: [`docs/diagrams/task-tracker-system/c4-L2-containers.webp`](./docs/diagrams/task-tracker-system/c4-L2-containers.webp)
+
 
 ## Структура репозитория
 
@@ -23,6 +52,7 @@
 
 ```
 task-tracker/
+├── docs/ # Документация
 ├── task-tracker-backend/ # Бэкенд
 ├── task-tracker-email-sender/ # Сервиса рассылки
 ├── task-tracker-frontend/ # Статические файлы фронтенда

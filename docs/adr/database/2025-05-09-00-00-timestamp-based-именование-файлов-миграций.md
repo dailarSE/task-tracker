@@ -1,4 +1,4 @@
-# ADR-0005: Использование Timestamp-based именования для файлов миграций Liquibase
+# ADR-0006: Использование Timestamp-based именования для файлов миграций Liquibase
 
 **Статус:** Accepted
 

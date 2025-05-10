@@ -3,6 +3,7 @@ pipeline {
 
     environment {
         SPRING_PROFILES_ACTIVE = 'ci'
+        TZ = 'UTC'
     }
 
     tools {
@@ -14,22 +15,7 @@ pipeline {
             steps {
                 script {
                     echo "Running Maven build, all tests (unit & integration), and generating coverage report..."
-                    sh "mvn clean verify -B -Duser.timezone=UTC"
-                }
-            }
-        }
-
-        stage('Archive & Publish Test Reports') {
-            steps {
-                script {
-                    echo 'Archiving JAR artifacts...'
-                    archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true, allowEmptyArchive: true
-
-                    echo "Archiving Maven Surefire (Unit Test) reports..."
-                    junit testResults: '**/target/surefire-reports/*.xml', allowEmptyResults: true
-
-                    echo "Archiving Maven Failsafe (Integration Test) reports..."
-                    junit testResults: '**/target/failsafe-reports/*.xml', allowEmptyResults: true
+                    sh "mvn clean verify -B"
                 }
             }
         }

@@ -158,6 +158,7 @@ class UserRepositoryIT {
         assertThat(userRepository.existsById(userId)).isTrue();
 
         userRepository.deleteById(userId);
+        userRepository.flush();
 
         assertThat(userRepository.existsById(userId)).isFalse();
         assertThat(userRepository.findByEmail("todelete@example.com")).isEmpty();
@@ -172,6 +173,7 @@ class UserRepositoryIT {
         assertThat(userRepository.count()).isEqualTo(2);
 
         userRepository.deleteAll();
+        userRepository.flush();
 
         assertThat(userRepository.count()).isEqualTo(0);
     }

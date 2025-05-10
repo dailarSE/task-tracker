@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.*;
 @DataJpaTest
 @Testcontainers
 @ActiveProfiles("ci")
-class UserRepositoryIntegrationTest {
+class UserRepositoryIT {
     @Autowired
     private UserRepository userRepository;
     @Container

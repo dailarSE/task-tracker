@@ -37,8 +37,16 @@ pipeline {
 
     post {
         always {
-            echo 'Pipeline finished. Cleaning workspace...'
-            cleanWs()
+            script {
+                echo 'Archiving JAR artifacts...'
+                if (currentBuild.result == null || currentBuild.result == 'SUCCESS' || currentBuild.result == 'UNSTABLE') {
+                    archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true, allowEmptyArchive: true
+                }
+
+                echo "Publishing JUnit test results (Surefire & Failsafe)..."
+                junit testResults: '**/target/surefire-reports/*.xml', allowEmptyResults: true
+                junit testResults: '**/target/failsafe-reports/*.xml', allowEmptyResults: true
+            }
         }
         success {
             script {
@@ -54,7 +62,13 @@ pipeline {
             }
         }
         failure {
-            echo 'Pipeline failed!'
+            script {
+                echo 'Pipeline failed!'
+            }
+        }
+        cleanup {
+            echo 'Final cleanup: Cleaning workspace...'
+            cleanWs()
         }
     }
 }

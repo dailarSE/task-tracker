@@ -5,51 +5,53 @@ pipeline {
         SPRING_PROFILES_ACTIVE = 'ci'
     }
 
-    tools { 
+    tools {
         maven 'maven 3.9.9'
     }
 
     stages {
-        stage('Compile') {
+        stage('Build, Test & Verify') {
             steps {
-                echo 'Compiling code...'
-                sh 'mvn clean compile -B' 
+                script {
+                    echo "Running Maven build, all tests (unit & integration), and generating coverage report..."
+                    sh "mvn clean verify -B -Duser.timezone=UTC"
+                }
             }
         }
 
-        stage('Test') {
+        stage('Archive & Publish Test Reports') {
             steps {
-                echo 'Running All Tests (Unit + Integration with Testcontainers)...'
-                sh 'mvn test -B' 
-                // Примечание: В будущем (задача CI-3) мы разделим юнит и интеграционные тесты
-                // с помощью Surefire и Failsafe для более гранулярного контроля и отчетности.
-            }
-        }
+                script {
+                    echo 'Archiving JAR artifacts...'
+                    archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true, allowEmptyArchive: true
 
-        stage('Package') {
-            steps {
-                echo 'Packaging application...'
-                sh 'mvn package -B -DskipTests' 
-            }
-        }
-        
-        stage('Archive Results') {
-            steps {
-                echo 'Archiving results...'
-                archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true, onlyIfSuccessful: true, allowEmptyArchive: true
-                junit '**/target/surefire-reports/*.xml' 
-                // junit '**/target/failsafe-reports/*.xml' 
+                    echo "Archiving Maven Surefire (Unit Test) reports..."
+                    junit testResults: '**/target/surefire-reports/*.xml', allowEmptyResults: true
+
+                    echo "Archiving Maven Failsafe (Integration Test) reports..."
+                    junit testResults: '**/target/failsafe-reports/*.xml', allowEmptyResults: true
+                }
             }
         }
     }
-    
+
     post {
         always {
             echo 'Pipeline finished. Cleaning workspace...'
-            cleanWs() 
+            cleanWs()
         }
         success {
-            echo 'Pipeline successful!'
+            script {
+                echo 'Pipeline successful! Publishing Code Coverage report (JaCoCo)...'
+                recordCoverage(
+                        tools: [
+                                [parser: 'JACOCO', pattern: '**/target/site/jacoco/jacoco.xml']
+                        ],
+                        id: 'jacocoCoverage',
+                        name: 'JaCoCo Code Coverage',
+                        sourceCodeRetention: 'LAST_BUILD'
+                )
+            }
         }
         failure {
             echo 'Pipeline failed!'

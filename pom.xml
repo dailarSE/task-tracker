@@ -93,7 +93,10 @@
                     <version>${maven-surefire-plugin.version}</version>
                     <configuration>
                         <!--suppress UnresolvedMavenProperty -->
-                        <argLine>${surefireArgLine}</argLine>
+                        <argLine>
+                            -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar
+                            ${surefireArgLine}
+                        </argLine>
                     </configuration>
                 </plugin>
 
@@ -113,7 +116,10 @@
                     </executions>
                     <configuration>
                         <!--suppress UnresolvedMavenProperty -->
-                        <argLine>${argLine}</argLine>
+                        <argLine>
+                            -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar
+                            ${argLine}
+                        </argLine>
                     </configuration>
                 </plugin>
 

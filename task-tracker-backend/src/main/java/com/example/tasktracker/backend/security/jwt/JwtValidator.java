@@ -106,7 +106,7 @@ public class JwtValidator {
      * @param token JWT строка.
      * @return Сокращенная версия токена для логирования.
      */
-    private String truncateTokenForLogging(String token) {
+    public String truncateTokenForLogging(String token) {
         if (token == null) {
             return "[NULL_TOKEN]";
         }

@@ -36,4 +36,21 @@ public class JwtProperties {
      */
     @Positive(message = "{security.jwt.expirationMs.positive}")
     private long expirationMs;
+
+    /**
+     * Имя claim в JWT, содержащего email пользователя.
+     * Значение по умолчанию: "email".
+     * Обязательное свойство (не должно быть пустым после биндинга).
+     */
+    @NotBlank(message = "{security.jwt.claims.emailKey.notBlank}")
+    private String emailClaimKey = "email";
+
+    /**
+     * Имя claim в JWT, содержащего authorities/roles пользователя
+     * (в виде строки, разделенной запятыми).
+     * Значение по умолчанию: "authorities".
+     * Обязательное свойство (не должно быть пустым после биндинга).
+     */
+    @NotBlank(message = "{security.jwt.claims.authoritiesKey.notBlank}")
+    private String authoritiesClaimKey = "authorities";
 }

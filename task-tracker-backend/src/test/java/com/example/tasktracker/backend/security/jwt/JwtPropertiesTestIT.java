@@ -37,6 +37,30 @@ class JwtPropertiesValidationIT {
                     JwtProperties props = context.getBean(JwtProperties.class);
                     assertThat(props.getSecretKey()).isEqualTo("c2VjcmV0S2V5Rm9yVGVzdGluZ1B1cnBvc2VzTXVzdEJlTG9uZ0Vub3VnaA==");
                     assertThat(props.getExpirationMs()).isEqualTo(60000L);
+                    assertThat(props.getAuthoritiesClaimKey()).isEqualTo("authorities");
+                    assertThat(props.getEmailClaimKey()).isEqualTo("email");
+                });
+    }
+
+    @Test
+    @DisplayName("Конфигурация: все свойства валидны (с переопределенными claim keys) -> контекст загружается, свойства корректны")
+    void properties_whenAllValidWithOverriddenClaimKeys_shouldLoadContextAndBindProperties() {
+        this.contextRunner
+                .withPropertyValues(
+                        "app.security.jwt.secret-key=c2VjcmV0S2V5Rm9yVGVzdGluZ1B1cnBvc2VzTXVzdEJlTG9uZ0Vub3VnaA==",
+                        "app.security.jwt.expiration-ms=60000",
+                        "app.security.jwt.email-claim-key=user_email_claim",
+                        "app.security.jwt.authorities-claim-key=user_auths_claim"
+                )
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(JwtProperties.class);
+
+                    JwtProperties props = context.getBean(JwtProperties.class);
+                    assertThat(props.getSecretKey()).isEqualTo("c2VjcmV0S2V5Rm9yVGVzdGluZ1B1cnBvc2VzTXVzdEJlTG9uZ0Vub3VnaA==");
+                    assertThat(props.getExpirationMs()).isEqualTo(60000L);
+                    assertThat(props.getEmailClaimKey()).isEqualTo("user_email_claim"); // Проверка переопределенного значения
+                    assertThat(props.getAuthoritiesClaimKey()).isEqualTo("user_auths_claim"); // Проверка переопределенного значения
                 });
     }
 
@@ -82,6 +106,32 @@ class JwtPropertiesValidationIT {
                 .withPropertyValues(
                         "app.security.jwt.secret-key=c2VjcmV0S2V5Rm9yVGVzdGluZ1B1cnBvc2VzTXVzdEJlTG9uZ0Vub3VnaA==",
                         "app.security.jwt.expiration-ms=" + invalidExpirationMs
+                )
+                .run(context -> assertThat(context).hasFailed());
+    }
+
+    @DisplayName("Конфигурация: email-claim-key пустой или состоит из пробелов -> валидация должна упасть")
+    @ParameterizedTest(name = "email-claim-key=\"{0}\"")
+    @ValueSource(strings = {"", " ", "   "})
+    void properties_whenEmailClaimKeyIsBlank_shouldFailToLoadContext(String blankEmailClaimKey) {
+        this.contextRunner
+                .withPropertyValues(
+                        "app.security.jwt.secret-key=c2VjcmV0S2V5Rm9yVGVzdGluZ1B1cnBvc2VzTXVzdEJlTG9uZ0Vub3VnaA==",
+                        "app.security.jwt.expiration-ms=60000",
+                        "app.security.jwt.email-claim-key=" + blankEmailClaimKey
+                )
+                .run(context -> assertThat(context).hasFailed());
+    }
+
+    @DisplayName("Конфигурация: authorities-claim-key пустой или состоит из пробелов -> валидация должна упасть")
+    @ParameterizedTest(name = "authorities-claim-key=\"{0}\"")
+    @ValueSource(strings = {"", " ", "   "})
+    void properties_whenAuthoritiesClaimKeyIsBlank_shouldFailToLoadContext(String blankAuthoritiesClaimKey) {
+        this.contextRunner
+                .withPropertyValues(
+                        "app.security.jwt.secret-key=c2VjcmV0S2V5Rm9yVGVzdGluZ1B1cnBvc2VzTXVzdEJlTG9uZ0Vub3VnaA==",
+                        "app.security.jwt.expiration-ms=60000",
+                        "app.security.jwt.authorities-claim-key=" + blankAuthoritiesClaimKey
                 )
                 .run(context -> assertThat(context).hasFailed());
     }

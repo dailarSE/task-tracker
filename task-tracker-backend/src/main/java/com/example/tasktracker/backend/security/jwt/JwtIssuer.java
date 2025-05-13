@@ -21,9 +21,6 @@ import java.util.stream.Collectors;
 @Service
 public class JwtIssuer {
 
-    private static final String AUTHORITIES_KEY_CLAIM = "authorities";
-    private static final String EMAIL_KEY_CLAIM = "email";
-
     private final JwtProperties jwtProperties;
     private final SecretKey secretKey;
     private final Clock clock;
@@ -31,7 +28,7 @@ public class JwtIssuer {
     /**
      * Конструктор для {@link JwtIssuer}.
      *
-     * @param jwtProperties Конфигурационные свойства JWT (для времени жизни, issuer'а). Не должен быть null.
+     * @param jwtProperties Конфигурационные свойства JWT. Не должен быть null.
      * @param jwtKeyService Сервис для получения предварительно инициализированного и валидированного секретного ключа. Не должен быть null.
      * @param clock         Часы для получения текущего времени. Не должен быть null.
      */
@@ -70,8 +67,8 @@ public class JwtIssuer {
 
         return Jwts.builder()
                 .subject(userPrincipal.getId().toString())
-                .claim(EMAIL_KEY_CLAIM, userPrincipal.getUsername()) // кастомный claim "email"
-                .claim(AUTHORITIES_KEY_CLAIM, authorities)        // кастомный claim "authorities"
+                .claim(jwtProperties.getEmailClaimKey(), userPrincipal.getUsername()) // кастомный claim "email"
+                .claim(jwtProperties.getAuthoritiesClaimKey(), authorities)        // кастомный claim "authorities"
                 .issuedAt(issuedAt)
                 .expiration(expiration)
                 .signWith(this.secretKey, Jwts.SIG.HS256) // Алгоритм HS256

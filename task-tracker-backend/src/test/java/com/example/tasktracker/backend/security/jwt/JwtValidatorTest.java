@@ -10,6 +10,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -39,6 +40,8 @@ class JwtValidatorTest {
 
     private static final String VALID_BASE64_KEY_32_BYTES = "bXlWZXJ5U2VjcmV0S2V5Rm9yVGFza1RyYWNrZXJBcHA=";
     private static final String ANOTHER_VALID_BASE64_KEY_32_BYTES = "YW5vdGhlclNlY3JldEtleUZvclRhc2tUcmFja2VyQXBw";
+    public static final String DEFAULT_EMAIL_CLAIM_KEY = "email";
+    public static final String DEFAULT_AUTHORITIES_CLAIM_KEY = "authorities";
     private static final long DEFAULT_EXPIRATION_MS = 3600000L; // 1 час
     private static final Instant NOW_INSTANT = Instant.parse("2025-01-01T12:00:00Z");
     private static final Long USER_ID = 1L;
@@ -54,6 +57,8 @@ class JwtValidatorTest {
         JwtProperties testJwtProperties = new JwtProperties();
         testJwtProperties.setSecretKey(VALID_BASE64_KEY_32_BYTES);
         testJwtProperties.setExpirationMs(DEFAULT_EXPIRATION_MS);
+        testJwtProperties.setEmailClaimKey(DEFAULT_EMAIL_CLAIM_KEY);
+        testJwtProperties.setAuthoritiesClaimKey(DEFAULT_AUTHORITIES_CLAIM_KEY);
 
         testRealJwtKeyService = new JwtKeyService(testJwtProperties);
         SecretKey primaryTestSecretKey = testRealJwtKeyService.getSecretKey();
@@ -114,8 +119,8 @@ class JwtValidatorTest {
         assertThat(claimsOptional).isPresent();
         Claims claims = claimsOptional.get();
         assertThat(claims.getSubject()).isEqualTo(String.valueOf(USER_ID));
-        assertThat(claims.get("email", String.class)).isEqualTo(USER_EMAIL);
-        assertThat(claims.get("authorities", String.class)).isEmpty(); // Ожидаем пустую строку для authorities
+        assertThat(claims.get(DEFAULT_EMAIL_CLAIM_KEY, String.class)).isEqualTo(USER_EMAIL);
+        assertThat(claims.get(DEFAULT_AUTHORITIES_CLAIM_KEY, String.class)).isEmpty();
 
         Instant expectedIssuedAt = NOW_INSTANT;
         Instant expectedExpiration = NOW_INSTANT.plusMillis(DEFAULT_EXPIRATION_MS);
@@ -229,11 +234,12 @@ class JwtValidatorTest {
 
 
     private AppUserDetails createAppUserDetailsWithUser(Long id, String email, String password) {
-        User user = new User();
-        user.setId(id);
-        user.setEmail(email);
-        user.setPassword(password); // Пароль нужен для конструктора AppUserDetails
-        return new AppUserDetails(user);
+        User mockUser = Mockito.mock(User.class);
+        when(mockUser.getId()).thenReturn(id);
+        when(mockUser.getEmail()).thenReturn(email);
+        when(mockUser.getPassword()).thenReturn(password);
+
+        return new AppUserDetails(mockUser);
     }
 
     private Authentication createAuthentication(AppUserDetails userDetails) {

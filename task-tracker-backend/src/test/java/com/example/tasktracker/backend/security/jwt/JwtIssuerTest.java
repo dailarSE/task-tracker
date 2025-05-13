@@ -12,7 +12,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.Authentication;
 
@@ -29,6 +32,7 @@ import static org.mockito.Mockito.when;
  * Юнит-тесты для {@link JwtIssuer}.
  */
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class JwtIssuerTest {
 
     @Mock
@@ -38,6 +42,11 @@ class JwtIssuerTest {
 
     private Clock fixedClock;
     private JwtIssuer jwtIssuer;
+
+    private static final String DEFAULT_EMAIL_CLAIM_KEY = "email";
+    private static final String DEFAULT_AUTHORITIES_CLAIM_KEY = "authorities";
+    private static final String CUSTOM_EMAIL_CLAIM_KEY = "user_email_custom";
+    private static final String CUSTOM_AUTHORITIES_CLAIM_KEY = "user_roles_custom";
 
     private static final Long USER_ID = 1L;
     private static final String USER_EMAIL = "test@example.com";
@@ -51,14 +60,21 @@ class JwtIssuerTest {
         testSecretKey = Keys.hmacShaKeyFor("TestSecretKeyForJwtIssuerWhichIsSufficientlyLongForHS256".getBytes());
         when(mockJwtKeyService.getSecretKey()).thenReturn(testSecretKey);
 
+        when(mockJwtProperties.getExpirationMs()).thenReturn(EXPIRATION_MS);
+        when(mockJwtProperties.getEmailClaimKey()).thenReturn(DEFAULT_EMAIL_CLAIM_KEY);
+        when(mockJwtProperties.getAuthoritiesClaimKey()).thenReturn(DEFAULT_AUTHORITIES_CLAIM_KEY);
+
         fixedClock = Clock.fixed(FIXED_NOW, ZoneOffset.UTC);
 
         jwtIssuer = new JwtIssuer(mockJwtProperties, mockJwtKeyService, fixedClock);
     }
 
     private AppUserDetails createAppUserDetails(Long id, String email) {
-        User user = new User(id, email, USER_PASSWORD_PLACEHOLDER, Instant.now(fixedClock), Instant.now(fixedClock));
-        return new AppUserDetails(user);
+        User mockUser = Mockito.mock(User.class);
+        when(mockUser.getId()).thenReturn(id);
+        when(mockUser.getEmail()).thenReturn(email);
+        when(mockUser.getPassword()).thenReturn(USER_PASSWORD_PLACEHOLDER);
+        return new AppUserDetails(mockUser);
     }
 
     private Authentication createAuthentication(AppUserDetails userDetails) {
@@ -120,7 +136,6 @@ class JwtIssuerTest {
     void generateToken_withValidAppUserDetails_shouldReturnNonNullNonEmptyJwtString() {
         AppUserDetails userDetails = createAppUserDetails(USER_ID, USER_EMAIL);
         Authentication auth = createAuthentication(userDetails);
-        when(mockJwtProperties.getExpirationMs()).thenReturn(EXPIRATION_MS);
 
         String token = jwtIssuer.generateToken(auth);
 
@@ -132,7 +147,6 @@ class JwtIssuerTest {
     void generateToken_withValidAppUserDetails_shouldSetCorrectSubjectClaimFromUserId() {
         AppUserDetails userDetails = createAppUserDetails(USER_ID, USER_EMAIL);
         Authentication auth = createAuthentication(userDetails);
-        when(mockJwtProperties.getExpirationMs()).thenReturn(EXPIRATION_MS);
 
         String token = jwtIssuer.generateToken(auth);
         Claims claims = parseToken(token);
@@ -141,29 +155,57 @@ class JwtIssuerTest {
     }
 
     @Test
-    @DisplayName("generateToken: Должен установить корректный email claim")
-    void generateToken_withValidAppUserDetails_shouldSetCorrectEmailClaim() {
+    @DisplayName("generateToken: Должен установить корректный email claim (с дефолтным именем)")
+    void generateToken_withValidAppUserDetails_shouldSetCorrectEmailClaimWithDefaultName() {
         AppUserDetails userDetails = createAppUserDetails(USER_ID, USER_EMAIL);
         Authentication auth = createAuthentication(userDetails);
-        when(mockJwtProperties.getExpirationMs()).thenReturn(EXPIRATION_MS);
 
         String token = jwtIssuer.generateToken(auth);
         Claims claims = parseToken(token);
 
-        assertThat(claims.get("email", String.class)).isEqualTo(USER_EMAIL);
+        assertThat(claims.get(DEFAULT_EMAIL_CLAIM_KEY, String.class)).isEqualTo(USER_EMAIL);
     }
 
     @Test
-    @DisplayName("generateToken: Без authorities -> должен установить пустой authorities claim")
-    void generateToken_withValidAppUserDetailsAndNoAuthorities_shouldSetEmptyAuthoritiesClaim() {
+    @DisplayName("generateToken: Должен установить корректный email claim (с кастомным именем)")
+    void generateToken_withValidAppUserDetails_shouldSetCorrectEmailClaimWithCustomName() {
         AppUserDetails userDetails = createAppUserDetails(USER_ID, USER_EMAIL);
         Authentication auth = createAuthentication(userDetails);
-        when(mockJwtProperties.getExpirationMs()).thenReturn(EXPIRATION_MS);
+        // Перенастраиваем мок для этого теста
+        when(mockJwtProperties.getEmailClaimKey()).thenReturn(CUSTOM_EMAIL_CLAIM_KEY);
 
         String token = jwtIssuer.generateToken(auth);
         Claims claims = parseToken(token);
 
-        assertThat(claims.get("authorities", String.class)).isEmpty();
+        assertThat(claims.get(CUSTOM_EMAIL_CLAIM_KEY, String.class)).isEqualTo(USER_EMAIL);
+        assertThat(claims.get(DEFAULT_EMAIL_CLAIM_KEY)).isNull(); // Проверяем, что дефолтного нет
+    }
+
+    @Test
+    @DisplayName("generateToken: Без authorities -> должен установить пустой authorities claim (с дефолтным именем)")
+    void generateToken_withValidAppUserDetailsAndNoAuthorities_shouldSetEmptyAuthoritiesClaimWithDefaultName() {
+        AppUserDetails userDetails = createAppUserDetails(USER_ID, USER_EMAIL); // authorities будут пустые
+        Authentication auth = createAuthentication(userDetails);
+
+        String token = jwtIssuer.generateToken(auth);
+        Claims claims = parseToken(token);
+
+        assertThat(claims.get(DEFAULT_AUTHORITIES_CLAIM_KEY, String.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("generateToken: Без authorities -> должен установить пустой authorities claim (с кастомным именем)")
+    void generateToken_withValidAppUserDetailsAndNoAuthorities_shouldSetEmptyAuthoritiesClaimWithCustomName() {
+        AppUserDetails userDetails = createAppUserDetails(USER_ID, USER_EMAIL);
+        Authentication auth = createAuthentication(userDetails);
+        // Перенастраиваем мок для этого теста
+        when(mockJwtProperties.getAuthoritiesClaimKey()).thenReturn(CUSTOM_AUTHORITIES_CLAIM_KEY);
+
+        String token = jwtIssuer.generateToken(auth);
+        Claims claims = parseToken(token);
+
+        assertThat(claims.get(CUSTOM_AUTHORITIES_CLAIM_KEY, String.class)).isEmpty();
+        assertThat(claims.get(DEFAULT_AUTHORITIES_CLAIM_KEY)).isNull();
     }
 
     @Test
@@ -171,7 +213,6 @@ class JwtIssuerTest {
     void generateToken_withValidAppUserDetails_shouldSetCorrectIssuedAtAndExpirationClaimsBasedOnClock() {
         AppUserDetails userDetails = createAppUserDetails(USER_ID, USER_EMAIL);
         Authentication auth = createAuthentication(userDetails);
-        when(mockJwtProperties.getExpirationMs()).thenReturn(EXPIRATION_MS);
 
         String token = jwtIssuer.generateToken(auth);
         Claims claims = parseToken(token);
@@ -188,7 +229,6 @@ class JwtIssuerTest {
     void generateToken_shouldBeSignedWithCorrectKeyAndAlgorithm() {
         AppUserDetails userDetails = createAppUserDetails(USER_ID, USER_EMAIL);
         Authentication auth = createAuthentication(userDetails);
-        when(mockJwtProperties.getExpirationMs()).thenReturn(EXPIRATION_MS);
 
         String token = jwtIssuer.generateToken(auth);
 

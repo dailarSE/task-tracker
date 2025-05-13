@@ -10,3 +10,10 @@ logging:
 otel:
   sdk:
     disabled: true
+
+app:
+  security:
+    jwt:
+      # Пример Base64 ключа (реальный ключ должен быть сгенерирован и быть длиннее для HS256)
+      # Это "myVerySecretKeyForTaskTrackerApplicationWhichMustBeVeryLongAndSecure" в Base64
+      secret-key: "bXlWZXJ5U2VjcmV0S2V5Rm9yVGFza1RyYWNrZXJBcHBsaWNhdGlvbldoaWNoTXVzdEJlVmVyeUxvbmdBbmRTZWN1cmU="

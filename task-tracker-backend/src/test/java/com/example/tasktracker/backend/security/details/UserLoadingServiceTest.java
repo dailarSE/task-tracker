@@ -10,6 +10,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.util.Optional;
 
@@ -21,6 +22,7 @@ import static org.mockito.Mockito.*;
  * Юнит-тесты для {@link UserLoadingService}.
  */
 @ExtendWith(MockitoExtension.class)
+@ActiveProfiles("ci")
 class UserLoadingServiceTest {
 
     @Mock

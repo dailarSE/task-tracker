@@ -10,6 +10,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.util.Collection;
 
@@ -20,6 +21,7 @@ import static org.mockito.Mockito.when;
  * Юнит-тесты для {@link AppUserDetails}.
  */
 @ExtendWith(MockitoExtension.class)
+@ActiveProfiles("ci")
 class AppUserDetailsTest {
 
     @Mock

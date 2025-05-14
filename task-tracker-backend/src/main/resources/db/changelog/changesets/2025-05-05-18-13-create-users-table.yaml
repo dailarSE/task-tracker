@@ -38,6 +38,7 @@ databaseChangeLog:
                   constraints:
                     nullable: false
 
+#TODO remove ambiguous column index: idx_users_email
   - changeSet:
       id: 2
       author: dailar401@gmail.com

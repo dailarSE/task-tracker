@@ -1,23 +1,28 @@
 package com.example.tasktracker.backend.web.exception;
 
 import com.example.tasktracker.backend.security.exception.BadJwtException;
+import com.example.tasktracker.backend.security.exception.PasswordMismatchException;
+import com.example.tasktracker.backend.security.exception.UserAlreadyExistsException;
 import com.example.tasktracker.backend.security.jwt.JwtValidator;
+import jakarta.validation.ConstraintViolationException;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
-import org.springframework.context.NoSuchMessageException; // Важно для Javadoc
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ProblemDetail;
+import org.springframework.context.NoSuchMessageException;
+import org.springframework.http.*;
 import org.springframework.lang.Nullable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import java.net.URI;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -40,7 +45,7 @@ import java.util.Optional;
 @RestControllerAdvice
 @RequiredArgsConstructor
 @Slf4j
-public class GlobalExceptionHandler {
+public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     private final MessageSource messageSource;
 
@@ -131,6 +136,116 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Обрабатывает {@link UserAlreadyExistsException}, возникающее при попытке
+     * регистрации пользователя с уже существующим email.
+     * Возвращает HTTP 409 Conflict с {@link ProblemDetail}.
+     *
+     * @param ex      Исключение {@link UserAlreadyExistsException}.
+     * @param request Текущий веб-запрос.
+     * @return Объект {@link ProblemDetail}.
+     * @throws NoSuchMessageException если ключ для title/detail не найден.
+     */
+    @ExceptionHandler(UserAlreadyExistsException.class)
+    public ProblemDetail handleUserAlreadyExistsException(UserAlreadyExistsException ex, WebRequest request) {
+        log.warn("Registration conflict: {}", ex.getMessage()); // ex.getMessage() содержит email
+        return buildProblemDetail(ex, HttpStatus.CONFLICT, "user.alreadyExists", request.getLocale(), null);
+    }
+
+    /**
+     * Обрабатывает {@link PasswordMismatchException}, возникающее при попытке
+     * регистрации пользователя, если пароли не совпадают.
+     * Возвращает HTTP 400 Bad Request с {@link ProblemDetail}.
+     *
+     * @param ex      Исключение {@link PasswordMismatchException}.
+     * @param request Текущий веб-запрос.
+     * @return Объект {@link ProblemDetail}.
+     * @throws NoSuchMessageException если ключ для title/detail не найден.
+     */
+    @ExceptionHandler(PasswordMismatchException.class)
+    public ProblemDetail handlePasswordMismatchException(PasswordMismatchException ex, WebRequest request) {
+        log.warn("Registration bad request: {}", ex.getMessage());
+        return buildProblemDetail(ex, HttpStatus.BAD_REQUEST, "user.passwordMismatch", request.getLocale(), null);
+    }
+
+    /**
+     * Обрабатывает {@link ConstraintViolationException}, возникающее при нарушении
+     * ограничений валидации на параметрах методов, помеченных {@code @Validated},
+     * или на полях бинов {@code @ConfigurationProperties}.
+     * Возвращает HTTP 400 Bad Request с {@link ProblemDetail}, содержащим список ошибок.
+     *
+     * @param ex      Исключение {@link ConstraintViolationException}.
+     * @param request Текущий веб-запрос.
+     * @return Объект {@link ProblemDetail}.
+     * @throws NoSuchMessageException если ключ для title/detail не найден.
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ProblemDetail handleConstraintViolationException(ConstraintViolationException ex, WebRequest request) {
+        log.warn("Constraint violation(s) occurred: {}", ex.getMessage());
+        List<Map<String, String>> errors = ex.getConstraintViolations().stream()
+                .map(violation -> Map.of(
+                        "field", getFieldNameFromPath(violation.getPropertyPath().toString()),
+                        "message", violation.getMessage()
+                ))
+                .toList();
+
+        return buildProblemDetail(
+                ex, // Используем ConstraintViolationException для общего сообщения, если нужно
+                HttpStatus.BAD_REQUEST,
+                "validation.constraintViolation", // Общий тип для таких ошибок
+                request.getLocale(),
+                Map.of("invalid_params", errors) // Добавляем список ошибок по RFC 7807 (или "errors" как более общее)
+        );
+    }
+
+        /**
+     * Кастомизирует обработку {@link MethodArgumentNotValidException}, которая выбрасывается,
+     * когда валидация аргумента, помеченного {@code @Valid} в {@code @RequestBody}, не проходит.
+     * Переопределяет метод из {@link ResponseEntityExceptionHandler} для возврата {@link ProblemDetail}
+     * в теле {@link ResponseEntity}.
+     * Возвращает HTTP 400 Bad Request.
+     *
+     * @param ex      Исключение {@link MethodArgumentNotValidException}.
+     * @param headers Заголовки HTTP.
+     * @param status  HTTP-статус (будет BAD_REQUEST).
+     * @param request Текущий веб-запрос.
+     * @return {@link ResponseEntity} с {@link ProblemDetail} в теле.
+     * @throws NoSuchMessageException если ключ для title или detail не найден в {@link MessageSource}.
+     */
+    @Override
+    protected ResponseEntity<Object> handleMethodArgumentNotValid(
+            @NonNull MethodArgumentNotValidException ex,
+            @NonNull HttpHeaders headers,
+            @NonNull HttpStatusCode status,
+            @NonNull WebRequest request) {
+        log.warn("Method argument not valid due to validation errors. Number of errors: {}", ex.getErrorCount(), ex);
+
+        List<Map<String, Object>> errors = ex.getBindingResult().getFieldErrors().stream()
+                .map(fieldError -> Map.<String, Object>of(
+                        "field", fieldError.getField(),
+                        "rejected_value", Optional.ofNullable(fieldError.getRejectedValue()).map(Object::toString).orElse("null"),
+                        "message", fieldError.getDefaultMessage() // Это уже локализованное сообщение из ResourceBundle
+                ))
+                .toList();
+        // Также можно обработать ex.getBindingResult().getGlobalErrors() если они есть
+
+        String typeSuffix = "validation.methodArgumentNotValid";
+        // Создаем ProblemDetail
+        //detail отличается от стандартного, создаем его вручную
+        String detail = messageSource.getMessage("problemDetail." + typeSuffix + ".detail", new Object[]{ex.getErrorCount()}, request.getLocale());
+        ProblemDetail problemDetail = buildProblemDetail(
+                ex, // Передаем оригинальное исключение
+                HttpStatus.BAD_REQUEST, // Явно используем HttpStatus
+                typeSuffix,
+                request.getLocale(),
+                Map.of("invalid_params", errors) // Добавляем специфичные для этой ошибки properties
+        );// Используем "invalid_params" как в RFC 7807 примере для ошибок валидации
+        problemDetail.setDetail(detail);
+        // Возвращаем ResponseEntity<Object>, где Object - это наш ProblemDetail
+        return new ResponseEntity<>(problemDetail, headers, HttpStatus.BAD_REQUEST);
+    }
+
+
+    /**
      * Централизованный метод для построения объекта {@link ProblemDetail} на основе исключения.
      * <p>
      * Извлекает {@code title} и {@code detail} из {@link MessageSource} по ключам,
@@ -195,5 +310,14 @@ public class GlobalExceptionHandler {
                     .orElse("[token not present or not bearer]");
         }
         return "[non-http request]";
+    }
+
+    private String getFieldNameFromPath(String propertyPath) {
+        // propertyPath может быть сложным, например, "methodName.arg0.fieldName"
+        // Пытаемся извлечь последнюю часть.
+        if (propertyPath.contains(".")) {
+            return propertyPath.substring(propertyPath.lastIndexOf('.') + 1);
+        }
+        return propertyPath;
     }
 }

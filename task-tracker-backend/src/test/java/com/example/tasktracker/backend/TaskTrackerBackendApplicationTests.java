@@ -1,23 +1,21 @@
 package com.example.tasktracker.backend;
 
-import com.example.tasktracker.backend.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
-import org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration;
-import org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest
-@EnableAutoConfiguration(exclude =
-        {DataSourceAutoConfiguration.class, LiquibaseAutoConfiguration.class, HibernateJpaAutoConfiguration.class})
 @ActiveProfiles("ci")
-class TaskTrackerBackendApplicationTests {
-
-    @MockitoBean
-    private UserRepository userRepository;
+@Testcontainers
+class TaskTrackerBackendApplicationIT {
+    @Container
+    @ServiceConnection
+    static final PostgreSQLContainer<?> postgresContainer =
+            new PostgreSQLContainer<>("postgres:17.4-alpine");
 
     @Test
     void contextLoads() {

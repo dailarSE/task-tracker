@@ -1,8 +1,13 @@
 package com.example.tasktracker.backend.web.exception;
 
 import com.example.tasktracker.backend.security.exception.BadJwtException;
+import com.example.tasktracker.backend.security.exception.PasswordMismatchException;
+import com.example.tasktracker.backend.security.exception.UserAlreadyExistsException;
 import com.example.tasktracker.backend.security.jwt.JwtErrorType;
 import com.example.tasktracker.backend.security.jwt.JwtValidator;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Path;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,20 +23,28 @@ import org.springframework.context.MessageSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.validation.BindingResult;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 
 import java.net.URI;
 import java.security.Principal;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
@@ -159,8 +172,150 @@ class GlobalExceptionHandlerTest {
         assertThat(problemDetail.getDetail()).isEqualTo(expectedDetail);
     }
 
+    @Test
+    @DisplayName("handleUserAlreadyExistsException: должен вернуть корректный 409 Conflict ProblemDetail")
+    void handleUserAlreadyExistsException_shouldReturnCorrectConflictProblemDetail() {
+        // Arrange
+        String errorMessage = "User with email test@example.com already exists.";
+        UserAlreadyExistsException exception = new UserAlreadyExistsException(errorMessage);
+        String typeSuffix = "user.alreadyExists";
+        String expectedTitle = "User Exists Title";
+        String expectedDetail = "User Exists Detail: " + errorMessage;
+        Object[] detailArgs = new Object[]{errorMessage};
+
+        setupMessageSourceForSuffix(typeSuffix, expectedTitle, expectedDetail, detailArgs);
+
+        // Act
+        ProblemDetail problemDetail = globalExceptionHandler.handleUserAlreadyExistsException(exception, mockWebRequest);
+
+        // Assert
+        assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.CONFLICT.value());
+        assertThat(problemDetail.getType()).isEqualTo(URI.create(BASE_PROBLEM_URI + typeSuffix));
+        assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
+        assertThat(problemDetail.getDetail()).isEqualTo(expectedDetail);
+    }
+
+    @Test
+    @DisplayName("handlePasswordMismatchException: должен вернуть корректный 400 Bad Request ProblemDetail")
+    void handlePasswordMismatchException_shouldReturnCorrectBadRequestProblemDetail() {
+        // Arrange
+        String errorMessage = "Passwords do not match.";
+        PasswordMismatchException exception = new PasswordMismatchException(errorMessage);
+        String typeSuffix = "user.passwordMismatch";
+        String expectedTitle = "Password Mismatch Title";
+        String expectedDetail = "Password Mismatch Detail: " + errorMessage;
+        Object[] detailArgs = new Object[]{errorMessage};
+
+        setupMessageSourceForSuffix(typeSuffix, expectedTitle, expectedDetail, detailArgs);
+
+        // Act
+        ProblemDetail problemDetail = globalExceptionHandler.handlePasswordMismatchException(exception, mockWebRequest);
+
+        // Assert
+        assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(problemDetail.getType()).isEqualTo(URI.create(BASE_PROBLEM_URI + typeSuffix));
+        assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
+        assertThat(problemDetail.getDetail()).isEqualTo(expectedDetail);
+    }
+
+    @Test
+    @DisplayName("handleConstraintViolationException: должен вернуть 400 Bad Request ProblemDetail с invalid_params")
+    void handleConstraintViolationException_shouldReturnCorrectBadRequestProblemDetailWithInvalidParams() {
+        // Arrange
+        ConstraintViolation<?> mockViolation1 = mock(ConstraintViolation.class);
+        Path mockPath1 = mock(Path.class);
+        when(mockPath1.toString()).thenReturn("registerRequest.email");
+        when(mockViolation1.getPropertyPath()).thenReturn(mockPath1);
+        when(mockViolation1.getMessage()).thenReturn("Email must be valid");
+
+        ConstraintViolation<?> mockViolation2 = mock(ConstraintViolation.class);
+        Path mockPath2 = mock(Path.class);
+        when(mockPath2.toString()).thenReturn("registerRequest.password");
+        when(mockViolation2.getPropertyPath()).thenReturn(mockPath2);
+        when(mockViolation2.getMessage()).thenReturn("Password cannot be blank");
+
+        Set<ConstraintViolation<?>> violations = Set.of(mockViolation1, mockViolation2);
+        ConstraintViolationException exception = new ConstraintViolationException("Validation failed", violations);
+
+        String typeSuffix = "validation.constraintViolation";
+        String expectedTitle = "Constraint Violation Title";
+        // Детальное сообщение для ConstraintViolationException может быть общим,
+        // т.к. конкретика в invalid_params
+        String expectedDetail = "Constraint Violation Detail: " + exception.getMessage();
+        Object[] detailArgs = new Object[]{exception.getMessage()};
+        setupMessageSourceForSuffix(typeSuffix, expectedTitle, expectedDetail, detailArgs);
+
+        // Act
+        ProblemDetail problemDetail = globalExceptionHandler.handleConstraintViolationException(exception, mockWebRequest);
+
+        // Assert
+        assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(problemDetail.getType()).isEqualTo(URI.create(BASE_PROBLEM_URI + typeSuffix));
+        assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
+        assertThat(problemDetail.getDetail()).isEqualTo(expectedDetail);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> invalidParams = (List<Map<String, String>>) problemDetail.getProperties().get("invalid_params");
+        assertThat(invalidParams).isNotNull().hasSize(2);
+        assertThat(invalidParams).extracting("field")
+                .containsExactlyInAnyOrder("email", "password"); // Извлекаем из "registerRequest.email"
+        assertThat(invalidParams).extracting("message")
+                .containsExactlyInAnyOrder("Email must be valid", "Password cannot be blank");
+    }
+
+    @Test
+    @DisplayName("handleMethodArgumentNotValid: должен вернуть 400 Bad Request ResponseEntity с ProblemDetail и invalid_params")
+    void handleMethodArgumentNotValid_shouldReturnCorrectBadRequestProblemDetailWithInvalidParams() {
+        // Arrange
+        MethodArgumentNotValidException exception = mock(MethodArgumentNotValidException.class);
+        BindingResult mockBindingResult = mock(BindingResult.class);
+        FieldError mockFieldError1 = new FieldError("objectName", "email", "rejectedValueForEmail", false, null, null, "Email error message");
+        FieldError mockFieldError2 = new FieldError("objectName", "password", null, false, null, null, "Password error message");
+        List<FieldError> fieldErrors = List.of(mockFieldError1, mockFieldError2);
+
+        when(exception.getBindingResult()).thenReturn(mockBindingResult);
+        when(mockBindingResult.getFieldErrors()).thenReturn(fieldErrors);
+        when(exception.getErrorCount()).thenReturn(fieldErrors.size()); // Для аргумента сообщения
+        when(exception.getMessage()).thenReturn("Validation failed for object='objectName'. Error count: 2"); // Пример сообщения
+
+        String typeSuffix = "validation.methodArgumentNotValid";
+        String expectedTitle = "Method Argument Not Valid Title";
+        // {0} будет заменено на ex.getErrorCount()
+        String expectedDetailMessageFromBundle = "Method Argument Not Valid Detail for " + fieldErrors.size() + " errors.";
+        Object[] detailArgs = new Object[]{fieldErrors.size()};
+
+        setupMessageSourceForSuffix(typeSuffix, expectedTitle, expectedDetailMessageFromBundle, detailArgs);
+
+        HttpHeaders headers = new HttpHeaders();
+        // HttpStatusCode status = HttpStatusCode.valueOf(HttpStatus.BAD_REQUEST.value()); // Не обязательно мокать, т.к. передается
+
+        // Act
+        ResponseEntity<Object> responseEntity = globalExceptionHandler.handleMethodArgumentNotValid(
+                exception, headers, HttpStatus.BAD_REQUEST, mockWebRequest
+        );
+
+        // Assert
+        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(responseEntity.getBody()).isInstanceOf(ProblemDetail.class);
+        ProblemDetail problemDetail = (ProblemDetail) responseEntity.getBody();
+
+        assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
+        assertThat(problemDetail.getType()).isEqualTo(URI.create(BASE_PROBLEM_URI + typeSuffix));
+        assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
+        assertThat(problemDetail.getDetail()).isEqualTo(expectedDetailMessageFromBundle);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) problemDetail.getProperties().get("invalid_params");
+        assertThat(invalidParams).isNotNull().hasSize(2);
+        assertThat(invalidParams).extracting("field")
+                .containsExactlyInAnyOrder("email", "password");
+        assertThat(invalidParams).extracting("rejected_value")
+                .containsExactlyInAnyOrder("rejectedValueForEmail", "null");
+        assertThat(invalidParams).extracting("message")
+                .containsExactlyInAnyOrder("Email error message", "Password error message");
+    }
+
     // --- Тесты для вспомогательного метода extractTokenSnippetFromRequest ---
-    // (Остаются такими же, как мы согласовали ранее, так как он package-private и не изменился)
     @Test
     @DisplayName("extractTokenSnippetFromRequest: Bearer токен присутствует -> должен вернуть сокращенный токен")
     void extractTokenSnippetFromRequest_whenBearerTokenPresent_shouldReturnTruncatedToken() {

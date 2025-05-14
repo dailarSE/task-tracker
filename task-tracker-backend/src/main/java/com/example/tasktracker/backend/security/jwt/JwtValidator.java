@@ -19,8 +19,8 @@ import java.util.Optional;
 
 /**
  * Сервис, ответственный за валидацию JWT Access Tokens и извлечение из них Claims.
- * Использует секретный ключ от {@link JwtKeyService} и {@link Clock} для корректной
- * проверки временных claims.
+ * Использует секретный ключ от {@link JwtKeyService} и {@link Clock} для корректной проверки временных claims.
+ * Возвращает детальный результат валидации в виде {@link JwtValidationResult}.
  * Логирует различные типы ошибок валидации токена.
  */
 @Service
@@ -43,41 +43,63 @@ public class JwtValidator {
     }
 
     /**
-     * Приватный метод для парсинга и валидации токена.
-     * Является стандартным способом проверки токена: если парсинг прошел успешно, токен валиден.
+     * Парсит и валидирует предоставленную JWT строку.
+     * <p>
+     * Этот метод выполняет полную проверку токена, включая:
+     * <ul>
+     *     <li>Проверку на null или пустое значение.</li>
+     *     <li>Валидность формата JWT.</li>
+     *     <li>Корректность подписи с использованием сконфигурированного секретного ключа.</li>
+     *     <li>Срок действия токена (не истек ли он).</li>
+     *     <li>Поддержку используемых в токене алгоритмов/функций.</li>
+     * </ul>
+     * <p>
+     * В случае ошибки валидации, соответствующая информация логируется.
      *
-     * @param token Строка JWT для парсинга.
-     * @return {@link java.util.Optional} содержащий {@link Jws Jws&lt;Claims&gt;}
-     *         (распарсенный JWS, включая заголовки и тело/claims), если токен валиден;
-     *         иначе {@link java.util.Optional#empty()}.
+     * @param token Строка JWT для валидации.
+     * @return {@link JwtValidationResult}, содержащий либо {@link Jws<Claims>} (включая заголовки и тело)
+     *         при успехе, либо информацию об ошибке ({@link JwtErrorType}, сообщение, причина) при неудаче.
      */
-    private Optional<Jws<Claims>> parseAndValidateToken(String token) {
+    public JwtValidationResult validateAndParseToken(String token) {
         if (token == null || token.isBlank()) {
-            log.debug("Token validation failed: token is null or blank.");
-            return Optional.empty();
+            String msg = "Token is null or blank.";
+            log.debug("Token validation failed: {}", msg);
+            return JwtValidationResult.failure(JwtErrorType.EMPTY_OR_ILLEGAL_ARGUMENT, msg,null);
         }
         try {
             Jws<Claims> jwsClaims = Jwts.parser()
                     .verifyWith(this.secretKey)
                     .clock(() -> Date.from(this.clock.instant()))
                     .build()
-                    .parseSignedClaims(token); // parseSignedClaims возвращает Jws<Claims>
-            return Optional.of(jwsClaims);
+                    .parseSignedClaims(token);
+            return JwtValidationResult.success(jwsClaims);
         } catch (SignatureException e) {
-            log.warn("Token validation failed: Invalid JWT signature. Token: [{}]", truncateTokenForLogging(token), e);
+            String msg = "Invalid JWT signature.";
+            log.warn("Token validation failed: {}. Token: [{}]", msg, truncateTokenForLogging(token), e);
+            return JwtValidationResult.failure(JwtErrorType.INVALID_SIGNATURE, msg + " " + e.getMessage(),e);
         } catch (MalformedJwtException e) {
-            log.warn("Token validation failed: Invalid JWT token format. Token: [{}]", truncateTokenForLogging(token), e);
+            String msg = "Invalid JWT token format.";
+            log.warn("Token validation failed: {}. Token: [{}]", msg, truncateTokenForLogging(token), e);
+            return JwtValidationResult.failure(JwtErrorType.MALFORMED, msg + " " + e.getMessage(),e);
         } catch (ExpiredJwtException e) {
-            log.debug("Token validation failed: JWT token is expired. Token: [{}]", truncateTokenForLogging(token), e);
+            String msg = "JWT token is expired.";
+            log.debug("Token validation failed: {}. Token: [{}]", msg, truncateTokenForLogging(token), e);
+            return JwtValidationResult.failure(JwtErrorType.EXPIRED, msg + " " + e.getMessage(),e);
         } catch (UnsupportedJwtException e) {
-            log.warn("Token validation failed: JWT token is unsupported. Token: [{}]", truncateTokenForLogging(token), e);
+            String msg = "JWT token is unsupported.";
+            log.warn("Token validation failed: {}. Token: [{}]", msg, truncateTokenForLogging(token), e);
+            return JwtValidationResult.failure(JwtErrorType.UNSUPPORTED, msg + " " + e.getMessage(),e);
         } catch (IllegalArgumentException e) {
-            log.warn("Token validation failed: JWT claims string is empty or token is otherwise invalid. Token: [{}]",
-                    truncateTokenForLogging(token), e);
+            // Это может быть от jjwt, если claims пустые или другая проблема с аргументом внутри jjwt
+            String msg = "JWT claims string is empty or token is otherwise invalid (IllegalArgumentException from jjwt).";
+            log.warn("Token validation failed: {}. Token: [{}]", msg, truncateTokenForLogging(token), e);
+            return JwtValidationResult.failure(JwtErrorType.EMPTY_OR_ILLEGAL_ARGUMENT,
+                    msg + " " + e.getMessage(),e);
         } catch (JwtException e) { // Общий JwtException для других ошибок парсинга/валидации
-            log.warn("Token validation failed: General JWT error. Token: [{}]", truncateTokenForLogging(token), e);
+            String msg = "General JWT validation error.";
+            log.warn("Token validation failed: {}. Token: [{}]", msg, truncateTokenForLogging(token), e);
+            return JwtValidationResult.failure(JwtErrorType.OTHER_JWT_EXCEPTION, msg + " " + e.getMessage(),e);
         }
-        return Optional.empty();
     }
 
     /**
@@ -87,7 +109,7 @@ public class JwtValidator {
      * @return {@code true} если токен валиден, иначе {@code false}.
      */
     public boolean isValid(String token) {
-        return parseAndValidateToken(token).isPresent();
+        return validateAndParseToken(token).isSuccess();
     }
 
     /**
@@ -97,7 +119,7 @@ public class JwtValidator {
      * @return {@link Optional<Claims>}, содержащий Claims если токен валиден, иначе {@link Optional#empty()}.
      */
     public Optional<Claims> extractValidClaims(String token) {
-        return parseAndValidateToken(token).map(Jws::getPayload);
+        return validateAndParseToken(token).getJwsClaimsOptional().map(Jws::getPayload);
     }
 
     /**
@@ -106,7 +128,7 @@ public class JwtValidator {
      * @param token JWT строка.
      * @return Сокращенная версия токена для логирования.
      */
-    public String truncateTokenForLogging(String token) {
+    public static String truncateTokenForLogging(String token) {
         if (token == null) {
             return "[NULL_TOKEN]";
         }

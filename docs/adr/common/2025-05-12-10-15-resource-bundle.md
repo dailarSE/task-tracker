@@ -58,7 +58,7 @@
         *   Внедрять Spring `MessageSource`.
         *   Получать сообщения через `messageSource.getMessage(...)`. При использовании версий без `defaultMessage` быть готовым обрабатывать `NoSuchMessageException`.
         *   Для аннотаций валидации: Spring автоматически использует `MessageSource`.
-	
+        
 	7.  **Особенности Интерполяции Сообщений для Стандартных Аннотаций Jakarta Bean Validation:**
     *   При использовании ключей из Resource Bundle в атрибуте `message` стандартных аннотаций Jakarta Bean Validation (например, `@Size`, `@Pattern`, `@Min`, `@Max` и т.д.), и их последующей интерполяции через связку Spring `MessageSource` и нижележащего Bean Validation Provider (по умолчанию Hibernate Validator), необходимо учитывать следующий механизм:
         1.  Bean Validation Provider (Hibernate Validator) при обнаружении аннотации с `message = "{my.custom.key}"` сначала обращается к `jakarta.validation.MessageInterpolator`.

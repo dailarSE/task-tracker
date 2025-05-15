@@ -4,6 +4,7 @@ import com.example.tasktracker.backend.security.exception.BadJwtException;
 import com.example.tasktracker.backend.security.exception.PasswordMismatchException;
 import com.example.tasktracker.backend.security.exception.UserAlreadyExistsException;
 import com.example.tasktracker.backend.security.jwt.JwtValidator;
+import com.example.tasktracker.backend.web.ApiConstants;
 import jakarta.validation.ConstraintViolationException;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +14,7 @@ import org.springframework.context.NoSuchMessageException;
 import org.springframework.http.*;
 import org.springframework.lang.Nullable;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -22,6 +24,7 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import java.net.URI;
+import java.security.Principal;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -48,9 +51,6 @@ import java.util.Optional;
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     private final MessageSource messageSource;
-
-    // TODO: (URI для ProblemDetail) - Определить и задокументировать пространство имен для type URI.
-    private static final String PROBLEM_TYPE_BASE_URI = "https://task-tracker.example.com/probs/";
 
     /**
      * Обрабатывает {@link BadJwtException}, указывающее на проблемы с валидацией JWT.
@@ -113,7 +113,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      */
     @ExceptionHandler(AccessDeniedException.class)
     public ProblemDetail handleAccessDeniedException(AccessDeniedException ex, WebRequest request) {
-        String userName = Optional.ofNullable(request.getUserPrincipal()).map(java.security.Principal::getName)
+        String userName = Optional.ofNullable(request.getUserPrincipal()).map(Principal::getName)
                 .orElse("anonymous");
         String requestUri = "";
         if (request instanceof ServletWebRequest servletWebRequest) {
@@ -165,6 +165,35 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     public ProblemDetail handlePasswordMismatchException(PasswordMismatchException ex, WebRequest request) {
         log.warn("Registration bad request: {}", ex.getMessage());
         return buildProblemDetail(ex, HttpStatus.BAD_REQUEST, "user.passwordMismatch", request.getLocale(), null);
+    }
+
+    /**
+     * Обрабатывает {@link BadCredentialsException} (на этапе логина).
+     * Возвращает HTTP 401 Unauthorized с {@link ProblemDetail} и заголовком WWW-Authenticate.
+     *
+     * @param ex      Исключение {@link BadCredentialsException}.
+     * @param request Текущий веб-запрос.
+     * @return Объект {@link ProblemDetail}.
+     */
+    @ExceptionHandler({BadCredentialsException.class})
+    public ProblemDetail handleBadCredentialsException(AuthenticationException ex, WebRequest request) {
+        log.warn("Login attempt failed: {}", ex.getMessage());
+
+        // Устанавливаем заголовок WWW-Authenticate
+        if (request instanceof ServletWebRequest servletWebRequest) {
+            if (servletWebRequest.getResponse() != null) {
+                servletWebRequest.getResponse().setHeader(
+                        HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"task-tracker\"");
+            }
+        }
+
+        return buildProblemDetail(
+                ex,
+                HttpStatus.UNAUTHORIZED,
+                "auth.invalidCredentials",
+                request.getLocale(),
+                null
+        );
     }
 
     /**
@@ -223,7 +252,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .map(fieldError -> Map.<String, Object>of(
                         "field", fieldError.getField(),
                         "rejected_value", Optional.ofNullable(fieldError.getRejectedValue()).map(Object::toString).orElse("null"),
-                        "message", fieldError.getDefaultMessage() // Это уже локализованное сообщение из ResourceBundle
+                        "message", fieldError.getDefaultMessage() != null ? fieldError.getDefaultMessage() : "" // Это уже локализованное сообщение из ResourceBundle
                 ))
                 .toList();
         // Также можно обработать ex.getBindingResult().getGlobalErrors() если они есть
@@ -231,6 +260,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         String typeSuffix = "validation.methodArgumentNotValid";
         // Создаем ProblemDetail
         //detail отличается от стандартного, создаем его вручную
+        //TODO validation.methodArgumentNotValid не принимает аргументы, но мы их зачем то передаем
+        //TODO а вот constraintViolation принимает, хоть и с мутным результатом
         String detail = messageSource.getMessage("problemDetail." + typeSuffix + ".detail", new Object[]{ex.getErrorCount()}, request.getLocale());
         ProblemDetail problemDetail = buildProblemDetail(
                 ex, // Передаем оригинальное исключение
@@ -269,15 +300,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      * @return Сконфигурированный объект {@link ProblemDetail}.
      * @throws NoSuchMessageException если ключ для title или detail не найден в {@link MessageSource}.
      */
-    private ProblemDetail buildProblemDetail(@lombok.NonNull Exception sourceException,
-                                             @lombok.NonNull HttpStatus status,
-                                             @lombok.NonNull String typeSuffix,
-                                             @lombok.NonNull Locale locale,
+    private ProblemDetail buildProblemDetail(@NonNull Exception sourceException,
+                                             @NonNull HttpStatus status,
+                                             @NonNull String typeSuffix,
+                                             @NonNull Locale locale,
                                              @Nullable Map<String, Object> additionalProperties) {
 
         String titleKey = "problemDetail." + typeSuffix + ".title";
         String detailKey = "problemDetail." + typeSuffix + ".detail";
-        URI typeUri = URI.create(PROBLEM_TYPE_BASE_URI + typeSuffix);
+        URI typeUri = URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + typeSuffix);
 
         Object[] detailArgs = new Object[]{sourceException.getMessage()};
 

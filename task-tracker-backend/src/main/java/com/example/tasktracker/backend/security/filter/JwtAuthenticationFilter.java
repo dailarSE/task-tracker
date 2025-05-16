@@ -1,5 +1,6 @@
 package com.example.tasktracker.backend.security.filter;
 
+import com.example.tasktracker.backend.security.details.AppUserDetails;
 import com.example.tasktracker.backend.security.exception.BadJwtException;
 import com.example.tasktracker.backend.security.jwt.JwtAuthenticationConverter;
 import com.example.tasktracker.backend.security.jwt.JwtErrorType;
@@ -13,16 +14,17 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -42,7 +44,11 @@ import java.util.Optional;
  *             <li>Объект {@link Authentication} устанавливается в {@link SecurityContextHolder}, делая пользователя аутентифицированным для текущего запроса. Запрос передается дальше по цепочке фильтров.</li>
  *             <li>Если во время конвертации claims возникает ошибка (например, {@link IllegalArgumentException}),
  *                 инициируется обработка ошибки через {@link AuthenticationEntryPoint} с {@link BadJwtException},
- *                 и дальнейшая обработка запроса в цепочке фильтров для данного запроса **прерывается**.</li>
+ *                 и дальнейшая обработка запроса в цепочке фильтров для данного запроса прерывается.</li>
+ *             <li>При успешной аутентификации и установке {@link Authentication} в {@link SecurityContextHolder},
+ *                 идентификаторы пользователя (такие как ID и email) помещаются в {@code MDC} (Mapped Diagnostic Context)
+ *                 для обогащения логов. Фильтр также обеспечивает очистку этих MDC-значений
+ *                 после завершения обработки запроса в цепочке фильтров.</li>
  *         </ul>
  *     </li>
  *     <li>Если токен невалиден (согласно {@link JwtValidator}):
@@ -61,6 +67,7 @@ import java.util.Optional;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
+    static final String MDC_USER_ID_KEY = "user.id";
 
     private final JwtValidator jwtValidator;
     private final JwtAuthenticationConverter jwtAuthenticationConverter;
@@ -84,12 +91,44 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     /**
      * Основной метод фильтра, выполняемый для каждого запроса для обработки JWT аутентификации.
+     * <p>
+     * При успешной аутентификации через JWT, этот метод:
+     * <ul>
+     *     <li>Устанавливает объект {@link Authentication} в {@link SecurityContextHolder}.</li>
+     *     <li>Помещает идентификатор аутентифицированного пользователя (ID)
+     *         в {@code MDC} (Mapped Diagnostic Context) для последующего использования в логах.</li>
+     *     <li>Обеспечивает очистку значений {@code MDC}, установленных этим фильтром,
+     *         после того, как запрос обработан далее по цепочке фильтров.</li>
+     * </ul>
+     * </p>
+     * <p>
+     * В случае, если JWT невалиден или происходит ошибка при конвертации его содержимого
+     * в объект {@code Authentication} (например, из-за неверных claims), этот фильтр
+     * **не передает запрос дальше по цепочке**. Вместо этого, он инициирует стандартный
+     * механизм обработки ошибок аутентификации Spring Security, вызывая
+     * {@link AuthenticationEntryPoint#commence(HttpServletRequest, HttpServletResponse, org.springframework.security.core.AuthenticationException)}
+     * с соответствующим исключением {@link com.example.tasktracker.backend.security.exception.BadJwtException}.
+     * Это позволяет централизованно формировать HTTP-ответ об ошибке (например, 401 Unauthorized
+     * с телом в формате Problem Details).
+     * </p>
+     * <p>
+     * В случае непредвиденных внутренних ошибок при обработке аутентификации или MDC
+     * (например, {@link NullPointerException} или {@link IllegalStateException}), эти
+     * исключения будут проброшены дальше и, как правило, приведут к ответу HTTP 500 Internal Server Error,
+     * формируемому вышестоящими обработчиками ошибок (например, {@link com.example.tasktracker.backend.web.exception.GlobalExceptionHandler}
+     * или стандартными механизмами Spring Boot).
+     * </p>
      *
-     * @param request     HTTP запрос.
-     * @param response    HTTP ответ.
-     * @param filterChain Цепочка фильтров.
-     * @throws ServletException если происходит ошибка сервлета.
-     * @throws IOException      если происходит ошибка ввода-вывода.
+     * @param request     HTTP запрос. Не должен быть null.
+     * @param response    HTTP ответ. Не должен быть null.
+     * @param filterChain Цепочка фильтров. Не должна быть null.
+     * @throws ServletException если она возникает при вызове {@code filterChain.doFilter}
+     *                          или при обработке ошибки в {@code AuthenticationEntryPoint}.
+     * @throws IOException      если она возникает при вызове {@code filterChain.doFilter}
+     *                          или при обработке ошибки в {@code AuthenticationEntryPoint}.
+     * @throws RuntimeException (например, {@link NullPointerException}, {@link IllegalStateException})
+     *                          в случае серьезных внутренних ошибок конфигурации или состояния,
+     *                          не связанных напрямую с валидностью самого JWT.
      */
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
@@ -124,12 +163,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             try {
                 Authentication authentication = jwtAuthenticationConverter.convert(jwsClaims.getPayload(), jwt);
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+
+                String mdcUserIdentifier = prepareMdcUserIdentifier(authentication.getPrincipal());
+
                 log.debug("Successfully authenticated user [{}] from JWT for request to [{}].",
-                        (authentication.getPrincipal() instanceof UserDetails ?
-                                ((UserDetails) authentication.getPrincipal()).getUsername() :
-                                authentication.getName()),
+                        mdcUserIdentifier,
                         request.getRequestURI()
                 );
+
+                try (MDC.MDCCloseable ignored = MDC.putCloseable(MDC_USER_ID_KEY, mdcUserIdentifier)) {
+                    log.trace("MDC set for {}: {} for request to [{}].",
+                            MDC_USER_ID_KEY, mdcUserIdentifier, request.getRequestURI());
+                    filterChain.doFilter(request, response); // Продолжаем цепочку фильтров
+                }
+                log.trace("MDC for {} (value: {}) cleared after request to [{}].",
+                        MDC_USER_ID_KEY, mdcUserIdentifier, request.getRequestURI());
+
             } catch (IllegalArgumentException e) {
                 log.warn("Could not set user authentication from JWT: Claims conversion failed. Token: [{}], Error: {}",
                         JwtValidator.truncateTokenForLogging(jwt), e.getMessage(), e);
@@ -140,7 +189,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                 JwtErrorType.OTHER_JWT_EXCEPTION,
                                 e
                         ));
-                return; // Ответ формируется EntryPoint
+                // Ответ формируется EntryPoint
             }
         } else {
             // Токен был, но не прошел валидацию. JwtValidator уже залогировал причину.
@@ -152,10 +201,45 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             validationResult.getErrorType(),
                             validationResult.getCause()
                     ));
-            return; // Ответ формируется EntryPoint
+            // Ответ формируется EntryPoint
         }
 
-        filterChain.doFilter(request, response);
+    }
+
+    /**
+     * Готовит строковый идентификатор пользователя для помещения в MDC.
+     * <p>
+     * Если principal является экземпляром {@link AppUserDetails}, этот метод пытается
+     * вернуть ID пользователя в виде строки. Если ID пользователя в {@code AppUserDetails}
+     * по какой-то причине равен {@code null} (что является неожиданным состоянием после
+     * успешной аутентификации), будет возвращен email пользователя в качестве фолбэка,
+     * и будет зарегистрировано предупреждение.
+     * </p>
+     * <p>
+     * Для текущей реализации ожидается, что после успешной JWT-аутентификации
+     * principal всегда будет {@link AppUserDetails}. Если это не так,
+     * будет выброшено {@link IllegalStateException}, указывая на возможное нарушение
+     * контракта в цепочке аутентификации.
+     * </p>
+     *
+     * @param principal объект principal из {@link Authentication}. Не должен быть null.
+     * @return Строковый идентификатор пользователя (ID или email). Никогда не возвращает {@code null}.
+     * @throws IllegalStateException если principal не является {@link AppUserDetails}.
+     * @throws NullPointerException если principal равен {@code null}.
+     */
+    private String prepareMdcUserIdentifier(@NonNull Object principal) {
+        if (principal instanceof AppUserDetails appUserDetails) {
+            if (appUserDetails.getId() != null) {
+                return appUserDetails.getId().toString();
+            } else {
+                // Это неожиданно, AppUserDetails должен иметь ID после успешной аутентификации
+                log.warn("AppUserDetails principal found for MDC, but its ID is null. " +
+                        "Falling back to username for MDC. Username: {}", appUserDetails.getUsername());
+                return Objects.requireNonNull(appUserDetails.getUsername()); // Фолбэк на username, если ID null
+            }
+        }
+        throw new IllegalStateException("Principal is not AppUserDetails. Principal: "
+                + principal.getClass().getName());
     }
 
     /**

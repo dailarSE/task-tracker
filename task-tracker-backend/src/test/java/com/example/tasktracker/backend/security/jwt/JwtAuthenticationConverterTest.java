@@ -86,7 +86,7 @@ class JwtAuthenticationConverterTest {
         // Act & Assert
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> jwtAuthenticationConverter.convert(claims, "token"))
-                .withMessage("Invalid 'sub' claim in JWT: not a valid user ID.");
+                .withMessage("Invalid 'sub' claim in JWT: not a valid user ID format.");
     }
 
     @Test
@@ -101,7 +101,7 @@ class JwtAuthenticationConverterTest {
         // Act & Assert
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> jwtAuthenticationConverter.convert(claims, "token"))
-                .withMessage("Invalid 'sub' claim in JWT: not a valid user ID.")
+                .withMessage("Invalid 'sub' claim in JWT: not a valid user ID format.")
                 .withCauseInstanceOf(NumberFormatException.class);
     }
 

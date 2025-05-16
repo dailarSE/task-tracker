@@ -38,7 +38,7 @@ public class JwtAuthenticationConverter {
             userId = Long.parseLong(claims.getSubject());
         } catch (NumberFormatException e) {
             log.warn("JWT 'sub' claim is not a valid Long: {}", claims.getSubject(), e);
-            throw new IllegalArgumentException("Invalid 'sub' claim in JWT: not a valid user ID.", e);
+            throw new IllegalArgumentException("Invalid 'sub' claim in JWT: not a valid user ID format.", e);
         }
 
         String email = claims.get(jwtProperties.getEmailClaimKey(), String.class);

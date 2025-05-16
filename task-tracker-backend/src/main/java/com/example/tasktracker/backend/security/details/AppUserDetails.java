@@ -11,7 +11,13 @@ import java.util.Collection;
 import java.util.Collections;
 
 /**
- * Содержит основные данные пользователя, необходимые Spring Security.
+ * Реализация интерфейса {@link org.springframework.security.core.userdetails.UserDetails},
+ * инкапсулирующая основные данные пользователя (ID, email, хешированный пароль, права доступа),
+ * необходимые для Spring Security в процессе аутентификации и авторизации.
+ * Email используется в качестве имени пользователя (username).
+ *
+ * @see com.example.tasktracker.backend.user.entity.User
+ * @see org.springframework.security.core.userdetails.UserDetails
  */
 
 public class AppUserDetails implements UserDetails {
@@ -20,7 +26,7 @@ public class AppUserDetails implements UserDetails {
     private final Long id;
     private final String email;
     private final String password;
-    private final Collection<? extends GrantedAuthority> authorities; // Пока пустая коллекция
+    private final Collection<? extends GrantedAuthority> authorities;
 
     /**
      * Конструктор для создания AppUserDetails на основе сущности User.

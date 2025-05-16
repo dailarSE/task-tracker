@@ -2,9 +2,9 @@ package com.example.tasktracker.backend.security.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
@@ -12,7 +12,6 @@ import lombok.Setter;
  */
 @Getter
 @Setter
-@NoArgsConstructor
 @AllArgsConstructor
 public class LoginRequest {
 
@@ -21,12 +20,14 @@ public class LoginRequest {
      */
     @NotBlank(message = "{user.validation.email.notBlank}")
     @Email(message = "{user.validation.email.invalidFormat}")
-    private String email;
+    @Size(max = 255, message = "{user.validation.email.size}")
+    private final String email;
 
     /**
      * Пароль пользователя для входа.
      */
     @NotBlank(message = "{user.validation.password.notBlank}")
-    private String password;
+    @Size(max = 255, message = "{user.validation.password.size}")
+    private final String password;
 
 }

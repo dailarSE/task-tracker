@@ -1,5 +1,6 @@
 package com.example.tasktracker.backend.security.filter;
 
+import com.example.tasktracker.backend.security.details.AppUserDetails;
 import com.example.tasktracker.backend.security.exception.BadJwtException;
 import com.example.tasktracker.backend.security.jwt.JwtAuthenticationConverter;
 import com.example.tasktracker.backend.security.jwt.JwtErrorType;
@@ -11,6 +12,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -23,6 +25,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.slf4j.MDC;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
@@ -40,6 +43,7 @@ import static org.mockito.Mockito.*;
 /**
  * Юнит-тесты для {@link JwtAuthenticationFilter}.
  */
+@Slf4j
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class JwtAuthenticationFilterTest {
@@ -151,14 +155,22 @@ class JwtAuthenticationFilterTest {
         String token = "valid.jwt.token";
         JwtValidationResult validResult = JwtValidationResult.success(mockJwsClaims);
 
+        AppUserDetails mockUserDetails = mock(AppUserDetails.class);
+        when(mockUserDetails.getId()).thenReturn(1L);
+        when(mockUserDetails.getUsername()).thenReturn("test@example.com"); // Для лога
+
+        // Настраиваем конвертер, чтобы он возвращал Authentication с этим UserDetails
+        Authentication mockAuthWithUserDetails = mock(Authentication.class);
+        when(mockAuthWithUserDetails.getPrincipal()).thenReturn(mockUserDetails);
+
         when(mockRequest.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer " + token);
         when(mockJwtValidator.validateAndParseToken(token)).thenReturn(validResult);
         // Используем mockClaimsBody, так как getJwsClaimsOptional().get().getPayload() вернет его
-        when(mockJwtAuthenticationConverter.convert(mockClaimsBody, token)).thenReturn(mockAuthentication);
+        when(mockJwtAuthenticationConverter.convert(mockClaimsBody, token)).thenReturn(mockAuthWithUserDetails);
 
         jwtAuthenticationFilter.doFilterInternal(mockRequest, mockResponse, mockFilterChain);
 
-        assertThat(SecurityContextHolder.getContext().getAuthentication()).isEqualTo(mockAuthentication);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isEqualTo(mockAuthWithUserDetails);
         verify(mockFilterChain).doFilter(mockRequest, mockResponse);
         verifyNoInteractions(mockAuthenticationEntryPoint); // EntryPoint не должен вызываться при успехе
     }
@@ -218,5 +230,69 @@ class JwtAuthenticationFilterTest {
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
         verify(mockFilterChain).doFilter(mockRequest, mockResponse);
         verifyNoInteractions(mockJwtValidator, mockJwtAuthenticationConverter, mockAuthenticationEntryPoint);
+    }
+
+    @Test
+    @DisplayName("doFilterInternal: Валидный JWT -> MDC должен быть установлен во время doFilter и очищен после")
+    void doFilterInternal_whenJwtTokenIsValid_shouldSetAndClearMdc() throws ServletException, IOException {
+        String token = "valid.jwt.token";
+        Long expectedUserId = 123L;
+        String expectedUserIdStr = String.valueOf(expectedUserId);
+
+        // Мокаем AppUserDetails, который будет возвращен конвертером
+        AppUserDetails mockUserDetails = mock(AppUserDetails.class);
+        when(mockUserDetails.getId()).thenReturn(expectedUserId);
+        when(mockUserDetails.getUsername()).thenReturn("test@example.com"); // Для лога
+
+        // Настраиваем конвертер, чтобы он возвращал Authentication с этим UserDetails
+        Authentication mockAuthWithUserDetails = mock(Authentication.class);
+        when(mockAuthWithUserDetails.getPrincipal()).thenReturn(mockUserDetails);
+
+        when(mockJwtAuthenticationConverter.convert(any(Claims.class), eq(token))).thenReturn(mockAuthWithUserDetails);
+
+        // Настраиваем валидатор
+        JwtValidationResult validResult = JwtValidationResult.success(mockJwsClaims); // mockJwsClaims из setUp
+        when(mockJwsClaims.getPayload()).thenReturn(mock(Claims.class)); // Сам payload не важен для этого теста
+        when(mockJwtValidator.validateAndParseToken(token)).thenReturn(validResult);
+        when(mockRequest.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer " + token);
+
+        // Используем Answer для проверки MDC *внутри* вызова doFilter
+        doAnswer(invocation -> {
+            // В этот момент MDC должен быть установлен
+            assertThat(MDC.get(JwtAuthenticationFilter.MDC_USER_ID_KEY)) // Используйте реальное имя константы
+                    .isEqualTo(expectedUserIdStr);
+            return null; // doFilter у FilterChain обычно void
+        }).when(mockFilterChain).doFilter(mockRequest, mockResponse);
+
+        // Act
+        // Очищаем MDC перед вызовом, чтобы убедиться, что именно наш фильтр его ставит и чистит
+        MDC.remove(JwtAuthenticationFilter.MDC_USER_ID_KEY);
+        jwtAuthenticationFilter.doFilterInternal(mockRequest, mockResponse, mockFilterChain);
+
+        // Assert
+        // После того, как doFilterInternal отработал, MDC должен быть очищен
+        assertThat(MDC.get(JwtAuthenticationFilter.MDC_USER_ID_KEY)).isNull();
+
+        // Убедимся, что SecurityContext был установлен
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isSameAs(mockAuthWithUserDetails);
+        verify(mockFilterChain).doFilter(mockRequest, mockResponse); // Убедимся, что цепочка была вызвана
+        verifyNoInteractions(mockAuthenticationEntryPoint);
+    }
+
+    @Test
+    @DisplayName("doFilterInternal: Невалидный JWT -> MDC не должен быть установлен")
+    void doFilterInternal_whenJwtIsInvalid_shouldNotSetMdc() throws ServletException, IOException {
+        String token = "invalid.jwt.token";
+        JwtValidationResult invalidResult = JwtValidationResult.failure(JwtErrorType.INVALID_SIGNATURE, "Bad signature");
+
+        when(mockRequest.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer " + token);
+        when(mockJwtValidator.validateAndParseToken(token)).thenReturn(invalidResult);
+
+        MDC.remove(JwtAuthenticationFilter.MDC_USER_ID_KEY); // Очищаем перед тестом
+        jwtAuthenticationFilter.doFilterInternal(mockRequest, mockResponse, mockFilterChain);
+
+        assertThat(MDC.get(JwtAuthenticationFilter.MDC_USER_ID_KEY)).isNull();
+        verify(mockAuthenticationEntryPoint).commence(any(), any(), any(BadJwtException.class));
+        verify(mockFilterChain, never()).doFilter(any(), any());
     }
 }

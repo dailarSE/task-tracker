@@ -145,7 +145,8 @@ class AuthControllerIT {
         assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         ProblemDetail problemDetail = responseEntity.getBody();
         assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "validation.methodArgumentNotValid"));
+        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI +
+                "validation.methodArgumentNotValid".replaceAll("\\.", "/")));
         assertThat(problemDetail.getTitle()).isEqualTo(expectedProblemTitle);
         assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
 
@@ -184,7 +185,8 @@ class AuthControllerIT {
 
         ProblemDetail problemDetail = responseEntity.getBody();
         assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "auth.invalidCredentials")); // Ожидаем специфичный тип
+        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI +
+                "auth.invalidCredentials".replaceAll("\\.", "/"))); // Ожидаем специфичный тип
         assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
         assertThat(problemDetail.getDetail()).isEqualTo(expectedDetail);
         assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
@@ -214,7 +216,8 @@ class AuthControllerIT {
 
         ProblemDetail problemDetail = responseEntity.getBody();
         assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "auth.invalidCredentials"));
+        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI +
+                "auth.invalidCredentials".replaceAll("\\.", "/")));
         assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
         assertThat(problemDetail.getDetail()).isEqualTo(expectedDetail);
         assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());

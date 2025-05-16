@@ -251,8 +251,7 @@ Superseded by ADR-0028
 		*   Валидность формата email.
 		*   Совпадение `password` и `repeatPassword`.
 		*   Уникальность email в системе.
-		*   *Требования к сложности и минимальной длине пароля на данном этапе не определены. Могут быть введены
-		и задокументированы позже; может потребоваться механизм для обновления существующих паролей пользователей.*
+		*   Предельный размер пароля 255 символов.
 	*   **Действия при успехе (HTTP 201 Created):**
 		*   Создание новой записи пользователя в базе данных. Пароль должен храниться в хешированном виде с 
 		использованием сильного, общепринятого алгоритма (например, BCrypt, предоставляемый стандартными
@@ -487,41 +486,41 @@ Superseded by ADR-0028
 		*   **Регистрация:** Валидирует `RegisterRequest`, проверяет совпадение паролей, проверяет уникальность email (`UserRepository`), хеширует пароль (`PasswordEncoder`), сохраняет нового `User` (`UserRepository`), создает `Authentication` объект для нового пользователя и вызывает `JwtIssuer` для генерации JWT (авто-логин). Выбрасывает кастомные исключения (`UserAlreadyExistsException`, `PasswordMismatchException`) при ошибках.
 		*   **Логин:** Принимает `LoginRequest`. Делегирует проверку кредов `AuthenticationManager`. При успехе вызывает `JwtIssuer` для генерации JWT. Пробрасывает `AuthenticationException` от `AuthenticationManager` в случае неудачи.
 
-5.  **Обработка Ошибок API (согласно RFC 9457 `application/problem+json`):**
-	*   **5.1. Общий Стандарт:** Все HTTP-ответы об ошибках (статус-коды 4xx-5xx), генерируемые приложением в результате исключений, **ДОЛЖНЫ** использовать `Content-Type: application/problem+json` и тело ответа **ДОЛЖНО** соответствовать структуре `ProblemDetail`, определенной в RFC 9457.
+5.  **Обработка Ошибок API (RFC 9457 `application/problem+json`):**
+	*   **5.1. Общий Стандарт:** Все HTTP-ответы об ошибках (4xx-5xx) используют `Content-Type: application/problem+json` и тело `ProblemDetail`.
 	*   **5.2. Поля `ProblemDetail`:**
-		*   **`type` (URI):** Обязательное. URI, идентифицирующий тип проблемы. Строится путем конкатенации базового
-			URI (`ApiConstants.PROBLEM_TYPE_BASE_URI`) с суффиксом, отражающим категорию и специфику ошибки.
-			Рекомендуемый формат суффикса: `<category>` или `<category>.<specific_error>`.
-			Примеры:
-			*   `https://task-tracker.example.com/probs/jwt.expired`
-			*   `https://task-tracker.example.com/probs/validation.methodArgumentNotValid`
-			*   `https://task-tracker.example.com/probs/user.alreadyExists`
-			*   `https://task-tracker.example.com/probs/auth.invalidCredentials`
-		*   **`title` (String):** Обязательное. Извлекается из `MessageSource` (ADR-0024).
-		*   **`status` (Integer):** Обязательное. HTTP-статус код.
-		*   **`detail` (String):** Рекомендуемое. Извлекается из `MessageSource` (ADR-0024), может содержать параметры из исключения.
-		*   **`instance` (URI):** Опциональное. Путь запроса.
-		*   **Кастомные Расширения:** Поле `invalid_params` для ошибок валидации DTO; поле `error_type` для `BadJwtException`.
-	*   **5.3. `GlobalExceptionHandler` (`@RestControllerAdvice`):**
-		*   Центральный компонент для преобразования исключений в `ProblemDetail` ответы. Наследует `ResponseEntityExceptionHandler` для кастомизации обработки стандартных MVC исключений.
-		*   Содержит `@ExceptionHandler` методы для:
-			*   `BadJwtException` (кастомное): Формирует `ProblemDetail` с HTTP 401, специфичным `type` URI (на основе `JwtErrorType`), `title` и `detail` из `MessageSource`, и кастомным свойством `error_type`.
-			*   `AuthenticationException` (общее, например, `BadCredentialsException`): Формирует `ProblemDetail` с HTTP 401, `title` и `detail` из `MessageSource`.
-			*   `AccessDeniedException`: Формирует `ProblemDetail` с HTTP 403 (или 404 согласно ADR-0019), `title` и `detail` из `MessageSource`.
-			*   Кастомных бизнес-исключений (`UserAlreadyExistsException`, `PasswordMismatchException`): Формируют `ProblemDetail` с HTTP 409/400, `title` и `detail` из `MessageSource`.
-			*   Ошибок валидации (`jakarta.validation.ConstraintViolationException`, `org.springframework.web.bind.MethodArgumentNotValidException`): Формируют `ProblemDetail` с HTTP 400, `title` и `detail` из `MessageSource`, и кастомным свойством `invalid_params` со списком ошибок полей.
-		*   При отсутствии ключа для `title` или `detail` в `MessageSource`, выбрасывается `NoSuchMessageException`, что приводит к HTTP 500 (fail-fast для проблем с ресурсами локализации).
-	*   **5.4. `BearerTokenProblemDetailsAuthenticationEntryPoint` (реализация `AuthenticationEntryPoint`):**
-		*   Вызывается при неаутентифицированном доступе к защищенному ресурсу или при ошибке в `JwtAuthenticationFilter`.
-		*   Устанавливает HTTP-заголовок `WWW-Authenticate: Bearer realm="task-tracker"`.
-		*   Делегирует возникшее `AuthenticationException` (которое может быть `BadJwtException`) в `org.springframework.web.servlet.HandlerExceptionResolver` для обработки в `GlobalExceptionHandler`. **Не формирует тело ответа самостоятельно.**
-	*   **5.5. `ProblemDetailsAccessDeniedHandler` (реализация `AccessDeniedHandler`):**
-		*   Вызывается при отказе в доступе аутентифицированному пользователю.
-		*   Делегирует `AccessDeniedException` в `HandlerExceptionResolver`. **Не формирует тело ответа самостоятельно.**
-	*   **5.6. `BadJwtException` (кастомное исключение):**
-		*   Наследуется от `org.springframework.security.core.AuthenticationException`.
-		*   Хранит `JwtErrorType` и оригинальную причину (`Throwable`).
+	*   `type` (URI): `ApiConstants.PROBLEM_TYPE_BASE_URI` + суффикс (например, `jwt/expired`, `user/alreadyExists`).
+	*   `title` (String): Из `MessageSource` (ADR-0024).
+	*   `status` (Integer): HTTP-статус код.
+	*   `detail` (String): **Статическое** описание типа проблемы из `MessageSource`. Динамическая информация об экземпляре ошибки передается через `properties`.
+	*   `instance` (URI): Путь запроса (устанавливается `GlobalExceptionHandler`).
+	*   `properties` (Map): Кастомные расширения:
+	*   `invalid_params` для ошибок валидации DTO (список ошибок полей).
+	*   `error_type` (enum `JwtErrorType`) и `jwt_error_details` (сообщение из `BadJwtException`) для ошибок JWT.
+	*   `conflicting_email` для `UserAlreadyExistsException`.
+	*   `missing_resource_info` (сообщение из `NoSuchMessageException`) для ошибок отсутствия ключей локализации.
+	*   Другие специфичные для ошибки поля по мере необходимости.
+	*   **5.3. Кастомные Исключения и `ErrorResponseException`:**
+	*   Бизнес-исключения, такие как `UserAlreadyExistsException` и `PasswordMismatchException`, **наследуют `org.springframework.web.ErrorResponseException`**.
+	*   Они устанавливают свой HTTP-статус, `ProblemDetail.type` (через `getBody().setType()`) и `ProblemDetail.properties` (через `getBody().setProperty()`) в конструкторе.
+	*   Предоставляют коды для `MessageSource` через переопределение `getTitleMessageCode()`, `getDetailMessageCode()`, `getDetailMessageArguments()` (если `detail` параметризован, но в основном `detail` статический, а `getDetailMessageArguments()` возвращает `null` или пустой массив).
+	*   Метод `getTypeMessageCode()` в этих исключениях возвращает `null`, так как `type` URI устанавливается напрямую.
+	*   **5.4. `GlobalExceptionHandler` (`@RestControllerAdvice`):**
+	*   Наследует `ResponseEntityExceptionHandler`.
+	*   **Обработка `ErrorResponseException`:** Делегируется родительскому `ResponseEntityExceptionHandler`, который использует информацию из исключений, реализующих `ErrorResponse`, для формирования ответа (включая вызов `updateAndGetBody` для локализации `title` и `detail` через `MessageSource`).
+	*   **Специфичные `@ExceptionHandler` методы для:**
+	*   `BadJwtException`: Формирует `ProblemDetail` с HTTP 401 и свойствами `error_type`, `jwt_error_details`.
+	*   `BadCredentialsException`: Формирует `ProblemDetail` с HTTP 401, свойством `login_error_details` и устанавливает заголовок `WWW-Authenticate`.
+	*   `AuthenticationException` (общий): Для прочих ошибок аутентификации, формирует `ProblemDetail` с HTTP 401.
+	*   `AccessDeniedException`: Формирует `ProblemDetail` с HTTP 403.
+	*   `ConstraintViolationException`: Формирует `ProblemDetail` с HTTP 400 и свойством `invalid_params`.
+	*   `NoSuchMessageException`: Формирует `ProblemDetail` с HTTP 500, указывая на ошибку конфигурации локализации, и свойством `missing_resource_info`. Имеет внутреннюю логику для предотвращения рекурсии при отсутствии ключей для самого этого обработчика.
+	*   **Переопределенный `handleMethodArgumentNotValid`**: Формирует `ProblemDetail` с HTTP 400, свойствами `invalid_params` и `error_count`. Его `detail` параметризован количеством ошибок.
+	*   Использует вспомогательный метод `buildProblemDetail` для конструирования `ProblemDetail` для исключений, не реализующих `ErrorResponse`. Этот метод ожидает статические `title` и `detail` из `MessageSource`.
+	*   Устанавливает поле `instance` в `ProblemDetail` URI текущего запроса.
+	*   **5.5. `BearerTokenProblemDetailsAuthenticationEntryPoint`:** Реализация `AuthenticationEntryPoint`. Устанавливает `WWW-Authenticate` заголовок. Делегирует `AuthenticationException` (включая `BadJwtException`) в `HandlerExceptionResolver` для обработки в `GlobalExceptionHandler`.
+	*   **5.6. `ProblemDetailsAccessDeniedHandler`:** Реализация `AccessDeniedHandler`. Делегирует `AccessDeniedException` в `HandlerExceptionResolver`.
+	*   **5.7. `BadJwtException`:** Наследует `AuthenticationException`. Хранит `JwtErrorType` и `cause`.
 
 6.  **Компоненты Авторизации (согласно ADR-0019):**
 	*   **`PermissionService`:** Spring Bean для инкапсуляции сложных/переиспользуемых правил авторизации, вызываемый из SpEL в `@PreAuthorize`.

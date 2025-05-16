@@ -44,22 +44,19 @@ public class AuthService {
      * @throws UserAlreadyExistsException если пользователь с таким email уже существует.
      * @throws PasswordMismatchException  если пароли в запросе не совпадают.
      */
-    @Transactional // Операция регистрации должна быть транзакционной
+    @Transactional
     public AuthResponse register(@NonNull RegisterRequest request) {
         if (!request.getPassword().equals(request.getRepeatPassword())) {
-            // Ключ сообщения для PasswordMismatchException может быть определен в GlobalExceptionHandler
-            // или сообщение передается напрямую.
-            throw new PasswordMismatchException("Passwords do not match.");
+            throw new PasswordMismatchException();
         }
 
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new UserAlreadyExistsException("User with email " + request.getEmail() + " already exists.");
+            throw new UserAlreadyExistsException(request.getEmail());
         }
 
         User user = new User();
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
-        // Поле User.id будет сгенерировано при сохранении.
 
         User savedUser = userRepository.save(user);
         log.info("User registered successfully: {}", savedUser.getEmail());
@@ -71,9 +68,7 @@ public class AuthService {
                 null, // Пароль не нужен для уже аутентифицированного principal
                 userDetails.getAuthorities()
         );
-        // Устанавливаем Authentication в SecurityContext (хотя для JWT это не обязательно для самого токена,
-        // но может быть полезно, если сразу после регистрации идут какие-то действия, требующие SecurityContext)
-        // SecurityContextHolder.getContext().setAuthentication(authentication); // Решили не делать, см. след. пункт
+
 
         // Генерируем JWT для этого Authentication
         String accessToken = jwtIssuer.generateToken(authentication);

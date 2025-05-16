@@ -129,7 +129,6 @@ class UserControllerIT {
                 Arguments.of(new RegisterRequest("", "password123", "password123"), "email", "Email address must not be blank."),
                 Arguments.of(new RegisterRequest("not-an-email", "password123", "password123"), "email", "Email address must be a valid format (e.g., user@example.com)."),
                 Arguments.of(new RegisterRequest("a".repeat(260) + "@example.com", "password123", "password123"), "email", "Email address length must be between 0 and 255 characters."),
-                Arguments.of(new RegisterRequest("test@example.com", "short", "short"), "password", "Password must be between 8 and 255 characters long."),
                 Arguments.of(new RegisterRequest("test@example.com", "", "password123"), "password", "Password must not be blank."), // Одна из ошибок для пустого пароля
                 Arguments.of(new RegisterRequest("test@example.com", "password123", ""), "repeatPassword", "Password confirmation must not be blank.")
         );
@@ -151,7 +150,7 @@ class UserControllerIT {
         assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         ProblemDetail problemDetail = responseEntity.getBody();
         assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "validation.methodArgumentNotValid"));
+        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "validation/methodArgumentNotValid"));
         assertThat(problemDetail.getTitle()).isEqualTo(expectedProblemTitle);
         assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
 
@@ -196,7 +195,7 @@ class UserControllerIT {
         assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         ProblemDetail problemDetail = responseEntity.getBody();
         assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "user.passwordMismatch"));
+        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "user/password-mismatch"));
         assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
         assertThat(problemDetail.getDetail()).isEqualTo(expectedDetail);
         assertThat(userRepository.count()).isZero();
@@ -222,7 +221,7 @@ class UserControllerIT {
         assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         ProblemDetail problemDetail = responseEntity.getBody();
         assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "user.alreadyExists"));
+        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "user/already-exists"));
         assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
         assertThat(problemDetail.getDetail()).isEqualTo(expectedDetail);
         assertThat(userRepository.count()).isEqualTo(1);

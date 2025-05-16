@@ -83,14 +83,13 @@ class AuthServiceTest {
 
         // Act & Assert
         assertThatExceptionOfType(PasswordMismatchException.class)
-                .isThrownBy(() -> authService.register(request))
-                .withMessage("Passwords do not match.");
+                .isThrownBy(() -> authService.register(request));
 
         verifyNoInteractions(mockUserRepository, mockPasswordEncoder, mockJwtIssuer);
     }
 
     @Test
-    @DisplayName("register: Пользователь с таким email уже существует -> должен выбросить UserAlreadyExistsException")
+    @DisplayName("register: Пользователь с таким email уже существует -> должен выбросить UserAlreadyExistsException с корректным email")
     void register_whenUserEmailAlreadyExists_shouldThrowUserAlreadyExistsException() {
         // Arrange
         RegisterRequest request = new RegisterRequest(TEST_EMAIL, TEST_PASSWORD, TEST_PASSWORD);
@@ -99,7 +98,7 @@ class AuthServiceTest {
         // Act & Assert
         assertThatExceptionOfType(UserAlreadyExistsException.class)
                 .isThrownBy(() -> authService.register(request))
-                .withMessage("User with email " + TEST_EMAIL + " already exists.");
+                .satisfies(ex-> assertThat(ex.getEmail()).isEqualTo(TEST_EMAIL));
 
         verify(mockUserRepository).existsByEmail(TEST_EMAIL);
         verifyNoInteractions(mockPasswordEncoder); // Кодирование пароля не должно произойти
@@ -116,13 +115,30 @@ class AuthServiceTest {
         when(mockUserRepository.existsByEmail(TEST_EMAIL)).thenReturn(false);
         when(mockPasswordEncoder.encode(TEST_PASSWORD)).thenReturn(TEST_HASHED_PASSWORD);
 
-        User savedUser = new User(); // Пользователь, который "вернет" мок save
-        savedUser.setId(SAVED_USER_ID);
-        savedUser.setEmail(TEST_EMAIL);
-        savedUser.setPassword(TEST_HASHED_PASSWORD);
-        // createdAt и updatedAt будут установлены JPA Auditing, здесь не мокаем
+        User userToSaveTemplate = new User(); // Шаблон пользователя, который мы ожидаем на сохранение
+        userToSaveTemplate.setEmail(TEST_EMAIL);
+        userToSaveTemplate.setPassword(TEST_HASHED_PASSWORD);
 
-        when(mockUserRepository.save(any(User.class))).thenReturn(savedUser);
+        User savedUserMock = new User(); // Мок сохраненного пользователя
+        savedUserMock.setId(SAVED_USER_ID);
+        savedUserMock.setEmail(TEST_EMAIL);
+        savedUserMock.setPassword(TEST_HASHED_PASSWORD);
+
+        // Мокаем save так, чтобы он возвращал пользователя с ID
+        when(mockUserRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User userArg = invocation.getArgument(0);
+            // Убедимся, что передаваемый на сохранение пользователь имеет правильные email и хеш пароля
+            assertThat(userArg.getEmail()).isEqualTo(TEST_EMAIL);
+            assertThat(userArg.getPassword()).isEqualTo(TEST_HASHED_PASSWORD);
+            // Имитируем, что БД присвоила ID
+            User userWithId = new User();
+            userWithId.setId(SAVED_USER_ID); // Присваиваем ID
+            userWithId.setEmail(userArg.getEmail());
+            userWithId.setPassword(userArg.getPassword());
+            // createdAt/updatedAt будут null, так как мы не мокаем JPA Auditing здесь
+            return userWithId;
+        });
+
         when(mockJwtIssuer.generateToken(any(Authentication.class))).thenReturn(TEST_JWT_TOKEN);
 
         // Act
@@ -132,15 +148,16 @@ class AuthServiceTest {
         verify(mockUserRepository).existsByEmail(TEST_EMAIL);
         verify(mockPasswordEncoder).encode(TEST_PASSWORD);
         verify(mockUserRepository).save(userArgumentCaptor.capture());
-        User userToSave = userArgumentCaptor.getValue();
-        assertThat(userToSave.getEmail()).isEqualTo(TEST_EMAIL);
-        assertThat(userToSave.getPassword()).isEqualTo(TEST_HASHED_PASSWORD);
+        User capturedUser = userArgumentCaptor.getValue();
+        assertThat(capturedUser.getEmail()).isEqualTo(TEST_EMAIL);
+        assertThat(capturedUser.getPassword()).isEqualTo(TEST_HASHED_PASSWORD);
+        // ID у capturedUser перед сохранением будет null, это нормально
 
         verify(mockJwtIssuer).generateToken(authenticationArgumentCaptor.capture());
         Authentication generatedAuth = authenticationArgumentCaptor.getValue();
         assertThat(generatedAuth.getPrincipal()).isInstanceOf(AppUserDetails.class);
         AppUserDetails principalDetails = (AppUserDetails) generatedAuth.getPrincipal();
-        assertThat(principalDetails.getId()).isEqualTo(SAVED_USER_ID); // Проверяем ID из savedUser
+        assertThat(principalDetails.getId()).isEqualTo(SAVED_USER_ID);
         assertThat(principalDetails.getUsername()).isEqualTo(TEST_EMAIL);
 
         assertThat(authResponse).isNotNull();

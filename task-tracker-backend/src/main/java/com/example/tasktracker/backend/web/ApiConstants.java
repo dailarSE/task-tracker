@@ -56,4 +56,18 @@ public final class ApiConstants {
     // TODO: (URI для ProblemDetail) - Определить и задокументировать пространство имен для type URI.
     public static final String PROBLEM_TYPE_BASE_URI = "https://task-tracker.example.com/probs/";
 
+    /**
+     * Полный путь к эндпоинту регистрации пользователя.
+     * Значение: {@value USERS_API_BASE_URL}/register.
+     * Составлен из {@link #USERS_API_BASE_URL} и {@code "/register"}.
+     */
+    public static final String REGISTER_ENDPOINT = USERS_API_BASE_URL + "/register";
+
+    /**
+     * Полный путь к эндпоинту аутентификации (логина) пользователя.
+     * Значение: {@value AUTH_API_BASE_URL}/login.
+     * Составлен из {@link #AUTH_API_BASE_URL} и {@code "/login"}.
+     */
+    public static final String LOGIN_ENDPOINT = AUTH_API_BASE_URL + "/login";
+
 }

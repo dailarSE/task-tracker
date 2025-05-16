@@ -1,6 +1,7 @@
 package com.example.tasktracker.backend.security.config;
 
 import com.example.tasktracker.backend.security.filter.JwtAuthenticationFilter;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -11,7 +12,7 @@ import org.springframework.security.config.annotation.authentication.configurati
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer; // Для отключения csrf
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -25,6 +26,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
 import java.util.List;
+
+import static com.example.tasktracker.backend.web.ApiConstants.*;
 
 /**
  * Основная конфигурация Spring Security для приложения Task Tracker.
@@ -88,8 +91,8 @@ public class SecurityConfig {
                 // Определяем правила авторизации для HTTP-запросов
                 .authorizeHttpRequests(authorize -> authorize
                         // Разрешаем публичный доступ к эндпоинтам регистрации и логина
-                        .requestMatchers(HttpMethod.POST, "/api/v1/users/register").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, REGISTER_ENDPOINT).permitAll()
+                        .requestMatchers(HttpMethod.POST, LOGIN_ENDPOINT).permitAll()
                         // TODO: Разрешить доступ к эндпоинтам Spring Boot Actuator (если они включены и нужны публично/защищенно)
                         // .requestMatchers("/actuator/**").permitAll() // или .hasRole("ADMIN") и т.д.
                         // TODO: Разрешить доступ к Swagger/OpenAPI UI и документации (если используется)
@@ -116,14 +119,20 @@ public class SecurityConfig {
         //TODO При использовании production-среды следует использовать конкретные домены
         configuration.setAllowedOriginPatterns(List.of("*")); // Разрешаем все origin-паттерны (для разработки)
         // В production лучше указать конкретные домены: List.of("http://localhost:3000", "https.yourdomain.com")
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        configuration.setAllowedMethods(Arrays.asList(
+                HttpMethod.GET.name(),
+                HttpMethod.POST.name(),
+                HttpMethod.PUT.name(),
+                HttpMethod.PATCH.name(),
+                HttpMethod.DELETE.name(),
+                HttpMethod.OPTIONS.name()
+        ));
         configuration.setAllowedHeaders(Arrays.asList(
                 HttpHeaders.AUTHORIZATION,
                 HttpHeaders.CONTENT_TYPE,
-                HttpHeaders.ACCEPT,
-                "X-Requested-With", // Часто используется AJAX-запросами
-                "Origin" // Важно для CORS
+                "X-Requested-With" // Часто используется AJAX-запросами
         ));
+        configuration.setExposedHeaders(List.of(X_ACCESS_TOKEN_HEADER));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 

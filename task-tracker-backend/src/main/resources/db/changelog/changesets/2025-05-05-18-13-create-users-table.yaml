@@ -19,7 +19,6 @@ databaseChangeLog:
                   type: VARCHAR(255)
                   constraints:
                     nullable: false
-                    unique: true
               - column:
                   name: password
                   type: VARCHAR(255) # Хеш пароля
@@ -28,25 +27,14 @@ databaseChangeLog:
               - column:
                   name: created_at
                   type: TIMESTAMP WITH TIME ZONE
-                  defaultValueComputed: CURRENT_TIMESTAMP
                   constraints:
                     nullable: false
               - column:
                   name: updated_at
                   type: TIMESTAMP WITH TIME ZONE
-                  defaultValueComputed: CURRENT_TIMESTAMP
                   constraints:
                     nullable: false
-
-#TODO remove ambiguous column index: idx_users_email
-  - changeSet:
-      id: 2
-      author: dailar401@gmail.com
-      comment: Добавление индекса на email в таблице users
-      changes:
-        - createIndex:
-            indexName: idx_users_email
+        - addUniqueConstraint:
             tableName: users
-            columns:
-              - column:
-                  name: email
+            columnNames: email
+            constraintName: uc_users_email

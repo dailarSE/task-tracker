@@ -50,7 +50,7 @@ public class JwtValidationResult {
      * @return Экземпляр {@link JwtValidationResult}, представляющий успех.
      * @throws NullPointerException если jwsClaims равен null.
      */
-    public static JwtValidationResult success(@lombok.NonNull Jws<Claims> jwsClaims) {
+    public static JwtValidationResult success(@NonNull Jws<Claims> jwsClaims) {
         return new JwtValidationResult(jwsClaims, null, null,null);
     }
 
@@ -76,7 +76,7 @@ public class JwtValidationResult {
      * @return Экземпляр {@link JwtValidationResult}, представляющий ошибку.
      * @throws NullPointerException если errorType равен null.
      */
-    public static JwtValidationResult failure(@lombok.NonNull JwtErrorType errorType, String errorMessage) {
+    public static JwtValidationResult failure(@NonNull JwtErrorType errorType, String errorMessage) {
         return failure(errorType, errorMessage, null);
     }
 

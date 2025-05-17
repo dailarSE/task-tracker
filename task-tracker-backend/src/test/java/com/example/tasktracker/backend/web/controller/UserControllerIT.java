@@ -4,12 +4,14 @@ import com.example.tasktracker.backend.security.dto.AuthResponse;
 import com.example.tasktracker.backend.security.dto.RegisterRequest;
 import com.example.tasktracker.backend.user.entity.User;
 import com.example.tasktracker.backend.user.repository.UserRepository;
+import com.example.tasktracker.backend.user.web.UserController;
 import com.example.tasktracker.backend.web.ApiConstants;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,7 +25,6 @@ import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.springframework.http.ProblemDetail;
 
 import java.net.URI;
 import java.util.List;
@@ -31,7 +32,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
-import org.junit.jupiter.params.provider.Arguments;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

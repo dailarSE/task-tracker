@@ -1,4 +1,4 @@
-package com.example.tasktracker.backend.web.controller;
+package com.example.tasktracker.backend.user.web;
 
 import com.example.tasktracker.backend.security.dto.AuthResponse;
 import com.example.tasktracker.backend.security.dto.RegisterRequest;
@@ -73,8 +73,10 @@ public class UserController {
         AuthResponse authResponse = authService.register(registerRequest);
 
         URI location = ServletUriComponentsBuilder
-                .fromCurrentContextPath().path(USERS_BASE_PATH + "/me")
-                .build().toUri();
+                .fromCurrentContextPath()
+                .path(USERS_API_BASE_URL + "/me")
+                .build()
+                .toUri();
 
         HttpHeaders responseHeaders = new HttpHeaders();
         responseHeaders.setLocation(location);

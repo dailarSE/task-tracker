@@ -22,7 +22,7 @@ import static org.mockito.Mockito.when;
  * Юнит-тесты для {@link JwtAuthenticationConverter}.
  */
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
+@MockitoSettings(strictness = Strictness.LENIENT) // Lenient, так как mockJwtProperties используется не во всех тестах после setUp
 class JwtAuthenticationConverterTest {
 
     @Mock
@@ -30,12 +30,19 @@ class JwtAuthenticationConverterTest {
 
     private JwtAuthenticationConverter jwtAuthenticationConverter;
 
-    private static final String EMAIL_CLAIM_KEY_VALUE = "email";
-    private static final String AUTHORITIES_CLAIM_KEY_VALUE = "authorities";
+    // Используем константы, соответствующие тем, что используются в JwtAuthenticationConverter и JwtIssuer
+    private static final String DEFAULT_EMAIL_CLAIM_KEY = "email"; // Это значение используется в setUp
+    private static final String DEFAULT_AUTHORITIES_CLAIM_KEY = "authorities"; // Это значение используется в одном из тестов
+
+    private static final Long TEST_USER_ID = 123L;
+    private static final String TEST_USER_EMAIL = "test@example.com";
+    private static final String TEST_RAW_JWT_TOKEN = "dummy.jwt.token";
+
 
     @BeforeEach
     void setUp() {
-        when(mockJwtProperties.getEmailClaimKey()).thenReturn(EMAIL_CLAIM_KEY_VALUE);
+        // Настраиваем мок JwtProperties для возврата ключа email по умолчанию
+        when(mockJwtProperties.getEmailClaimKey()).thenReturn(DEFAULT_EMAIL_CLAIM_KEY);
         jwtAuthenticationConverter = new JwtAuthenticationConverter(mockJwtProperties);
     }
 
@@ -50,58 +57,61 @@ class JwtAuthenticationConverterTest {
     @Test
     @DisplayName("convert: Валидные Claims -> должен вернуть Authentication с AppUserDetails")
     void convert_whenClaimsAreValid_shouldReturnAuthenticatedTokenWithAppUserDetails() {
-        when(mockJwtProperties.getAuthoritiesClaimKey()).thenReturn(AUTHORITIES_CLAIM_KEY_VALUE);
         // Arrange
+        // Для этого теста также нужно настроить AuthoritiesClaimKey, если он используется в JwtAuthenticationConverter для создания AppUserDetails
+        // В текущей версии он не используется AppUserDetails, но если бы использовался, то:
+        when(mockJwtProperties.getAuthoritiesClaimKey()).thenReturn(DEFAULT_AUTHORITIES_CLAIM_KEY);
+
         Claims claims = Jwts.claims()
-                .subject("123")
-                .add(EMAIL_CLAIM_KEY_VALUE, "test@example.com")
-                .add(AUTHORITIES_CLAIM_KEY_VALUE, "")
+                .subject(String.valueOf(TEST_USER_ID)) // Используем константу
+                .add(DEFAULT_EMAIL_CLAIM_KEY, TEST_USER_EMAIL) // Используем константу
+                .add(DEFAULT_AUTHORITIES_CLAIM_KEY, "") // Для authorities, если ожидается
                 .build();
-        String rawJwtToken = "dummy.jwt.token";
 
         // Act
-        Authentication authentication = jwtAuthenticationConverter.convert(claims, rawJwtToken);
+        Authentication authentication = jwtAuthenticationConverter.convert(claims, TEST_RAW_JWT_TOKEN);
 
         // Assert
         assertThat(authentication).isNotNull();
-        assertThat(authentication.isAuthenticated()).isTrue();
+        assertThat(authentication.isAuthenticated()).isTrue(); // UsernamePasswordAuthenticationToken по умолчанию isAuth=true, если есть principal и authorities
         assertThat(authentication.getPrincipal()).isInstanceOf(AppUserDetails.class);
 
         AppUserDetails userPrincipal = (AppUserDetails) authentication.getPrincipal();
-        assertThat(userPrincipal.getId()).isEqualTo(123L);
-        assertThat(userPrincipal.getUsername()).isEqualTo("test@example.com");
-        assertThat(userPrincipal.getAuthorities()).isNotNull().isEmpty();
+        assertThat(userPrincipal.getId()).isEqualTo(TEST_USER_ID);
+        assertThat(userPrincipal.getUsername()).isEqualTo(TEST_USER_EMAIL);
+        assertThat(userPrincipal.getAuthorities()).isNotNull().isEmpty(); // В текущей реализации AppUserDetails authorities пустые
 
-        assertThat(authentication.getCredentials()).isEqualTo(rawJwtToken);
+        assertThat(authentication.getCredentials()).isEqualTo(TEST_RAW_JWT_TOKEN);
     }
 
     @Test
-    @DisplayName("convert: Отсутствует Subject claim -> должен выбросить IllegalArgumentException")
+    @DisplayName("convert: Отсутствует Subject claim (null) -> должен выбросить IllegalArgumentException с сообщением о 'Missing sub claim'")
     void convert_whenSubjectClaimIsMissing_shouldThrowIllegalArgumentException() {
         // Arrange
-        Claims claims = Jwts.claims() // Subject не установлен
-                .add(EMAIL_CLAIM_KEY_VALUE, "test@example.com")
+        Claims claims = Jwts.claims() // Subject не установлен, claims.getSubject() вернет null
+                .add(DEFAULT_EMAIL_CLAIM_KEY, TEST_USER_EMAIL)
                 .build();
 
         // Act & Assert
         assertThatIllegalArgumentException()
-                .isThrownBy(() -> jwtAuthenticationConverter.convert(claims, "token"))
-                .withMessage("Invalid 'sub' claim in JWT: not a valid user ID format.");
+                .isThrownBy(() -> jwtAuthenticationConverter.convert(claims, TEST_RAW_JWT_TOKEN))
+                .withMessage("Missing 'sub' claim in JWT."); // Ожидаем новое сообщение из JwtAuthenticationConverter
     }
 
     @Test
-    @DisplayName("convert: Subject claim не числовой -> должен выбросить IllegalArgumentException")
+    @DisplayName("convert: Subject claim не числовой -> должен выбросить IllegalArgumentException с сообщением о 'not a valid user ID'")
     void convert_whenSubjectClaimIsNotNumeric_shouldThrowIllegalArgumentException() {
         // Arrange
+        String nonNumericSubject = "not-a-number";
         Claims claims = Jwts.claims()
-                .subject("not-a-number")
-                .add(EMAIL_CLAIM_KEY_VALUE, "test@example.com")
+                .subject(nonNumericSubject)
+                .add(DEFAULT_EMAIL_CLAIM_KEY, TEST_USER_EMAIL)
                 .build();
 
         // Act & Assert
         assertThatIllegalArgumentException()
-                .isThrownBy(() -> jwtAuthenticationConverter.convert(claims, "token"))
-                .withMessage("Invalid 'sub' claim in JWT: not a valid user ID format.")
+                .isThrownBy(() -> jwtAuthenticationConverter.convert(claims, TEST_RAW_JWT_TOKEN))
+                .withMessage("Invalid 'sub' claim in JWT: not a valid user ID.") // Проверяем точное сообщение
                 .withCauseInstanceOf(NumberFormatException.class);
     }
 
@@ -110,14 +120,15 @@ class JwtAuthenticationConverterTest {
     void convert_whenEmailClaimIsMissing_shouldThrowIllegalArgumentException() {
         // Arrange
         Claims claims = Jwts.claims()
-                .subject("123")
+                .subject(String.valueOf(TEST_USER_ID))
                 // Email claim не установлен
                 .build();
 
         // Act & Assert
         assertThatIllegalArgumentException()
-                .isThrownBy(() -> jwtAuthenticationConverter.convert(claims, "token"))
-                .withMessage("Missing or blank '" + EMAIL_CLAIM_KEY_VALUE + "' claim in JWT.");
+                .isThrownBy(() -> jwtAuthenticationConverter.convert(claims, TEST_RAW_JWT_TOKEN))
+                // Сообщение формируется с использованием DEFAULT_EMAIL_CLAIM_KEY
+                .withMessage("Missing or blank '" + DEFAULT_EMAIL_CLAIM_KEY + "' claim in JWT.");
     }
 
     @DisplayName("convert: Email claim пустой или blank -> должен выбросить IllegalArgumentException")
@@ -126,21 +137,21 @@ class JwtAuthenticationConverterTest {
     void convert_whenEmailClaimIsBlank_shouldThrowIllegalArgumentException(String blankEmail) {
         // Arrange
         Claims claims = Jwts.claims()
-                .subject("123")
-                .add(EMAIL_CLAIM_KEY_VALUE, blankEmail)
+                .subject(String.valueOf(TEST_USER_ID))
+                .add(DEFAULT_EMAIL_CLAIM_KEY, blankEmail)
                 .build();
 
         // Act & Assert
         assertThatIllegalArgumentException()
-                .isThrownBy(() -> jwtAuthenticationConverter.convert(claims, "token"))
-                .withMessage("Missing or blank '" + EMAIL_CLAIM_KEY_VALUE + "' claim in JWT.");
+                .isThrownBy(() -> jwtAuthenticationConverter.convert(claims, TEST_RAW_JWT_TOKEN))
+                .withMessage("Missing or blank '" + DEFAULT_EMAIL_CLAIM_KEY + "' claim in JWT.");
     }
 
     @Test
     @DisplayName("convert: Claims null -> должен выбросить NullPointerException (Lombok @NonNull)")
     void convert_whenClaimsIsNull_shouldThrowNullPointerException() {
         assertThatNullPointerException()
-                .isThrownBy(() -> jwtAuthenticationConverter.convert(null, "token"))
+                .isThrownBy(() -> jwtAuthenticationConverter.convert(null, TEST_RAW_JWT_TOKEN))
                 .withMessageContaining("claims is marked non-null but is null");
     }
 }

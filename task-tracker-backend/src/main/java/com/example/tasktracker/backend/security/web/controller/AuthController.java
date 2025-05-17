@@ -1,10 +1,9 @@
-package com.example.tasktracker.backend.web.controller;
+package com.example.tasktracker.backend.security.web.controller;
 
 import com.example.tasktracker.backend.security.dto.AuthResponse;
 import com.example.tasktracker.backend.security.dto.LoginRequest;
 import com.example.tasktracker.backend.security.service.AuthService;
-import com.example.tasktracker.backend.web.ApiConstants;
-import com.example.tasktracker.backend.web.exception.GlobalExceptionHandler; // Для @see ссылки
+import com.example.tasktracker.backend.web.exception.GlobalExceptionHandler;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,10 +11,10 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import static com.example.tasktracker.backend.web.ApiConstants.*;
+import static com.example.tasktracker.backend.web.ApiConstants.LOGIN_ENDPOINT;
+import static com.example.tasktracker.backend.web.ApiConstants.X_ACCESS_TOKEN_HEADER;
 
 /**
  * REST-контроллер для операций аутентификации пользователей.
@@ -26,9 +25,6 @@ import static com.example.tasktracker.backend.web.ApiConstants.*;
  * обрабатываются глобально в {@link GlobalExceptionHandler} и возвращаются клиенту
  * в формате RFC 9457 Problem Details.
  * </p>
- * <p>
- * Базовый URL для всех эндпоинтов этого контроллера: {@link ApiConstants#AUTH_BASE_PATH}.
- * </p>
  *
  * @see AuthService Сервис, инкапсулирующий логику аутентификации.
  * @see GlobalExceptionHandler Глобальный обработчик исключений.
@@ -36,7 +32,6 @@ import static com.example.tasktracker.backend.web.ApiConstants.*;
  * @see AuthResponse DTO для ответа, содержащего JWT.
  */
 @RestController
-@RequestMapping(AUTH_API_BASE_URL)
 @RequiredArgsConstructor
 @Slf4j
 public class AuthController {
@@ -63,7 +58,7 @@ public class AuthController {
      * @return {@link ResponseEntity} с {@link AuthResponse} в теле и статусом 200 OK,
      *         либо ответ об ошибке, сформированный {@link GlobalExceptionHandler}.
      */
-    @PostMapping("/login")
+    @PostMapping(LOGIN_ENDPOINT)
     public ResponseEntity<AuthResponse> loginUser(@Valid @RequestBody LoginRequest loginRequest) {
         log.info("Processing login request for email: {}", loginRequest.getEmail());
 

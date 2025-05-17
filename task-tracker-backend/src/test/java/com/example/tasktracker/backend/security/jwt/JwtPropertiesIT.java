@@ -12,7 +12,7 @@ import org.springframework.test.context.ActiveProfiles;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ActiveProfiles("ci")
-class JwtPropertiesValidationIT {
+class JwtPropertiesIT {
 
     @Configuration
     @EnableConfigurationProperties(JwtProperties.class)

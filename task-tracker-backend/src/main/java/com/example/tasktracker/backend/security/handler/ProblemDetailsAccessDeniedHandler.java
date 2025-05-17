@@ -41,9 +41,9 @@ public class ProblemDetailsAccessDeniedHandler implements AccessDeniedHandler {
      */
     @Override
     public void handle(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            AccessDeniedException accessDeniedException) {
+            @NonNull HttpServletRequest request,
+            @NonNull HttpServletResponse response,
+            @NonNull AccessDeniedException accessDeniedException) {
 
         log.debug("ProblemDetailsAccessDeniedHandler: handling access denied for user [{}] to [{} {}]. Reason: {}",
                 (request.getUserPrincipal() != null ? request.getUserPrincipal().getName() : "anonymous"),

@@ -26,26 +26,35 @@ public class JwtAuthenticationConverter {
      * Создает объект {@link Authentication} на основе claims, извлеченных из JWT.
      *
      * @param claims      Объект {@link Claims}, содержащий данные из валидного JWT. Не должен быть null.
+     *                    Ожидается, что claims будут содержать как минимум subject (ID пользователя в виде строки,
+     *                    преобразуемой в Long) и claim с email адресом пользователя (имя этого claim
+     *                    определяется в {@link JwtProperties#getEmailClaimKey()}).
      * @param rawJwtToken Оригинальная строка JWT, которая может быть использована как credentials
      *                    в объекте Authentication. Может быть null, если не используется.
      * @return Объект {@link Authentication} (обычно {@link UsernamePasswordAuthenticationToken})
      *         с {@link AppUserDetails} в качестве principal.
-     * @throws IllegalArgumentException если обязательные claims отсутствуют или имеют неверный формат.
+     * @throws IllegalArgumentException если обязательные claims (subject, email) отсутствуют,
+     *                                  имеют неверный формат или subject не может быть преобразован в Long.
      */
     public Authentication convert(@NonNull Claims claims, String rawJwtToken) {
-        Long userId;
+        long userId;
         try {
-            userId = Long.parseLong(claims.getSubject());
+            String subject = claims.getSubject();
+            if (subject == null) {
+                log.warn("JWT 'sub' claim is missing.");
+                throw new IllegalArgumentException("Missing 'sub' claim in JWT.");
+            }
+            userId = Long.parseLong(subject);
         } catch (NumberFormatException e) {
             log.warn("JWT 'sub' claim is not a valid Long: {}", claims.getSubject(), e);
-            throw new IllegalArgumentException("Invalid 'sub' claim in JWT: not a valid user ID format.", e);
+            throw new IllegalArgumentException("Invalid 'sub' claim in JWT: not a valid user ID.", e);
         }
 
-        String email = claims.get(jwtProperties.getEmailClaimKey(), String.class);
+        String emailClaimKey = jwtProperties.getEmailClaimKey();
+        String email = claims.get(emailClaimKey, String.class);
         if (email == null || email.isBlank()) {
-            log.warn("JWT '{}' claim is missing or blank.", jwtProperties.getEmailClaimKey());
-            throw new IllegalArgumentException("Missing or blank '" +
-                    jwtProperties.getEmailClaimKey() + "' claim in JWT.");
+            log.warn("JWT '{}' claim is missing or blank.", emailClaimKey);
+            throw new IllegalArgumentException("Missing or blank '" + emailClaimKey + "' claim in JWT.");
         }
 
         User user = new User();
@@ -56,7 +65,7 @@ public class JwtAuthenticationConverter {
 
         return new UsernamePasswordAuthenticationToken(
                 userPrincipal,
-                rawJwtToken, // Можно передать сам токен как "credentials"
+                rawJwtToken, // Токен как "credentials"
                 userPrincipal.getAuthorities()
         );
     }

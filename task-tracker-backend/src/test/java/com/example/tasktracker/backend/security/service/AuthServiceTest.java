@@ -18,6 +18,7 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.TestingAuthenticationToken;
@@ -62,6 +63,7 @@ class AuthServiceTest {
     private static final String TEST_HASHED_PASSWORD = "hashedPassword123";
     private static final String TEST_JWT_TOKEN = "test.jwt.token.string";
     private static final Long TEST_EXPIRATION_MS = 3600000L;
+    private static final Long TEST_EXPIRATION_SECONDS = TEST_EXPIRATION_MS / 1000;
     private static final Long SAVED_USER_ID = 1L;
 
 
@@ -112,58 +114,127 @@ class AuthServiceTest {
         // Arrange
         when(mockJwtProperties.getExpirationMs()).thenReturn(TEST_EXPIRATION_MS);
         RegisterRequest request = new RegisterRequest(TEST_EMAIL, TEST_PASSWORD, TEST_PASSWORD);
+
+        // 1. Мокирование для первичной проверки existsByEmail в register()
         when(mockUserRepository.existsByEmail(TEST_EMAIL)).thenReturn(false);
+
+        // 2. Мокирование для passwordEncoder.encode() в register()
         when(mockPasswordEncoder.encode(TEST_PASSWORD)).thenReturn(TEST_HASHED_PASSWORD);
 
-        User userToSaveTemplate = new User(); // Шаблон пользователя, который мы ожидаем на сохранение
-        userToSaveTemplate.setEmail(TEST_EMAIL);
-        userToSaveTemplate.setPassword(TEST_HASHED_PASSWORD);
-
-        User savedUserMock = new User(); // Мок сохраненного пользователя
-        savedUserMock.setId(SAVED_USER_ID);
-        savedUserMock.setEmail(TEST_EMAIL);
-        savedUserMock.setPassword(TEST_HASHED_PASSWORD);
-
-        // Мокаем save так, чтобы он возвращал пользователя с ID
-        when(mockUserRepository.save(any(User.class))).thenAnswer(invocation -> {
+        // 3. Мокирование для userRepository.saveAndFlush() внутри persistNewUser()
+        //    Это самая важная часть, так как persistNewUser теперь вызывается из register.
+        when(mockUserRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> {
             User userArg = invocation.getArgument(0);
-            // Убедимся, что передаваемый на сохранение пользователь имеет правильные email и хеш пароля
+            // Проверяем, что User, переданный в saveAndFlush, имеет корректные email и хеш пароля
             assertThat(userArg.getEmail()).isEqualTo(TEST_EMAIL);
             assertThat(userArg.getPassword()).isEqualTo(TEST_HASHED_PASSWORD);
-            // Имитируем, что БД присвоила ID
-            User userWithId = new User();
-            userWithId.setId(SAVED_USER_ID); // Присваиваем ID
+
+            // Имитируем, что БД присвоила ID и вернула сохраненного пользователя
+            User userWithId = new User(); // Создаем новый экземпляр, как это сделал бы JPA
+            userWithId.setId(SAVED_USER_ID);
             userWithId.setEmail(userArg.getEmail());
             userWithId.setPassword(userArg.getPassword());
             // createdAt/updatedAt будут null, так как мы не мокаем JPA Auditing здесь
             return userWithId;
         });
 
+        // 4. Мокирование для jwtIssuer.generateToken() в register()
         when(mockJwtIssuer.generateToken(any(Authentication.class))).thenReturn(TEST_JWT_TOKEN);
 
         // Act
         AuthResponse authResponse = authService.register(request);
 
         // Assert
-        verify(mockUserRepository).existsByEmail(TEST_EMAIL);
-        verify(mockPasswordEncoder).encode(TEST_PASSWORD);
-        verify(mockUserRepository).save(userArgumentCaptor.capture());
-        User capturedUser = userArgumentCaptor.getValue();
-        assertThat(capturedUser.getEmail()).isEqualTo(TEST_EMAIL);
-        assertThat(capturedUser.getPassword()).isEqualTo(TEST_HASHED_PASSWORD);
-        // ID у capturedUser перед сохранением будет null, это нормально
+        // Проверки вызовов
+        verify(mockUserRepository).existsByEmail(TEST_EMAIL); // Проверка из register()
+        verify(mockPasswordEncoder).encode(TEST_PASSWORD);    // Проверка из register()
+
+        // Проверяем, что saveAndFlush был вызван с правильным User объектом
+        verify(mockUserRepository).saveAndFlush(userArgumentCaptor.capture());
+        User capturedUserForSave = userArgumentCaptor.getValue();
+        assertThat(capturedUserForSave.getEmail()).isEqualTo(TEST_EMAIL);
+        assertThat(capturedUserForSave.getPassword()).isEqualTo(TEST_HASHED_PASSWORD);
+        assertThat(capturedUserForSave.getId()).isNull(); // ID еще не должен быть установлен перед вызовом saveAndFlush
 
         verify(mockJwtIssuer).generateToken(authenticationArgumentCaptor.capture());
         Authentication generatedAuth = authenticationArgumentCaptor.getValue();
         assertThat(generatedAuth.getPrincipal()).isInstanceOf(AppUserDetails.class);
         AppUserDetails principalDetails = (AppUserDetails) generatedAuth.getPrincipal();
-        assertThat(principalDetails.getId()).isEqualTo(SAVED_USER_ID);
+        assertThat(principalDetails.getId()).isEqualTo(SAVED_USER_ID); // ID из userWithId, возвращенного saveAndFlush
         assertThat(principalDetails.getUsername()).isEqualTo(TEST_EMAIL);
 
+        // Проверки AuthResponse
         assertThat(authResponse).isNotNull();
         assertThat(authResponse.getAccessToken()).isEqualTo(TEST_JWT_TOKEN);
         assertThat(authResponse.getTokenType()).isEqualTo("Bearer");
-        assertThat(authResponse.getExpiresIn()).isEqualTo(TEST_EXPIRATION_MS);
+        assertThat(authResponse.getExpiresIn()).isEqualTo(TEST_EXPIRATION_SECONDS); // Проверяем секунды
+    }
+
+    @Test
+    @DisplayName("register: Состояние гонки при сохранении (email уже существует в БД после saveAndFlush) -> должен выбросить UserAlreadyExistsException")
+    void register_whenRaceConditionOnSave_shouldThrowUserAlreadyExistsException() {
+        // Arrange
+        RegisterRequest request = new RegisterRequest(TEST_EMAIL, TEST_PASSWORD, TEST_PASSWORD);
+
+        // Настраиваем мок userRepository.existsByEmail(TEST_EMAIL) так, чтобы он:
+        // 1. Первый раз вернул false (для проверки в методе register)
+        // 2. Второй раз вернул true (для проверки в catch блоке метода persistNewUser)
+        when(mockUserRepository.existsByEmail(TEST_EMAIL))
+                .thenReturn(false)  // Для первого вызова
+                .thenReturn(true);   // Для второго вызова
+
+        when(mockPasswordEncoder.encode(TEST_PASSWORD)).thenReturn(TEST_HASHED_PASSWORD);
+
+        DataIntegrityViolationException dbException = new DataIntegrityViolationException("Simulated DB unique constraint violation");
+        when(mockUserRepository.saveAndFlush(any(User.class)))
+                .thenThrow(dbException);
+
+        // Act & Assert
+        assertThatExceptionOfType(UserAlreadyExistsException.class)
+                .isThrownBy(() -> authService.register(request))
+                .satisfies(ex -> {
+                    assertThat(ex.getEmail()).isEqualTo(TEST_EMAIL); // Это было на строке 194, ex.getEmail() не должен быть null
+                    assertThat(ex.getCause()).isSameAs(dbException); // Проверяем, что причина - это наше dbException
+                });
+
+        // Проверяем, что все моки были вызваны как ожидалось
+        verify(mockPasswordEncoder).encode(TEST_PASSWORD);
+        verify(mockUserRepository).saveAndFlush(any(User.class)); // Попытка сохранения
+        verify(mockUserRepository, times(2)).existsByEmail(TEST_EMAIL); // Должен быть вызван дважды
+        verifyNoInteractions(mockJwtIssuer); // Токен не должен генерироваться
+    }
+
+    @Test
+    @DisplayName("register: Неожиданная DataIntegrityViolationException при сохранении -> должен выбросить IllegalStateException")
+    void register_whenUnexpectedDataIntegrityViolationOnSave_shouldThrowIllegalStateException() {
+        // Arrange
+        RegisterRequest request = new RegisterRequest(TEST_EMAIL, TEST_PASSWORD, TEST_PASSWORD);
+
+        when(mockUserRepository.existsByEmail(TEST_EMAIL)).thenReturn(false); // Первичная проверка проходит
+        when(mockPasswordEncoder.encode(TEST_PASSWORD)).thenReturn(TEST_HASHED_PASSWORD);
+
+        DataIntegrityViolationException dbException = new DataIntegrityViolationException("Simulated other DB integrity violation");
+        when(mockUserRepository.saveAndFlush(any(User.class)))
+                .thenThrow(dbException);
+
+        // Имитируем, что ПОСЛЕ исключения, email НЕ существует в БД (это НЕ гонка по email)
+        // Важно, чтобы вторая проверка existsByEmail вернула false
+        // Так как первая вернула false, и вторая (после исключения) тоже false.
+        // Чтобы это сработало с одним моком, нужно использовать thenReturn с несколькими значениями:
+        when(mockUserRepository.existsByEmail(TEST_EMAIL))
+                .thenReturn(false) // Для первой проверки в register()
+                .thenReturn(false); // Для второй проверки в persistNewUser() -> catch -> if
+
+        // Act & Assert
+        assertThatExceptionOfType(IllegalStateException.class)
+                .isThrownBy(() -> authService.register(request))
+                .withMessage("Unexpected data integrity violation during user persistence")
+                .withCause(dbException);
+
+        verify(mockUserRepository, times(2)).existsByEmail(TEST_EMAIL); // Две проверки
+        verify(mockPasswordEncoder).encode(TEST_PASSWORD);
+        verify(mockUserRepository).saveAndFlush(any(User.class));
+        verifyNoInteractions(mockJwtIssuer);
     }
 
     // --- Тесты для метода login ---
@@ -211,7 +282,7 @@ class AuthServiceTest {
         assertThat(authResponse).isNotNull();
         assertThat(authResponse.getAccessToken()).isEqualTo(TEST_JWT_TOKEN);
         assertThat(authResponse.getTokenType()).isEqualTo("Bearer");
-        assertThat(authResponse.getExpiresIn()).isEqualTo(TEST_EXPIRATION_MS);
+        assertThat(authResponse.getExpiresIn()).isEqualTo(TEST_EXPIRATION_SECONDS);
     }
 
     @Test

@@ -42,7 +42,7 @@ import java.util.Objects;
  * @see com.example.tasktracker.backend.config.AppConfig Конфигурация аудита
  */
 @Entity
-@Table(name = "users") //TODO map unique email column constraint to db constraint
+@Table(name = "users")
 @Getter
 @Setter
 @NoArgsConstructor

@@ -34,7 +34,7 @@ public class AuthResponse {
      * Поле tokenType будет установлено по умолчанию в "Bearer".
      *
      * @param accessToken Сгенерированный JWT.
-     * @param expiresIn   Время жизни токена в миллисекундах.
+     * @param expiresIn   Время жизни токена в секундах.
      */
     public AuthResponse(String accessToken, Long expiresIn) {
         this.accessToken = accessToken;

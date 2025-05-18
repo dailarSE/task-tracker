@@ -166,7 +166,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 String mdcUserIdentifier = prepareMdcUserIdentifier(authentication.getPrincipal());
 
-                log.debug("Successfully authenticated user [{}] from JWT for request to [{}].",
+                log.debug("Successfully authenticated user with ID [{}] from JWT for request to [{}].",
                         mdcUserIdentifier,
                         request.getRequestURI()
                 );

@@ -9,6 +9,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Objects;
 
 /**
  * Реализация интерфейса {@link org.springframework.security.core.userdetails.UserDetails},
@@ -22,6 +23,14 @@ import java.util.Collections;
 
 public class AppUserDetails implements UserDetails {
 
+    /**
+     * -- GETTER --
+     *  Возвращает уникальный идентификатор пользователя.
+     *  <p>
+     *  Для корректно созданного экземпляра
+     *  это значение гарантированно не null.
+     *  </p>
+     */
     @Getter
     private final Long id;
     private final String email;
@@ -35,7 +44,7 @@ public class AppUserDetails implements UserDetails {
      * @throws NullPointerException если user равен null.
      */
     public AppUserDetails(@NonNull User user) {
-        this.id = user.getId();
+        this.id = Objects.requireNonNull(user.getId(), "User ID cannot be null when creating AppUserDetails");
         this.email = user.getEmail();
         this.password = user.getPassword();
 
@@ -52,8 +61,16 @@ public class AppUserDetails implements UserDetails {
         return password;
     }
 
+    /**
+     * Возвращает email пользователя, который используется в качестве имени пользователя (username).
+     * <p>
+     * Для успешно аутентифицированного пользователя это значение гарантированно не null и не пустое.
+     * </p>
+     * @return Email пользователя.
+     */
     @Override
     public String getUsername() {
         return email;
     }
+
 }

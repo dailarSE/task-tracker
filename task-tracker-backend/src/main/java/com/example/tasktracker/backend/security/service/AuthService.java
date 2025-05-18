@@ -11,21 +11,33 @@ import com.example.tasktracker.backend.security.jwt.JwtProperties;
 import com.example.tasktracker.backend.user.entity.User;
 import com.example.tasktracker.backend.user.repository.UserRepository;
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Сервис для операций регистрации и аутентификации пользователей.
+ * <p>
+ * Инкапсулирует бизнес-логику, связанную с созданием новых пользовательских аккаунтов
+ * и проверкой учетных данных существующих пользователей. Взаимодействует с компонентами
+ * для работы с базой данных ({@link UserRepository}), хеширования паролей ({@link PasswordEncoder}),
+ * управления аутентификацией Spring Security ({@link AuthenticationManager}) и генерации
+ * JWT ({@link JwtIssuer}).
+ * </p>
+ * <p>
+ * Для корректной обработки состояний гонки при регистрации и избежания проблем
+ * с транзакциями, помеченными как "rollback-only", сервис использует самоинъекцию
+ * (self-injection) через {@link Lazy} для вызова некоторых методов в новой транзакции.
+ * </p>
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class AuthService {
 
@@ -34,6 +46,38 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtIssuer jwtIssuer;
     private final JwtProperties jwtProperties;
+    private final AuthService self;
+
+    /**
+     * Конструктор {@link AuthService}.
+     * <p>
+     * Внедряет все необходимые зависимости для выполнения операций аутентификации и регистрации.
+     * Параметр {@code self} внедряется с аннотацией {@link Lazy} для разрешения циклической
+     * зависимости, возникающей при необходимости вызова методов этого же сервиса
+     * в новой транзакционной границе (например, для {@link #existsByEmailInNewTransaction(String)}).
+     * </p>
+     *
+     * @param userRepository      Репозиторий для доступа к данным пользователей.
+     * @param passwordEncoder     Кодировщик паролей для хеширования и проверки.
+     * @param authenticationManager Менеджер аутентификации Spring Security.
+     * @param jwtIssuer           Сервис для генерации JWT.
+     * @param jwtProperties       Конфигурационные свойства JWT.
+     * @param self                Ленивая ссылка на экземпляр этого же сервиса для вызова
+     *                            проксируемых методов в новых транзакциях.
+     */
+    public AuthService(UserRepository userRepository,
+                       PasswordEncoder passwordEncoder,
+                       AuthenticationManager authenticationManager,
+                       JwtIssuer jwtIssuer,
+                       JwtProperties jwtProperties,
+                       @Lazy AuthService self) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.authenticationManager = authenticationManager;
+        this.jwtIssuer = jwtIssuer;
+        this.jwtProperties = jwtProperties;
+        this.self = self;
+    }
 
     /**
      * Регистрирует нового пользователя в системе.
@@ -46,11 +90,18 @@ public class AuthService {
      * {@code userId} в MDC реализована в {@code JwtAuthenticationFilter} для уже
      * аутентифицированных запросов.
      * </p>
+     * <p>
+     * Метод является транзакционным. Внутренний вызов для сохранения пользователя
+     * ({@link #persistNewUser(User)}) обрабатывает потенциальные состояния гонки
+     * при проверке уникальности email, используя вызов к {@link #existsByEmailInNewTransaction(String)}
+     * в отдельной транзакции.
+     * </p>
      *
      * @param request DTO с данными для регистрации. Не должен быть null.
      * @return {@link AuthResponse}, содержащий JWT.
      * @throws UserAlreadyExistsException если пользователь с таким email уже существует.
      * @throws PasswordMismatchException  если пароли в запросе не совпадают.
+     * @throws NullPointerException если {@code request} равен {@code null}.
      */
     @Transactional
     public AuthResponse register(@NonNull RegisterRequest request) {
@@ -117,26 +168,25 @@ public class AuthService {
      * Сохраняет нового пользователя в базе данных, выполняя немедленную синхронизацию с БД.
      * <p>
      * Этот метод предназначен для сохранения предварительно сконфигурированного объекта {@link User}.
-     * Предполагается, что вызывающий код уже провел необходимые бизнес-валидации
-     * (например, совпадение паролей для регистрации) и, возможно, предварительную проверку
-     * на существование пользователя по email для оптимизации ("быстрый путь" отсечения).
+     * Предполагается, что вызывающий код (например, {@link #register(RegisterRequest)})
+     * уже провел необходимые бизнес-валидации.
      * </p>
      * <p>
-     * Метод специфически обрабатывает {@link DataIntegrityViolationException}:
+     * Метод специфически обрабатывает {@link DataIntegrityViolationException}, которое может возникнуть
+     * из-за нарушения уникальности email (состояние гонки). Для корректной проверки существования email
+     * после такого исключения (когда основная транзакция может быть помечена как rollback-only),
+     * используется вызов {@link #existsByEmailInNewTransaction(String)} через самоинъекцию ({@code self}),
+     * что обеспечивает выполнение проверки в новой, независимой транзакции.
+     * </p>
      * <ul>
-     *     <li>Если исключение вызвано конфликтом уникальности email (что проверяется
-     *         повторным запросом к БД), выбрасывается {@link UserAlreadyExistsException}.
-     *         Это обычно указывает на состояние гонки, когда другой запрос успел создать
-     *         пользователя с таким же email между предварительной проверкой и фактическим сохранением.</li>
-     *     <li>Если {@link DataIntegrityViolationException} вызвана другой причиной (не дублированием email),
-     *         это указывает на более серьезную, неожиданную проблему с целостностью данных или конфигурацией БД.
-     *         В этом случае выбрасывается {@link IllegalStateException}, оборачивая оригинальное исключение,
-     *         чтобы сигнализировать о критической ошибке, требующей расследования.</li>
+     *     <li>Если после {@link DataIntegrityViolationException} проверка в новой транзакции
+     *         подтверждает существование email, выбрасывается {@link UserAlreadyExistsException}.</li>
+     *     <li>Если email не существует (ошибка целостности не связана с дубликатом email),
+     *         выбрасывается {@link IllegalStateException}.</li>
      * </ul>
      * <p>
-     * Выполняется в контексте существующей транзакции, если таковая имеется,
-     * или создает новую, если вызывается без активной транзакции (в зависимости от
-     * настроек транзакционности вызывающего метода).
+     * Метод не аннотирован {@code @Transactional} сам по себе; ожидается, что он будет
+     * вызываться из контекста существующей транзакции (например, из метода {@code register}).
      * </p>
      *
      * @param userToPersist Предварительно сконфигурированный объект {@code User} для сохранения.
@@ -153,7 +203,7 @@ public class AuthService {
         try {
             return userRepository.saveAndFlush(userToPersist);
         } catch (DataIntegrityViolationException e) {
-            if (userRepository.existsByEmail(userToPersist.getEmail())) {
+            if (self.existsByEmailInNewTransaction(userToPersist.getEmail())) {
                 log.warn("DataIntegrityViolationException during persistNewUser for email: {}. " +
                                 "Confirmed email already exists (race condition). Converting to UserAlreadyExistsException.",
                         userToPersist.getEmail(), e);
@@ -167,5 +217,18 @@ public class AuthService {
                 throw new IllegalStateException("Unexpected data integrity violation during user persistence", e);
             }
         }
+    }
+
+    /**
+     * Проверяет существование пользователя по email в новой транзакции.
+     * Это необходимо, чтобы избежать проблем при проверке после DataIntegrityViolationException
+     * в основной транзакции, которая может быть помечена как rollback-only.
+     *
+     * @param email Email для проверки.
+     * @return true, если пользователь с таким email существует, иначе false.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public boolean existsByEmailInNewTransaction(@NonNull String email) {
+        return userRepository.existsByEmail(email);
     }
 }

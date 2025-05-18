@@ -10,13 +10,11 @@ import com.example.tasktracker.backend.security.jwt.JwtIssuer;
 import com.example.tasktracker.backend.security.jwt.JwtProperties;
 import com.example.tasktracker.backend.user.entity.User;
 import com.example.tasktracker.backend.user.repository.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
+import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -47,6 +45,9 @@ class AuthServiceTest {
     @Mock
     private JwtProperties mockJwtProperties;
 
+    @Mock // Мокируем self-инъекцию
+    private AuthService self; // Это поле будет использоваться в authService
+
     @InjectMocks
     private AuthService authService;
 
@@ -67,6 +68,13 @@ class AuthServiceTest {
     private static final Long SAVED_USER_ID = 1L;
 
 
+    @BeforeEach
+    void setUp() {
+        // Важно: authService уже создан через @InjectMocks, и поле self в нем
+        // будет указывать на наш @Mock AuthService self.
+        // Если бы мы создавали authService вручную, нам бы пришлось передать этот мок в конструктор.
+    }
+
     // --- Тесты для метода register ---
 
     @Test
@@ -80,160 +88,125 @@ class AuthServiceTest {
     @Test
     @DisplayName("register: Пароли не совпадают -> должен выбросить PasswordMismatchException")
     void register_whenPasswordsDoNotMatch_shouldThrowPasswordMismatchException() {
-        // Arrange
         RegisterRequest request = new RegisterRequest(TEST_EMAIL, TEST_PASSWORD, "differentPassword");
-
-        // Act & Assert
         assertThatExceptionOfType(PasswordMismatchException.class)
                 .isThrownBy(() -> authService.register(request));
-
-        verifyNoInteractions(mockUserRepository, mockPasswordEncoder, mockJwtIssuer);
+        verifyNoInteractions(mockUserRepository, mockPasswordEncoder, mockJwtIssuer, self);
     }
 
     @Test
-    @DisplayName("register: Пользователь с таким email уже существует -> должен выбросить UserAlreadyExistsException с корректным email")
-    void register_whenUserEmailAlreadyExists_shouldThrowUserAlreadyExistsException() {
-        // Arrange
+    @DisplayName("register: Пользователь с таким email уже существует (проверка перед сохранением) -> должен выбросить UserAlreadyExistsException")
+    void register_whenUserEmailAlreadyExistsBeforeSave_shouldThrowUserAlreadyExistsException() {
         RegisterRequest request = new RegisterRequest(TEST_EMAIL, TEST_PASSWORD, TEST_PASSWORD);
         when(mockUserRepository.existsByEmail(TEST_EMAIL)).thenReturn(true);
 
-        // Act & Assert
         assertThatExceptionOfType(UserAlreadyExistsException.class)
                 .isThrownBy(() -> authService.register(request))
-                .satisfies(ex-> assertThat(ex.getEmail()).isEqualTo(TEST_EMAIL));
+                .satisfies(ex -> assertThat(ex.getEmail()).isEqualTo(TEST_EMAIL));
 
         verify(mockUserRepository).existsByEmail(TEST_EMAIL);
-        verifyNoInteractions(mockPasswordEncoder); // Кодирование пароля не должно произойти
-        verify(mockUserRepository, never()).save(any(User.class)); // Сохранение не должно произойти
-        verifyNoInteractions(mockJwtIssuer);
+        verifyNoInteractions(mockPasswordEncoder, mockJwtIssuer, self);
+        verify(mockUserRepository, never()).saveAndFlush(any(User.class));
     }
 
     @Test
     @DisplayName("register: Валидный запрос -> должен сохранить пользователя, сгенерировать токен и вернуть AuthResponse")
     void register_whenRequestIsValid_shouldSaveUserEncodePasswordAndReturnAuthResponseWithToken() {
-        // Arrange
         when(mockJwtProperties.getExpirationMs()).thenReturn(TEST_EXPIRATION_MS);
         RegisterRequest request = new RegisterRequest(TEST_EMAIL, TEST_PASSWORD, TEST_PASSWORD);
 
-        // 1. Мокирование для первичной проверки existsByEmail в register()
         when(mockUserRepository.existsByEmail(TEST_EMAIL)).thenReturn(false);
-
-        // 2. Мокирование для passwordEncoder.encode() в register()
         when(mockPasswordEncoder.encode(TEST_PASSWORD)).thenReturn(TEST_HASHED_PASSWORD);
 
-        // 3. Мокирование для userRepository.saveAndFlush() внутри persistNewUser()
-        //    Это самая важная часть, так как persistNewUser теперь вызывается из register.
+        // Мокируем userRepository.saveAndFlush()
         when(mockUserRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> {
             User userArg = invocation.getArgument(0);
-            // Проверяем, что User, переданный в saveAndFlush, имеет корректные email и хеш пароля
-            assertThat(userArg.getEmail()).isEqualTo(TEST_EMAIL);
-            assertThat(userArg.getPassword()).isEqualTo(TEST_HASHED_PASSWORD);
-
-            // Имитируем, что БД присвоила ID и вернула сохраненного пользователя
-            User userWithId = new User(); // Создаем новый экземпляр, как это сделал бы JPA
+            User userWithId = new User();
             userWithId.setId(SAVED_USER_ID);
             userWithId.setEmail(userArg.getEmail());
             userWithId.setPassword(userArg.getPassword());
-            // createdAt/updatedAt будут null, так как мы не мокаем JPA Auditing здесь
             return userWithId;
         });
 
-        // 4. Мокирование для jwtIssuer.generateToken() в register()
         when(mockJwtIssuer.generateToken(any(Authentication.class))).thenReturn(TEST_JWT_TOKEN);
 
-        // Act
         AuthResponse authResponse = authService.register(request);
 
-        // Assert
-        // Проверки вызовов
-        verify(mockUserRepository).existsByEmail(TEST_EMAIL); // Проверка из register()
-        verify(mockPasswordEncoder).encode(TEST_PASSWORD);    // Проверка из register()
+        verify(mockUserRepository).existsByEmail(TEST_EMAIL);
+        verify(mockPasswordEncoder).encode(TEST_PASSWORD);
 
-        // Проверяем, что saveAndFlush был вызван с правильным User объектом
         verify(mockUserRepository).saveAndFlush(userArgumentCaptor.capture());
         User capturedUserForSave = userArgumentCaptor.getValue();
         assertThat(capturedUserForSave.getEmail()).isEqualTo(TEST_EMAIL);
         assertThat(capturedUserForSave.getPassword()).isEqualTo(TEST_HASHED_PASSWORD);
-        assertThat(capturedUserForSave.getId()).isNull(); // ID еще не должен быть установлен перед вызовом saveAndFlush
+        assertThat(capturedUserForSave.getId()).isNull();
 
         verify(mockJwtIssuer).generateToken(authenticationArgumentCaptor.capture());
         Authentication generatedAuth = authenticationArgumentCaptor.getValue();
         assertThat(generatedAuth.getPrincipal()).isInstanceOf(AppUserDetails.class);
         AppUserDetails principalDetails = (AppUserDetails) generatedAuth.getPrincipal();
-        assertThat(principalDetails.getId()).isEqualTo(SAVED_USER_ID); // ID из userWithId, возвращенного saveAndFlush
+        assertThat(principalDetails.getId()).isEqualTo(SAVED_USER_ID);
         assertThat(principalDetails.getUsername()).isEqualTo(TEST_EMAIL);
 
-        // Проверки AuthResponse
         assertThat(authResponse).isNotNull();
         assertThat(authResponse.getAccessToken()).isEqualTo(TEST_JWT_TOKEN);
         assertThat(authResponse.getTokenType()).isEqualTo("Bearer");
-        assertThat(authResponse.getExpiresIn()).isEqualTo(TEST_EXPIRATION_SECONDS); // Проверяем секунды
+        assertThat(authResponse.getExpiresIn()).isEqualTo(TEST_EXPIRATION_SECONDS);
+
+        verifyNoInteractions(self); // self не должен был вызываться в этом сценарии
     }
 
     @Test
-    @DisplayName("register: Состояние гонки при сохранении (email уже существует в БД после saveAndFlush) -> должен выбросить UserAlreadyExistsException")
+    @DisplayName("register: Состояние гонки (DataIntegrityViolationException, затем email существует в новой транзакции) -> должен выбросить UserAlreadyExistsException")
     void register_whenRaceConditionOnSave_shouldThrowUserAlreadyExistsException() {
-        // Arrange
         RegisterRequest request = new RegisterRequest(TEST_EMAIL, TEST_PASSWORD, TEST_PASSWORD);
 
-        // Настраиваем мок userRepository.existsByEmail(TEST_EMAIL) так, чтобы он:
-        // 1. Первый раз вернул false (для проверки в методе register)
-        // 2. Второй раз вернул true (для проверки в catch блоке метода persistNewUser)
-        when(mockUserRepository.existsByEmail(TEST_EMAIL))
-                .thenReturn(false)  // Для первого вызова
-                .thenReturn(true);   // Для второго вызова
-
+        when(mockUserRepository.existsByEmail(TEST_EMAIL)).thenReturn(false); // Первичная проверка
         when(mockPasswordEncoder.encode(TEST_PASSWORD)).thenReturn(TEST_HASHED_PASSWORD);
 
         DataIntegrityViolationException dbException = new DataIntegrityViolationException("Simulated DB unique constraint violation");
-        when(mockUserRepository.saveAndFlush(any(User.class)))
-                .thenThrow(dbException);
+        when(mockUserRepository.saveAndFlush(any(User.class))).thenThrow(dbException);
 
-        // Act & Assert
+        // **Ключевое изменение:** Мокируем вызов self.existsByEmailInNewTransaction()
+        when(self.existsByEmailInNewTransaction(TEST_EMAIL)).thenReturn(true);
+
         assertThatExceptionOfType(UserAlreadyExistsException.class)
                 .isThrownBy(() -> authService.register(request))
                 .satisfies(ex -> {
-                    assertThat(ex.getEmail()).isEqualTo(TEST_EMAIL); // Это было на строке 194, ex.getEmail() не должен быть null
-                    assertThat(ex.getCause()).isSameAs(dbException); // Проверяем, что причина - это наше dbException
+                    assertThat(ex.getEmail()).isEqualTo(TEST_EMAIL);
+                    assertThat(ex.getCause()).isSameAs(dbException);
                 });
 
-        // Проверяем, что все моки были вызваны как ожидалось
+        verify(mockUserRepository).existsByEmail(TEST_EMAIL); // Первичная проверка
         verify(mockPasswordEncoder).encode(TEST_PASSWORD);
-        verify(mockUserRepository).saveAndFlush(any(User.class)); // Попытка сохранения
-        verify(mockUserRepository, times(2)).existsByEmail(TEST_EMAIL); // Должен быть вызван дважды
-        verifyNoInteractions(mockJwtIssuer); // Токен не должен генерироваться
+        verify(mockUserRepository).saveAndFlush(any(User.class));
+        verify(self).existsByEmailInNewTransaction(TEST_EMAIL); // Проверка вызова self
+        verifyNoInteractions(mockJwtIssuer);
     }
 
     @Test
-    @DisplayName("register: Неожиданная DataIntegrityViolationException при сохранении -> должен выбросить IllegalStateException")
+    @DisplayName("register: Неожиданная DataIntegrityViolationException (email НЕ существует в новой транзакции) -> должен выбросить IllegalStateException")
     void register_whenUnexpectedDataIntegrityViolationOnSave_shouldThrowIllegalStateException() {
-        // Arrange
         RegisterRequest request = new RegisterRequest(TEST_EMAIL, TEST_PASSWORD, TEST_PASSWORD);
 
-        when(mockUserRepository.existsByEmail(TEST_EMAIL)).thenReturn(false); // Первичная проверка проходит
+        when(mockUserRepository.existsByEmail(TEST_EMAIL)).thenReturn(false); // Первичная проверка
         when(mockPasswordEncoder.encode(TEST_PASSWORD)).thenReturn(TEST_HASHED_PASSWORD);
 
         DataIntegrityViolationException dbException = new DataIntegrityViolationException("Simulated other DB integrity violation");
-        when(mockUserRepository.saveAndFlush(any(User.class)))
-                .thenThrow(dbException);
+        when(mockUserRepository.saveAndFlush(any(User.class))).thenThrow(dbException);
 
-        // Имитируем, что ПОСЛЕ исключения, email НЕ существует в БД (это НЕ гонка по email)
-        // Важно, чтобы вторая проверка existsByEmail вернула false
-        // Так как первая вернула false, и вторая (после исключения) тоже false.
-        // Чтобы это сработало с одним моком, нужно использовать thenReturn с несколькими значениями:
-        when(mockUserRepository.existsByEmail(TEST_EMAIL))
-                .thenReturn(false) // Для первой проверки в register()
-                .thenReturn(false); // Для второй проверки в persistNewUser() -> catch -> if
+        // **Ключевое изменение:** Мокируем вызов self.existsByEmailInNewTransaction()
+        when(self.existsByEmailInNewTransaction(TEST_EMAIL)).thenReturn(false); // Email НЕ существует
 
-        // Act & Assert
         assertThatExceptionOfType(IllegalStateException.class)
                 .isThrownBy(() -> authService.register(request))
                 .withMessage("Unexpected data integrity violation during user persistence")
                 .withCause(dbException);
 
-        verify(mockUserRepository, times(2)).existsByEmail(TEST_EMAIL); // Две проверки
+        verify(mockUserRepository).existsByEmail(TEST_EMAIL); // Первичная проверка
         verify(mockPasswordEncoder).encode(TEST_PASSWORD);
         verify(mockUserRepository).saveAndFlush(any(User.class));
+        verify(self).existsByEmailInNewTransaction(TEST_EMAIL); // Проверка вызова self
         verifyNoInteractions(mockJwtIssuer);
     }
 
@@ -250,28 +223,24 @@ class AuthServiceTest {
     @Test
     @DisplayName("login: Валидные креды -> должен аутентифицировать, сгенерировать токен и вернуть AuthResponse")
     void login_whenCredentialsAreValid_shouldAuthenticateAndReturnAuthResponseWithToken() {
-        // Arrange
         when(mockJwtProperties.getExpirationMs()).thenReturn(TEST_EXPIRATION_MS);
         LoginRequest request = new LoginRequest(TEST_EMAIL, TEST_PASSWORD);
 
-        User userFromDb = new User(); // Пользователь, который "вернет" UserDetailsService
+        User userFromDb = new User();
         userFromDb.setId(SAVED_USER_ID);
         userFromDb.setEmail(TEST_EMAIL);
-        userFromDb.setPassword(TEST_HASHED_PASSWORD); // Хешированный пароль, который будет в UserDetails
+        userFromDb.setPassword(TEST_HASHED_PASSWORD);
         AppUserDetails authenticatedUserDetails = new AppUserDetails(userFromDb);
         Authentication successfulAuthentication = new TestingAuthenticationToken(
                 authenticatedUserDetails, TEST_PASSWORD, authenticatedUserDetails.getAuthorities()
         );
-        // Настраиваем AuthenticationManager
         when(mockAuthenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
                 .thenReturn(successfulAuthentication);
 
         when(mockJwtIssuer.generateToken(successfulAuthentication)).thenReturn(TEST_JWT_TOKEN);
 
-        // Act
         AuthResponse authResponse = authService.login(request);
 
-        // Assert
         verify(mockAuthenticationManager).authenticate(upatArgumentCaptor.capture());
         UsernamePasswordAuthenticationToken upat = upatArgumentCaptor.getValue();
         assertThat(upat.getName()).isEqualTo(TEST_EMAIL);
@@ -283,21 +252,22 @@ class AuthServiceTest {
         assertThat(authResponse.getAccessToken()).isEqualTo(TEST_JWT_TOKEN);
         assertThat(authResponse.getTokenType()).isEqualTo("Bearer");
         assertThat(authResponse.getExpiresIn()).isEqualTo(TEST_EXPIRATION_SECONDS);
+
+        verifyNoInteractions(self); // self не должен был вызываться
     }
 
     @Test
     @DisplayName("login: Невалидные креды (AuthenticationManager выбрасывает исключение) -> должен пробросить исключение")
     void login_whenAuthenticationManagerThrowsAuthenticationException_shouldPropagateException() {
-        // Arrange
         LoginRequest request = new LoginRequest(TEST_EMAIL, "wrongPassword");
         when(mockAuthenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
                 .thenThrow(new BadCredentialsException("Bad credentials for test"));
 
-        // Act & Assert
         assertThatExceptionOfType(BadCredentialsException.class)
                 .isThrownBy(() -> authService.login(request))
                 .withMessage("Bad credentials for test");
 
-        verify(mockJwtIssuer, never()).generateToken(any(Authentication.class)); // Токен не должен генерироваться
+        verify(mockJwtIssuer, never()).generateToken(any(Authentication.class));
+        verifyNoInteractions(self); // self не должен был вызываться
     }
 }

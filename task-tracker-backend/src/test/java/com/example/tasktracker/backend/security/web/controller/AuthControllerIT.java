@@ -1,8 +1,7 @@
-package com.example.tasktracker.backend.web.controller;
+package com.example.tasktracker.backend.security.web.controller;
 
 import com.example.tasktracker.backend.security.dto.AuthResponse;
 import com.example.tasktracker.backend.security.dto.LoginRequest;
-import com.example.tasktracker.backend.security.web.controller.AuthController;
 import com.example.tasktracker.backend.user.entity.User;
 import com.example.tasktracker.backend.user.repository.UserRepository;
 import com.example.tasktracker.backend.web.ApiConstants;

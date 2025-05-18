@@ -1,8 +1,10 @@
 package com.example.tasktracker.backend.user.web;
 
+import com.example.tasktracker.backend.security.details.AppUserDetails;
 import com.example.tasktracker.backend.security.dto.AuthResponse;
 import com.example.tasktracker.backend.security.dto.RegisterRequest;
 import com.example.tasktracker.backend.security.service.AuthService;
+import com.example.tasktracker.backend.user.dto.UserResponse;
 import com.example.tasktracker.backend.web.exception.GlobalExceptionHandler;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -10,10 +12,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.authentication.InsufficientAuthenticationException;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
@@ -23,18 +24,23 @@ import static com.example.tasktracker.backend.web.ApiConstants.*;
 /**
  * REST-контроллер для операций, связанных с пользователями.
  * <p>
- * Предоставляет эндпоинты для управления пользовательскими аккаунтами.
- * На данный момент реализован только эндпоинт для регистрации новых пользователей.
+ * Предоставляет эндпоинты для управления пользовательскими аккаунтами,
+ * включая регистрацию новых пользователей и получение информации о текущем
+ * аутентифицированном пользователе.
+ * </p>
+ * <p>
  * Все ошибки, возникающие при обработке запросов (например, ошибки валидации DTO
  * или бизнес-исключения из {@link AuthService}), обрабатываются глобально
  * в {@link GlobalExceptionHandler} и возвращаются клиенту в формате
  * RFC 9457 Problem Details.
  * </p>
  *
- * @see AuthService Сервис, инкапсулирующий логику регистрации.
+ * @see AuthService Сервис, инкапсулирующий логику регистрации и аутентификации.
  * @see GlobalExceptionHandler Глобальный обработчик исключений.
  * @see RegisterRequest DTO для запроса на регистрацию.
  * @see AuthResponse DTO для ответа, содержащего JWT.
+ * @see UserResponse DTO для ответа с информацией о пользователе.
+ * @see AppUserDetails Детали аутентифицированного пользователя.
  */
 @RestController
 @RequestMapping(USERS_API_BASE_URL)
@@ -64,7 +70,7 @@ public class UserController {
      * @param registerRequest DTO с данными для регистрации. Должен быть аннотирован {@code @Valid}
      *                        для активации валидации.
      * @return {@link ResponseEntity} с {@link AuthResponse} в теле и статусом 201 Created,
-     *         либо ответ об ошибке, сформированный {@link GlobalExceptionHandler}.
+     * либо ответ об ошибке, сформированный {@link GlobalExceptionHandler}.
      */
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> registerUser(@Valid @RequestBody RegisterRequest registerRequest) {
@@ -84,5 +90,46 @@ public class UserController {
 
         log.info("User registration successful for email: {}. JWT issued.", registerRequest.getEmail());
         return new ResponseEntity<>(authResponse, responseHeaders, HttpStatus.CREATED);
+    }
+
+    /**
+     * Получает информацию о текущем аутентифицированном пользователе.
+     * <p>
+     * Эндпоинт: {@code GET /api/v1/users/me}
+     * </p>
+     * <p>
+     * Доступен только для аутентифицированных пользователей. При успешном запросе
+     * возвращает HTTP статус 200 OK с {@link UserResponse} в теле, содержащим
+     * ID и email текущего пользователя.
+     * </p>
+     * <p>
+     * В случае отсутствия или невалидности JWT, запрос будет отклонен на уровне
+     * фильтров безопасности с HTTP статусом 401 Unauthorized.
+     * </p>
+     *
+     * @param userDetails Данные текущего аутентифицированного пользователя (реализация {@link AppUserDetails}),
+     *                    внедренные Spring Security. Ожидается, что этот параметр будет не-null
+     *                    для защищенного эндпоинта.
+     * @return {@link ResponseEntity} с {@link UserResponse} в теле, содержащим ID и email
+     * пользователя, и статусом 200 OK.
+     * @throws InsufficientAuthenticationException если {@code userDetails} равен {@code null},
+     *                                             что указывает на потенциальную проблему
+     *                                             в конфигурации безопасности или в цепочке фильтров
+     *                                             для защищенного эндпоинта. Такая ситуация должна
+     *                                             быть обработана {@link GlobalExceptionHandler}.
+     */
+    @GetMapping("/me")
+    public ResponseEntity<UserResponse> getCurrentUser(@AuthenticationPrincipal AppUserDetails userDetails) {
+        if (userDetails == null) {
+            log.warn("AppUserDetails principal is null. This might indicate a security configuration issue or a " +
+                    "filter chain problem for a supposedly authenticated endpoint.");
+            throw new InsufficientAuthenticationException("Authenticated principal is not available or not of expected " +
+                    "type AppUserDetails.");
+        }
+
+        log.info("Processing request to get current user details for userId: {}", userDetails.getId());
+        UserResponse response = new UserResponse(userDetails.getId(), userDetails.getUsername());
+        log.info("Successfully retrieved current user details for userId: {}", userDetails.getId());
+        return ResponseEntity.ok(response);
     }
 }

@@ -902,3 +902,117 @@ Superseded by ADR-0028
     *   Каждая сущность, требующая автогенерируемого ID, будет иметь свой собственный именованный sequence в базе данных (например, `users_id_seq`, `tasks_id_seq`), который будет создаваться через миграции Liquibase.
     *   Стратегия `GenerationType.IDENTITY` будет рассматриваться только в исключительных случаях, если для конкретной сущности она будет явно более подходящей и не будет ожидаться пакетных операций с предварительным получением ID.
 7.  **Проверка соответствия схемы:** Настроить Hibernate на проверку соответствия JPA-сущностей схеме БД, созданной Liquibase, используя свойство `spring.jpa.hibernate.ddl-auto: validate`.
+
+# ADR-TASK-01: Архитектура Сущности `Task`, ее API и Связанных Компонентов
+
+### 2.0. Жизненный Цикл Задачи (Task Lifecycle)
+
+*   **Создание:** Задача создается пользователем. При создании ей автоматически присваивается статус `PENDING`. Поля `title` и (опционально) `description` задаются пользователем. `createdAt` и `updatedAt` устанавливаются автоматически. `completedAt` равно `null`.
+*   **В работе (Pending):** Задача находится в статусе `PENDING`. Пользователь может обновлять ее `title` и `description` (через `PUT`).
+*   **Завершение:** Пользователь меняет статус задачи на `COMPLETED` (через `PATCH`). При этом:
+	*   Поле `status` обновляется на `COMPLETED`.
+	*   Поле `completedAt` устанавливается в текущее время (UTC, через `Clock`).
+	*   Поле `updatedAt` обновляется.
+*   **Возобновление (Reopen):** Пользователь может изменить статус завершенной задачи обратно на `PENDING` (через `PATCH`). При этом:
+	*   Поле `status` обновляется на `PENDING`.
+	*   Поле `completedAt` устанавливается в `null`.
+	*   Поле `updatedAt` обновляется.
+*   **Редактирование (Общее через `PUT`):** Пользователь может редактировать `title`, `description` и `status` задачи через операцию `PUT`. Это приводит к обновлению `updatedAt`. Если меняется `status`, соответственно обновляется `completedAt`.
+*   **Удаление:** Пользователь может удалить задачу. Задача физически удаляется из БД.
+
+### 2.1. Сущность `Task` (`Task.java`)
+
+*   **Местоположение:** `com.example.tasktracker.backend.task.entity`
+*   **Основные Поля:**
+	*   `id` (Long): Первичный ключ. Генерация через `@SequenceGenerator` (согласно ADR-0029). Имя sequence: `tasks_id_seq`.
+	*   `title` (String): Заголовок задачи. Обязательное поле. Валидация: `@NotBlank`, `@Size(min=1, max=255)`.
+	*   `description` (String): Описание задачи. Опциональное. Валидация: `@Size(max=1000)`.
+	*   `status` (Enum `TaskStatus`): Статус задачи. Не может быть `null` в БД.
+	*   `createdAt` (Instant): Время создания. Заполняется через JPA Auditing (`@CreatedDate`, согласно ADR-0029, ADR-0027).
+	*   `updatedAt` (Instant): Время последнего обновления. Заполняется через JPA Auditing (`@LastModifiedDate`).
+	*   `completedAt` (Instant, nullable): Время завершения задачи. Устанавливается, когда `status` меняется на `COMPLETED`. Обнуляется, если задача снова становится `PENDING`.
+	*   `user` (User): Однонаправленная связь `ManyToOne` с сущностью `User`. Колонка в БД: `user_id`.
+		*   `@ManyToOne(fetch = FetchType.LAZY, optional = false)`
+		*   `@JoinColumn(name = "user_id", nullable = false, updatable = false)` (согласно ADR-0019, владелец не меняется).
+*   **Enum `TaskStatus.java`:**
+	*   Местоположение: `com.example.tasktracker.backend.task.entity`
+	*   Значения: `PENDING`, `COMPLETED`.
+*   **Аннотации:**
+	*   JPA (`@Entity`, `@Table(name = "tasks")`, `@Id`, `@SequenceGenerator`, `@ManyToOne`, `@Enumerated(EnumType.STRING)` для `status`).
+	*   JPA Auditing (`@EntityListeners(AuditingEntityListener.class)`, `@CreatedDate`, `@LastModifiedDate`).
+	*   Jakarta Bean Validation на полях (см. выше). Сообщения из Resource Bundle (ADR-0024).
+	*   Lombok (`@Getter`, `@Setter`, `@NoArgsConstructor`, `@AllArgsConstructor`, `equals/hashCode` по `id`).
+
+### 2.2. Репозиторий Задач (`TaskRepository.java`)
+
+*   **Местоположение:** `com.example.tasktracker.backend.task.repository`
+*   **Принципы (согласно ADR-0019):**
+	*   Не наследует стандартные интерфейсы Spring Data JPA по умолчанию.
+	*   Определяет только необходимые "безопасные" методы.
+*   **Примерные Методы:**
+	*   `Optional<Task> findByIdAndUserId(Long taskId, Long userId);`
+	*   `Page<Task> findAllByUserId(Long userId, Pageable pageable);` (для пагинации и базовой сортировки)
+	*   `Page<Task> findAllByUserIdAndStatus(Long userId, TaskStatus status, Pageable pageable);` (для фильтрации по статусу)
+	*   `Task save(Task task);`
+	*   `int deleteByIdAndUserId(Long taskId, Long userId);`
+	*   Возможно, `boolean existsByIdAndUserId(Long taskId, Long userId);`
+
+### 2.3. DTO (Data Transfer Objects) для Задач
+
+*   Местоположение: `com.example.tasktracker.backend.task.dto`
+*   **`TaskCreateRequest.java`:**
+	*   `title` (String): `@NotBlank`, `@Size(min=1, max=255)`.
+	*   `description` (String, optional): `@Size(max=1000)`.
+*   **`TaskUpdateRequest.java`:** (Для `PUT`, полное обновление)
+	*   `title` (String): `@NotBlank`, `@Size(min=1, max=255)`.
+	*   `description` (String, optional): `@Size(max=1000)`.
+	*   `status` (TaskStatus): `@NotNull`.
+*   **`TaskStatusUpdateRequest.java`:** (Для `PATCH`, обновление только статуса)
+	*   `status` (TaskStatus): `@NotNull`.
+*   **`TaskResponse.java`:**
+	*   `id` (Long)
+	*   `title` (String)
+	*   `description` (String, nullable)
+	*   `status` (TaskStatus)
+	*   `createdAt` (Instant)
+	*   `updatedAt` (Instant)
+	*   `completedAt` (Instant, nullable)
+	*   `userId` (Long) - ID владельца задачи.
+
+### 2.4. Сервисный Слой (`TaskService.java`)
+
+*   Местоположение: `com.example.tasktracker.backend.task.service`
+*   **Ответственность:**
+	*   Бизнес-логика CRUD операций с задачами.
+	*   Обеспечение авторизации (использование `currentUserId`, полученного от контроллера, для вызова методов репозитория).
+	*   Установка связи с `User` для новых задач (`task.setUser(userRepository.getReferenceById(currentUserId))`).
+	*   Обработка логики `completedAt` при изменении статуса.
+	*   Валидация (если требуется более сложная, чем на уровне DTO).
+	*   Взаимодействие с `TaskRepository`.
+*   **Примерные Сигнатуры Методов:**
+	*   `TaskResponse createTask(TaskCreateRequest request, Long currentUserId);`
+	*   `Page<TaskResponse> getAllTasksForCurrentUser(Long currentUserId, Pageable pageable);`
+	*   `Page<TaskResponse> getAllTasksForCurrentUserByStatus(Long currentUserId, TaskStatus status, Pageable pageable);`
+	*   `Optional<TaskResponse> getTaskByIdForCurrentUser(Long taskId, Long currentUserId);`
+	*   `Optional<TaskResponse> updateTask(Long taskId, TaskUpdateRequest request, Long currentUserId);`
+	*   `Optional<TaskResponse> updateTaskStatus(Long taskId, TaskStatusUpdateRequest request, Long currentUserId);`
+	*   `boolean deleteTask(Long taskId, Long currentUserId);`
+
+### 2.5. Контроллер Задач (`TaskController.java`)
+
+*   Местоположение: `com.example.tasktracker.backend.task.web`
+*   **Базовый URL:** `/api/v1/tasks`
+*   **Методы получения `currentUserId`:** Внедрение `@AuthenticationPrincipal AppUserDetails currentUser` в методы контроллера для извлечения `currentUser.getId()`, который затем передается в сервисный слой.
+*   **Эндпоинты:**
+	*   `POST /`: Создание задачи. Возвращает `201 Created` с `TaskResponse` и `Location` header.
+	*   `GET /`: Получение списка задач текущего пользователя.
+		*   Поддерживает query-параметры для пагинации: `page` (0-based, default 0), `size` (default 20, max 100).
+		*   Поддерживает опциональный query-параметр для фильтрации: `status` (значения `PENDING` или `COMPLETED`).
+		*   Возвращает `200 OK` с объектом, содержащим контент (список `TaskResponse`) и метаданные пагинации.
+	*   `GET /{taskId}`: Получение задачи по ID. Возвращает `200 OK` с `TaskResponse` или `404 Not Found` (Problem Details).
+	*   `PUT /{taskId}`: Полное обновление задачи (`title`, `description`, `status`). Возвращает `200 OK` с обновленным `TaskResponse` или `404`.
+	*   `PATCH /{taskId}`: Частичное обновление задачи – **только статус**. Возвращает `200 OK` с обновленным `TaskResponse` или `404`.
+	*   `DELETE /{taskId}`: Удаление задачи. Возвращает `204 No Content` или `404`.
+*   **Аутентификация:** Все эндпоинты требуют аутентификации.
+*   **Авторизация:** Обеспечивается сервисным слоем и репозиторием (владение ресурсом).
+*   **Обработка ошибок:** Используется `GlobalExceptionHandler` для Problem Details.

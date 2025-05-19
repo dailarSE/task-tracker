@@ -16,7 +16,7 @@ spring:
     enabled: true
     change-log: classpath:/db/changelog/db.changelog-master.yaml
   messages:
-    basename: i18n/security/messages, i18n/user/messages
+    basename: i18n/security/messages, i18n/user/messages, i18n/task/messages
     encoding: UTF-8
     fallback-to-system-locale: false
 

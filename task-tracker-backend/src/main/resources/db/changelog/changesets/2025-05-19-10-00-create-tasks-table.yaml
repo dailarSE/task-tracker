@@ -1,0 +1,76 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2
+      author: dailar401@gmail.com
+      comment: Create tasks table and associated sequence and indexes
+      changes:
+        - createSequence:
+            sequenceName: tasks_id_seq
+            incrementBy: 50
+            startValue: 1
+
+        - createTable:
+            tableName: tasks
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: title
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: VARCHAR(1000) # Как в ADR, может быть TEXT если описания очень длинные
+                  constraints:
+                    nullable: true
+              - column:
+                  name: status
+                  type: VARCHAR(50) # Для хранения enum TaskStatus (PENDING, COMPLETED)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: completed_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: true
+              - column:
+                  name: user_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+
+        - addForeignKeyConstraint:
+            baseColumnNames: user_id
+            baseTableName: tasks
+            constraintName: fk_tasks_user_id
+            referencedColumnNames: id
+            referencedTableName: users
+            onDelete: CASCADE
+
+        - createIndex:
+            indexName: idx_tasks_user_id
+            tableName: tasks
+            columns:
+              - column:
+                  name: user_id
+
+        - sql:
+            comment: Create partial index on (user_id) for PENDING tasks
+            dbms: postgresql
+            sql: CREATE INDEX idx_tasks_user_id_where_status_pending ON tasks (user_id) WHERE status = 'PENDING';
+            rollback: DROP INDEX idx_tasks_user_id_status_pending;

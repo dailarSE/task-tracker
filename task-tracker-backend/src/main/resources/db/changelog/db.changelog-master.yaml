@@ -1,3 +1,5 @@
 databaseChangeLog:
   - include:
       file: db/changelog/changesets/2025-05-05-18-13-create-users-table.yaml
+  - include:
+      file: db/changelog/changesets/2025-05-19-10-00-create-tasks-table.yaml

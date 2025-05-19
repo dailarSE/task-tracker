@@ -17,8 +17,6 @@ import java.util.Objects;
 /**
  * Сущность, представляющая задачу в системе "Task Tracker".
  * Каждая задача принадлежит определенному пользователю.
- * Включает аудиторские поля для отслеживания времени создания и обновления,
- * а также время завершения задачи.
  */
 @Entity
 @Table(name = "tasks")
@@ -44,7 +42,7 @@ public class Task {
      * Максимальная длина: 255 символов.
      */
     @NotBlank(message = "{task.entity.title.notBlank}")
-    @Size(min = 1, max = 255, message = "{task.entity.title.size}")
+    @Size(max = 255, message = "{task.entity.title.size}")
     @Column(name = "title", nullable = false)
     private String title;
 

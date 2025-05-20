@@ -1,5 +1,6 @@
 package com.example.tasktracker.backend.user.web;
 
+import com.example.tasktracker.backend.security.common.ControllerSecurityUtils;
 import com.example.tasktracker.backend.security.details.AppUserDetails;
 import com.example.tasktracker.backend.security.dto.AuthResponse;
 import com.example.tasktracker.backend.security.dto.RegisterRequest;
@@ -107,7 +108,7 @@ public class UserController {
      * фильтров безопасности с HTTP статусом 401 Unauthorized.
      * </p>
      *
-     * @param userDetails Данные текущего аутентифицированного пользователя (реализация {@link AppUserDetails}),
+     * @param currentUserPrincipal Данные текущего аутентифицированного пользователя (реализация {@link AppUserDetails}),
      *                    внедренные Spring Security. Ожидается, что этот параметр будет не-null
      *                    для защищенного эндпоинта.
      * @return {@link ResponseEntity} с {@link UserResponse} в теле, содержащим ID и email
@@ -119,13 +120,8 @@ public class UserController {
      *                                             быть обработана {@link GlobalExceptionHandler}.
      */
     @GetMapping("/me")
-    public ResponseEntity<UserResponse> getCurrentUser(@AuthenticationPrincipal AppUserDetails userDetails) {
-        if (userDetails == null) {
-            log.warn("AppUserDetails principal is null. This might indicate a security configuration issue or a " +
-                    "filter chain problem for a supposedly authenticated endpoint.");
-            throw new InsufficientAuthenticationException("Authenticated principal is not available or not of expected " +
-                    "type AppUserDetails.");
-        }
+    public ResponseEntity<UserResponse> getCurrentUser(@AuthenticationPrincipal AppUserDetails currentUserPrincipal) {
+        AppUserDetails userDetails = ControllerSecurityUtils.getAuthenticatedUserDetails(currentUserPrincipal);
 
         log.info("Processing request to get current user details for userId: {}", userDetails.getId());
         UserResponse response = new UserResponse(userDetails.getId(), userDetails.getUsername());

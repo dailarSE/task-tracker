@@ -76,4 +76,17 @@ public final class ApiConstants {
      */
     public static final String LOGIN_ENDPOINT = AUTH_API_BASE_URL + "/login";
 
+    /**
+     * Базовый путь для ресурсов, связанных с задачами (Tasks).
+     * Конкатенируется с {@link #API_V1_PREFIX}.
+     * Значение: {@value}.
+     */
+    public static final String TASKS_BASE_PATH = "/tasks"; // Новая константа
+
+    /**
+     * Полный базовый URL для эндпоинтов задач.
+     * Значение: {@value}.
+     */
+    public static final String TASKS_API_BASE_URL = API_V1_PREFIX + TASKS_BASE_PATH;
+
 }

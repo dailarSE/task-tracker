@@ -37,12 +37,12 @@ public class ControllerSecurityUtils {
             log.warn("Authenticated principal is not available or not of type AppUserDetails. " +
                             "Provided principal type: {}",
                     (principal != null ? principal.getClass().getName() : "null"));
-            throw new InsufficientAuthenticationException(
+            throw new IllegalStateException(
                     "Authenticated principal (AppUserDetails) is not available.");
         }
         if (userDetails.getId() == null) {
             log.error("CRITICAL: AppUserDetails principal found, but its ID is null.");
-            throw new InsufficientAuthenticationException(
+            throw new IllegalStateException(
                     "Authenticated principal (AppUserDetails) has a null ID.");
         }
         return userDetails;

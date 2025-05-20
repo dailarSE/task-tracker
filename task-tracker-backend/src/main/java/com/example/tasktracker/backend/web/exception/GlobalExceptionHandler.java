@@ -365,6 +365,41 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     /**
+     * Обрабатывает {@link IllegalStateException}, указывающее на неожиданное
+     * внутреннее состояние или ошибку программирования/конфигурации.
+     * Возвращает {@link ProblemDetail} для ответа HTTP 500 Internal Server Error.
+     * <p>
+     * В поле {@code properties} объекта {@code ProblemDetail} добавляется:
+     * <ul>
+     *     <li>{@code error_ref}: Уникальный идентификатор ошибки для отслеживания.</li>
+     * </ul>
+     * Клиенту сообщается об общей внутренней ошибке и предоставляется этот ID.
+     * Детали самого {@link IllegalStateException} не передаются клиенту, но логируются на сервере.
+     * </p>
+     *
+     * @param ex      Исключение {@link IllegalStateException}.
+     * @param request Текущий веб-запрос.
+     * @return Объект {@link ProblemDetail}.
+     * @throws NoSuchMessageException если ключи для {@code title} или {@code detail} (для "internal.illegalState")
+     *                                не найдены в {@link MessageSource}.
+     */
+    @ExceptionHandler(IllegalStateException.class)
+    public ProblemDetail handleIllegalStateException(IllegalStateException ex, WebRequest request) {
+        String errorRef = UUID.randomUUID().toString();
+
+        log.error("Illegal state encountered (Ref: {}): {}", errorRef, ex.getMessage(), ex);
+        ProblemDetail problemDetail = buildProblemDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "internal.illegalState", // Новый тип проблемы
+                request.getLocale(),
+                Map.of("error_ref", errorRef)
+        );
+        setInstanceUriIfAbsent(problemDetail, request);
+        return problemDetail;
+    }
+
+
+    /**
      * Вспомогательный метод для создания и базовой настройки {@link ProblemDetail}.
      * <p>
      * Извлекает {@code title} и {@code detail} из {@link MessageSource} по ключам,

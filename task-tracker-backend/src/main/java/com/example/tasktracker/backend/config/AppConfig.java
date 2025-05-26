@@ -1,8 +1,5 @@
 package com.example.tasktracker.backend.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.PropertyNamingStrategies;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.auditing.DateTimeProvider;
@@ -56,29 +53,5 @@ public class AppConfig {
     @Bean(name = "auditingDateTimeProvider")
     public DateTimeProvider dateTimeProvider(Clock clock) {
         return () -> Optional.of(Instant.now(clock));
-    }
-
-    /**
-     * Предоставляет кастомизированный {@link ObjectMapper}.
-     * <p>
-     * Настраивает ObjectMapper для:
-     * <ul>
-     *     <li>Использования {@link PropertyNamingStrategies.SnakeCaseStrategy} для преобразования
-     *         имен полей Java (camelCase) в JSON (snake_case) и обратно.</li>
-     *     <li>Регистрации {@link JavaTimeModule} для корректной сериализации/десериализации
-     *         типов даты и времени из пакета {@code java.time} (например, {@code Instant})
-     *         в стандартный формат ISO 8601.</li>
-     * </ul>
-     * </p>
-     *
-     * @return Сконфигурированный экземпляр {@link ObjectMapper}.
-     */
-    @Bean
-    public ObjectMapper objectMapper() {
-        ObjectMapper objectMapper = new ObjectMapper();
-        objectMapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
-        objectMapper.registerModule(new JavaTimeModule());
-
-        return objectMapper;
     }
 }

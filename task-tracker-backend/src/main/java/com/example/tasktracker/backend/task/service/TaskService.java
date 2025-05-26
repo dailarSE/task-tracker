@@ -27,7 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-@Transactional
+@Transactional(readOnly = true)
 public class TaskService {
 
     private final TaskRepository taskRepository;
@@ -48,6 +48,7 @@ public class TaskService {
      * @throws org.springframework.orm.jpa.JpaObjectRetrievalFailureException если пользователь с {@code currentUserId} не найден (выбрасывается {@code userRepository.getReferenceById}).
      * @throws NullPointerException если {@code request} или {@code currentUserId} равны {@code null}.
      */
+    @Transactional
     public TaskResponse createTask(@NonNull TaskCreateRequest request, @NonNull Long currentUserId) {
         log.debug("Attempting to create a new task for user ID: {} with title: '{}'",
                 currentUserId, request.getTitle());

@@ -3,9 +3,7 @@ package com.example.tasktracker.backend.task.dto;
 import com.example.tasktracker.backend.task.entity.Task;
 import com.example.tasktracker.backend.task.entity.TaskStatus;
 import jakarta.validation.Valid;
-import lombok.Getter;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
+import lombok.*;
 
 import java.time.Instant;
 
@@ -14,48 +12,50 @@ import java.time.Instant;
  * Содержит полную информацию о задаче.
  */
 @Getter
-@RequiredArgsConstructor
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
 public class TaskResponse {
 
     /**
      * Уникальный идентификатор задачи.
      */
-    private final Long id;
+    private Long id;
 
     /**
      * Заголовок задачи.
      */
-    private final String title;
+    private String title;
 
     /**
      * Описание задачи (может быть null).
      */
-    private final String description;
+    private String description;
 
     /**
      * Статус задачи.
      */
-    private final TaskStatus status;
+    private TaskStatus status;
 
     /**
      * Временная метка создания задачи.
      */
-    private final Instant createdAt;
+    private Instant createdAt;
 
     /**
      * Временная метка последнего обновления задачи.
      */
-    private final Instant updatedAt;
+    private Instant updatedAt;
 
     /**
      * Временная метка завершения задачи (может быть null).
      */
-    private final Instant completedAt;
+    private Instant completedAt;
 
     /**
      * Идентификатор пользователя, которому принадлежит задача.
      */
-    private final Long userId;
+    private Long userId;
 
     /**
      * Статический фабричный метод для преобразования сущности {@link Task} в {@link TaskResponse}.

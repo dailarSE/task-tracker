@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
@@ -13,6 +14,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @AllArgsConstructor
+@NoArgsConstructor
 public class LoginRequest {
 
     /**
@@ -21,13 +23,13 @@ public class LoginRequest {
     @NotBlank(message = "{user.validation.email.notBlank}")
     @Email(message = "{user.validation.email.invalidFormat}")
     @Size(max = 255, message = "{user.validation.email.size}")
-    private final String email;
+    private String email;
 
     /**
      * Пароль пользователя для входа.
      */
     @NotBlank(message = "{user.validation.password.notBlank}")
     @Size(max = 255, message = "{user.validation.password.size}")
-    private final String password;
+    private String password;
 
 }

@@ -5,6 +5,14 @@ logging:
     org.springframework.data.jpa.repository.query: DEBUG
     com.example.tasktracker.backend: DEBUG
 
+server:
+  error:
+    include-stacktrace: on_param
+    include-message: on_param
+    include-binding-errors: on_param
+    include-exception: false
+    whitelabel.enabled: true
+
 #TODO принять решение о минимальном observability стеке на ci. например коллектор с экспортом в stdout и/или файл;
 #TODO  стриминг из коллектора на поднятный Obs stack
 otel:

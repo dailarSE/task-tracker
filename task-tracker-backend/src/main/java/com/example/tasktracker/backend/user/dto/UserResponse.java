@@ -1,7 +1,6 @@
 package com.example.tasktracker.backend.user.dto;
 
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
+import lombok.*;
 
 /**
  * DTO (Data Transfer Object) для предоставления основной информации о пользователе.
@@ -11,15 +10,17 @@ import lombok.RequiredArgsConstructor;
  * </p>
  */
 @Getter
-@RequiredArgsConstructor
+@Setter
+@AllArgsConstructor
+@NoArgsConstructor
 public class UserResponse {
     /**
      * Уникальный идентификатор пользователя.
      */
-    private final Long id;
+    private Long id;
 
     /**
      * Email адрес пользователя.
      */
-    private final String email;
+    private String email;
 }

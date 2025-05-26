@@ -4,13 +4,17 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 /**
  * DTO (Data Transfer Object) для запроса на создание новой задачи.
  * Содержит данные, необходимые для создания задачи.
  */
 @Getter
+@Setter
 @AllArgsConstructor
+@NoArgsConstructor
 public class TaskCreateRequest {
 
     /**
@@ -18,15 +22,15 @@ public class TaskCreateRequest {
      * Максимальная длина: 255 символов.
      * Сообщение об ошибке валидации извлекается из Resource Bundle по ключу.
      */
-    @NotBlank(message = "{task.dto.create.title.notBlank}")
-    @Size(max = 255, message = "{task.dto.create.title.size}")
-    private final String title;
+    @NotBlank(message = "{task.validation.title.notBlank}")
+    @Size(max = 255, message = "{task.validation.title.size}")
+    private String title;
 
     /**
      * Описание задачи. Опциональное поле.
      * Максимальная длина: 1000 символов.
      * Сообщение об ошибке валидации извлекается из Resource Bundle по ключу.
      */
-    @Size(max = 1000, message = "{task.dto.create.description.size}")
-    private final String description;
+    @Size(max = 1000, message = "{task.validation.description.size}")
+    private String description;
 }

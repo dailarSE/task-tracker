@@ -11,6 +11,7 @@ import org.springframework.context.MessageSource;
 import org.springframework.context.NoSuchMessageException;
 import org.springframework.http.*;
 import org.springframework.http.converter.HttpMessageConversionException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.lang.Nullable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -130,7 +131,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 HttpStatus.UNAUTHORIZED,
                 "unauthorized",
                 request.getLocale(),
-                ex.getMessage()==null ? null : Map.of("auth_error_details", ex.getMessage())
+                ex.getMessage() == null ? null : Map.of("auth_error_details", ex.getMessage())
         );
         setInstanceUriIfAbsent(problemDetail, request);
         return problemDetail;
@@ -169,7 +170,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 status,
                 "forbidden",
                 request.getLocale(),
-                ex.getMessage()==null ? null : Map.of("access_denied_reason", ex.getMessage())
+                ex.getMessage() == null ? null : Map.of("access_denied_reason", ex.getMessage())
         );
         setInstanceUriIfAbsent(problemDetail, request);
         return problemDetail;
@@ -206,7 +207,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 HttpStatus.UNAUTHORIZED,
                 "auth.invalidCredentials",
                 request.getLocale(),
-                ex.getMessage()==null ? null : Map.of("login_error_details", ex.getMessage())
+                ex.getMessage() == null ? null : Map.of("login_error_details", ex.getMessage())
         );
         setInstanceUriIfAbsent(problemDetail, request);
         return problemDetail;
@@ -335,7 +336,44 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problemDetail;
     }
 
+    /**
+     * Переопределенный метод для обработки {@link HttpMessageNotReadableException}.
+     * <p>
+     * Этот метод делегирует фактическую обработку и формирование {@link ProblemDetail}
+     * методу {@link #handleHttpMessageConversionException(HttpMessageConversionException, WebRequest)}.
+     * {@link HttpMessageNotReadableException} является подклассом
+     * {@link HttpMessageConversionException}, и логика формирования ответа для них схожа.
+     * </p>
+     * <p>
+     * Возвращает {@link ResponseEntity}, сконструированный на основе {@link ProblemDetail},
+     * полученного от делегированного обработчика. HTTP-статус ответа будет определен
+     * значением {@code ProblemDetail.getStatus()}.
+     * </p>
+     *
+     * @param ex             Исключение {@link HttpMessageNotReadableException}.
+     * @param ignoredHeaders Заголовки HTTP (игнорируются, так как передаются пустые значения).
+     * @param ignoredStatus  HTTP-статус, предложенный Spring (игнорируется, так как статус
+     *                       берется из {@code ProblemDetail}).
+     * @param request        Текущий веб-запрос.
+     * @return {@link ResponseEntity} с {@link ProblemDetail} в теле.
+     */
+    @Override
+    protected ResponseEntity<Object> handleHttpMessageNotReadable(
+            @NonNull HttpMessageNotReadableException ex,
+            @NonNull HttpHeaders ignoredHeaders,
+            @NonNull HttpStatusCode ignoredStatus,
+            @NonNull WebRequest request) {
+
+        log.debug("Delegating HttpMessageNotReadableException to HttpMessageConversionException handler for request to [{}].",
+                (request instanceof ServletWebRequest swr ? swr.getRequest().getRequestURI() : "N/A"));
+
+        ProblemDetail problemDetail = handleHttpMessageConversionException(ex, request);
+
+        return ResponseEntity.of(problemDetail).build();
+    }
+
     // --- Обработчик для отсутствующих ключей локализации ---
+
     /**
      * Обрабатывает {@link NoSuchMessageException}, которая выбрасывается {@link MessageSource},
      * если ключ для локализованного сообщения не найден. Это указывает на критическую проблему
@@ -351,7 +389,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      * используются жестко закодированные фолбэки.
      * </p>
      *
-     * @param ex Исключение {@link NoSuchMessageException}.
+     * @param ex      Исключение {@link NoSuchMessageException}.
      * @param request Текущий веб-запрос.
      * @return {@link ProblemDetail} для ответа HTTP 500 Internal Server Error.
      */
@@ -361,8 +399,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                         "Locale: {}. Original exception message: '{}'. Request: {}",
                 request.getLocale(), ex.getMessage(), request.getDescription(false), ex);
 
-        String initialTypeSuffix  = "internal.missingMessageResource";
-        URI typeUri = URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + initialTypeSuffix.replaceAll("\\.", "/") );
+        String initialTypeSuffix = "internal.missingMessageResource";
+        URI typeUri = URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + initialTypeSuffix.replaceAll("\\.", "/"));
         String title;
         String detail;
 
@@ -372,8 +410,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         }
         try {
             // Попытка получить стандартные сообщения для этой ошибки
-            title = messageSource.getMessage("problemDetail." + initialTypeSuffix  + ".title", null, request.getLocale());
-            detail = messageSource.getMessage("problemDetail." + initialTypeSuffix  + ".detail",
+            title = messageSource.getMessage("problemDetail." + initialTypeSuffix + ".title", null, request.getLocale());
+            detail = messageSource.getMessage("problemDetail." + initialTypeSuffix + ".detail",
                     null, request.getLocale()); // передаем ex.getMessage() как аргумент
         } catch (NoSuchMessageException localizationEmergency) {
             log.error("ULTRA-CRITICAL: Message resources for localization error handler itself are missing! Key: {}",
@@ -519,7 +557,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      * если оно еще не установлено. В качестве значения используется URI текущего запроса.
      *
      * @param problemDetail Объект {@link ProblemDetail} для модификации.
-     * @param request Текущий веб-запрос.
+     * @param request       Текущий веб-запрос.
      */
     private void setInstanceUriIfAbsent(ProblemDetail problemDetail, WebRequest request) {
         if (problemDetail.getInstance() == null && request instanceof ServletWebRequest swr) {

@@ -11,7 +11,6 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -40,6 +39,7 @@ import java.net.URI;
  * @see TaskCreateRequest DTO для запроса на создание задачи.
  * @see TaskResponse DTO для ответа с информацией о задаче.
  * @see AppUserDetails Детали аутентифицированного пользователя.
+ * @see ControllerSecurityUtils Утилиты для работы с principal в контроллерах.
  */
 @RestController
 @RequestMapping(ApiConstants.TASKS_API_BASE_URL)
@@ -74,8 +74,7 @@ public class TaskController {
      *                           для защищенного эндпоинта.
      * @return {@link ResponseEntity} с {@link TaskResponse} в теле и статусом 201 Created,
      *         либо ответ об ошибке, сформированный {@link GlobalExceptionHandler}.
-     * @throws InsufficientAuthenticationException если {@code currentUserDetails} равен {@code null}
-     *                                             (хотя это должно быть обработано Spring Security раньше).
+     * @throws IllegalStateException если {@code currentUserDetails} не может быть разрешен в корректный {@link AppUserDetails} с ID (выбрасывается из {@link ControllerSecurityUtils}).
      */
     @PostMapping
     public ResponseEntity<TaskResponse> createTask(

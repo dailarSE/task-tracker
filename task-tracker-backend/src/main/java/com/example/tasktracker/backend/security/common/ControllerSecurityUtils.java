@@ -3,7 +3,6 @@ package com.example.tasktracker.backend.security.common;
 import com.example.tasktracker.backend.security.details.AppUserDetails;
 import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -27,11 +26,11 @@ public class ControllerSecurityUtils {
      *                  Может быть {@code null}, если метод вызывается не из контекста
      *                  контроллера с такой аннотацией.
      * @return Экземпляр {@link AppUserDetails}.
-     * @throws InsufficientAuthenticationException если principal не является {@link AppUserDetails}
-     *                                             или если аутентификация отсутствует/некорректна.
+     * @throws IllegalStateException если principal не является {@link AppUserDetails}
+     *                               или у него отсутствует ID, или если аутентификация отсутствует/некорректна.
      */
     public static AppUserDetails getAuthenticatedUserDetails(Object principal) {
-        AppUserDetails userDetails = getAppUserDetails(principal);
+        AppUserDetails userDetails = (principal instanceof AppUserDetails) ? (AppUserDetails) principal : null;
 
         if (userDetails == null) {
             log.warn("Authenticated principal is not available or not of type AppUserDetails. " +
@@ -54,25 +53,9 @@ public class ControllerSecurityUtils {
      *
      * @param principal Объект principal.
      * @return ID пользователя.
-     * @throws InsufficientAuthenticationException если аутентификация некорректна.
+     * @throws IllegalStateException если аутентификация некорректна или principal не содержит ID.
      */
     public static Long getCurrentUserId(Object principal) {
         return getAuthenticatedUserDetails(principal).getId();
-    }
-
-
-    private static AppUserDetails getAppUserDetails(Object principal) {
-        AppUserDetails userDetails = null;
-
-        if (principal instanceof AppUserDetails) {
-            userDetails = (AppUserDetails) principal;
-        } else {
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            if (authentication != null && authentication.isAuthenticated() &&
-                    authentication.getPrincipal() instanceof AppUserDetails) {
-                userDetails = (AppUserDetails) authentication.getPrincipal();
-            }
-        }
-        return userDetails;
     }
 }

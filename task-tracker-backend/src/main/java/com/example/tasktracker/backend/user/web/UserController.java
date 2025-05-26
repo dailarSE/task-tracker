@@ -13,7 +13,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -41,6 +40,7 @@ import static com.example.tasktracker.backend.web.ApiConstants.*;
  * @see RegisterRequest DTO для запроса на регистрацию.
  * @see AuthResponse DTO для ответа, содержащего JWT.
  * @see UserResponse DTO для ответа с информацией о пользователе.
+ * @see ControllerSecurityUtils Утилиты для работы с principal в контроллерах.
  * @see AppUserDetails Детали аутентифицированного пользователя.
  */
 @RestController
@@ -90,7 +90,7 @@ public class UserController {
         responseHeaders.set(X_ACCESS_TOKEN_HEADER, authResponse.getAccessToken());
 
         log.info("User registration successful for email: {}. JWT issued.", registerRequest.getEmail());
-        return new ResponseEntity<>(authResponse, responseHeaders, HttpStatus.CREATED);
+        return ResponseEntity.status(HttpStatus.CREATED).headers(responseHeaders).body(authResponse);
     }
 
     /**
@@ -111,13 +111,8 @@ public class UserController {
      * @param currentUserPrincipal Данные текущего аутентифицированного пользователя (реализация {@link AppUserDetails}),
      *                    внедренные Spring Security. Ожидается, что этот параметр будет не-null
      *                    для защищенного эндпоинта.
-     * @return {@link ResponseEntity} с {@link UserResponse} в теле, содержащим ID и email
-     * пользователя, и статусом 200 OK.
-     * @throws InsufficientAuthenticationException если {@code userDetails} равен {@code null},
-     *                                             что указывает на потенциальную проблему
-     *                                             в конфигурации безопасности или в цепочке фильтров
-     *                                             для защищенного эндпоинта. Такая ситуация должна
-     *                                             быть обработана {@link GlobalExceptionHandler}.
+     * @return {@link ResponseEntity} с {@link UserResponse} в теле, содержащим ID и email пользователя, и статусом 200 OK.
+     * @throws IllegalStateException если {@code currentUserPrincipal} не может быть разрешен в корректный {@link AppUserDetails} с ID (выбрасывается из {@link ControllerSecurityUtils}).
      */
     @GetMapping("/me")
     public ResponseEntity<UserResponse> getCurrentUser(@AuthenticationPrincipal AppUserDetails currentUserPrincipal) {

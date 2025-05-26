@@ -10,7 +10,7 @@ server:
     include-stacktrace: on_param
     include-message: on_param
     include-binding-errors: on_param
-    include-exception: false
+    include-exception: true
     whitelabel.enabled: true
 
 #TODO принять решение о минимальном observability стеке на ci. например коллектор с экспортом в stdout и/или файл;

@@ -18,6 +18,14 @@ logging:
     format:
       console: ecs
 
+server:
+  error:
+    include-stacktrace: always
+    include-message: always
+    include-binding-errors: always
+    include-exception: true
+    whitelabel.enabled: true
+
 management:
   endpoints:
     web:

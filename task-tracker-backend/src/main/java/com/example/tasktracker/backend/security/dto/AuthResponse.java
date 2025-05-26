@@ -1,33 +1,35 @@
 package com.example.tasktracker.backend.security.dto;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 /**
  * DTO для ответа при успешной аутентификации или регистрации.
  * Содержит JWT Access Token и информацию о нем.
  */
 @Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
 public class AuthResponse {
 
     /**
      * Сгенерированный JWT Access Token.
      */
-    @JsonProperty("access_token")
-    private final String accessToken;
+    private String accessToken;
 
     /**
      * Тип токена (всегда "Bearer" для JWT).
      */
-    @JsonProperty("token_type")
-    private final String tokenType = "Bearer";
+    private String tokenType = "Bearer";
 
     /**
      * Время жизни токена в секундах.
      * Предоставляется для информации клиенту.
      */
-    @JsonProperty("expires_in")
-    private final Long expiresIn;
+    private Long expiresIn;
 
     /**
      * Конструктор для удобного создания с двумя основными полями.

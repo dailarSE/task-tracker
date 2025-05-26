@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
 import org.springframework.context.NoSuchMessageException;
 import org.springframework.http.*;
+import org.springframework.http.converter.HttpMessageConversionException;
 import org.springframework.lang.Nullable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -299,6 +300,39 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         setInstanceUriIfAbsent(problemDetail, request);
 
         return new ResponseEntity<>(problemDetail, headers, HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * Обрабатывает {@link HttpMessageConversionException}, которые могут возникать,
+     * когда тело HTTP-запроса не может быть прочитано или преобразовано
+     * в требуемый тип (например, из-за синтаксически некорректного JSON
+     * или несоответствия типов, если это не покрывается более специфичным
+     * HttpMessageNotReadableException).
+     * Возвращает {@link ProblemDetail} для ответа HTTP 400 Bad Request.
+     *
+     * @param ex      Исключение {@link HttpMessageConversionException}.
+     * @param request Текущий веб-запрос.
+     * @return Объект {@link ProblemDetail}.
+     */
+    @ExceptionHandler(HttpMessageConversionException.class)
+    public ProblemDetail handleHttpMessageConversionException(HttpMessageConversionException ex, WebRequest request) {
+        String requestUriPath = "N/A";
+        if (request instanceof ServletWebRequest servletWebRequest) {
+            requestUriPath = servletWebRequest.getRequest().getRequestURI();
+        }
+        log.warn("HTTP message conversion error: Request to [{}], Details: {}",
+                requestUriPath,
+                ex.getMessage());
+
+        ProblemDetail problemDetail = buildProblemDetail(
+                HttpStatus.BAD_REQUEST,
+                "request.body.conversionError",
+                request.getLocale(),
+                Map.of("error_summary", "The request body could not be processed due to a conversion or " +
+                        "formatting error.")
+        );
+        setInstanceUriIfAbsent(problemDetail, request);
+        return problemDetail;
     }
 
     // --- Обработчик для отсутствующих ключей локализации ---

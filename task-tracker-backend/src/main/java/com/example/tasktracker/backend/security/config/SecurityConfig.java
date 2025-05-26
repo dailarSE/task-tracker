@@ -3,6 +3,7 @@ package com.example.tasktracker.backend.security.config;
 import com.example.tasktracker.backend.security.filter.JwtAuthenticationFilter;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
@@ -43,6 +44,9 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final AuthenticationEntryPoint bearerTokenProblemDetailsAuthenticationEntryPoint;
     private final AccessDeniedHandler problemDetailsAccessDeniedHandler;
+
+    @Value("${server.error.path:${error.path:/error}}")
+    private String errorPath;
 
     /**
      * Определяет бин {@link PasswordEncoder} для хеширования паролей.
@@ -93,6 +97,7 @@ public class SecurityConfig {
                         // Разрешаем публичный доступ к эндпоинтам регистрации и логина
                         .requestMatchers(HttpMethod.POST, REGISTER_ENDPOINT).permitAll()
                         .requestMatchers(HttpMethod.POST, LOGIN_ENDPOINT).permitAll()
+                        .requestMatchers(errorPath).permitAll()
                         // TODO: Разрешить доступ к эндпоинтам Spring Boot Actuator (если они включены и нужны публично/защищенно)
                         // .requestMatchers("/actuator/**").permitAll() // или .hasRole("ADMIN") и т.д.
                         // TODO: Разрешить доступ к Swagger/OpenAPI UI и документации (если используется)

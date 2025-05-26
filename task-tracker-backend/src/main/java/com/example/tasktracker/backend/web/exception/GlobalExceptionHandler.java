@@ -395,10 +395,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      */
     @ExceptionHandler(NoSuchMessageException.class)
     public ProblemDetail handleNoSuchMessageException(NoSuchMessageException ex, WebRequest request) {
-        log.error("CRITICAL CONFIGURATION ERROR: Required message resource not found. " +
+        String errorRef = UUID.randomUUID().toString();
+        log.error("CRITICAL CONFIGURATION ERROR (Ref: {}): Required message resource not found. " +
                         "Locale: {}. Original exception message: '{}'. Request: {}",
-                request.getLocale(), ex.getMessage(), request.getDescription(false), ex);
-
+                errorRef, request.getLocale(), ex.getMessage(), request.getDescription(false), ex);
+ 
         String initialTypeSuffix = "internal.missingMessageResource";
         URI typeUri = URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + initialTypeSuffix.replaceAll("\\.", "/"));
         String title;
@@ -408,6 +409,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         if (ex.getMessage() != null) {
             properties.put("missing_resource_info", ex.getMessage()); // Оригинальная ошибка
         }
+        properties.put("error_ref", errorRef);
         try {
             // Попытка получить стандартные сообщения для этой ошибки
             title = messageSource.getMessage("problemDetail." + initialTypeSuffix + ".title", null, request.getLocale());

@@ -34,8 +34,7 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 
 import java.io.IOException;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatNullPointerException;
+import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -294,5 +293,58 @@ class JwtAuthenticationFilterTest {
         assertThat(MDC.get(JwtAuthenticationFilter.MDC_USER_ID_KEY)).isNull();
         verify(mockAuthenticationEntryPoint).commence(any(), any(), any(BadJwtException.class));
         verify(mockFilterChain, never()).doFilter(any(), any());
+    }
+
+    @Test
+    @DisplayName("prepareMdcUserIdentifier: principal является AppUserDetails с валидным ID -> должен вернуть ID как строку")
+    void prepareMdcUserIdentifier_whenPrincipalIsAppUserDetailsWithValidId_shouldReturnIdAsString() {
+        // Arrange
+        AppUserDetails mockUserDetails = mock(AppUserDetails.class);
+        when(mockUserDetails.getId()).thenReturn(123L);
+        when(mockUserDetails.getUsername()).thenReturn("user@example.com");
+
+        // Act
+        String result = jwtAuthenticationFilter.prepareMdcUserIdentifier(mockUserDetails);
+
+        // Assert
+        assertThat(result).isEqualTo("123");
+    }
+
+    @Test
+    @DisplayName("prepareMdcUserIdentifier: principal является AppUserDetails, но ID null -> должен вернуть username и залогировать WARN")
+    void prepareMdcUserIdentifier_whenPrincipalIsAppUserDetailsButIdIsNull_shouldReturnUsernameAndLogWarn() {
+        // Arrange
+        AppUserDetails mockUserDetails = mock(AppUserDetails.class);
+        when(mockUserDetails.getId()).thenReturn(null); // Симулируем null ID
+        when(mockUserDetails.getUsername()).thenReturn("user@example.com");
+
+        // Act
+        String result = jwtAuthenticationFilter.prepareMdcUserIdentifier(mockUserDetails);
+
+        // Assert
+        assertThat(result).isEqualTo("user@example.com");
+        // Проверка логирования WARN здесь не делается напрямую через AssertJ, но мы знаем, что эта ветка выполняется.
+        // Для реальной проверки логирования можно использовать библиотеки типа LogCaptor.
+    }
+
+    @Test
+    @DisplayName("prepareMdcUserIdentifier: principal не AppUserDetails -> должен выбросить IllegalStateException")
+    void prepareMdcUserIdentifier_whenPrincipalIsNotAppUserDetails_shouldThrowIllegalStateException() {
+        // Arrange
+        Object nonAppUserDetailsPrincipal = new Object(); // Любой объект, не являющийся AppUserDetails
+
+        // Act & Assert
+        assertThatExceptionOfType(IllegalStateException.class)
+                .isThrownBy(() -> jwtAuthenticationFilter.prepareMdcUserIdentifier(nonAppUserDetailsPrincipal))
+                .withMessageStartingWith("Principal is not AppUserDetails. Principal:");
+    }
+
+    @Test
+    @DisplayName("prepareMdcUserIdentifier: principal null -> должен выбросить NullPointerException (Lombok @NonNull)")
+    void prepareMdcUserIdentifier_whenPrincipalIsNull_shouldThrowNullPointerException() {
+        // Act & Assert
+        assertThatNullPointerException()
+                .isThrownBy(() -> jwtAuthenticationFilter.prepareMdcUserIdentifier(null))
+                .withMessageContaining("principal is marked non-null but is null");
     }
 }

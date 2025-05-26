@@ -227,7 +227,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      * @throws IllegalStateException если principal не является {@link AppUserDetails}.
      * @throws NullPointerException если principal равен {@code null}.
      */
-    private String prepareMdcUserIdentifier(@NonNull Object principal) {
+     String prepareMdcUserIdentifier(@NonNull Object principal) {
         if (principal instanceof AppUserDetails appUserDetails) {
             if (appUserDetails.getId() != null) {
                 return appUserDetails.getId().toString();

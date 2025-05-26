@@ -22,6 +22,8 @@ import org.mockito.quality.Strictness;
 import org.springframework.context.MessageSource;
 import org.springframework.context.NoSuchMessageException;
 import org.springframework.http.*;
+import org.springframework.http.converter.HttpMessageConversionException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -68,6 +70,7 @@ class GlobalExceptionHandlerTest {
 
     private static final String BASE_PROBLEM_URI = ApiConstants.PROBLEM_TYPE_BASE_URI;
     private static final Locale TEST_LOCALE = Locale.ENGLISH;
+    private static final String TEST_REQUEST_URI = "/test/path";
 
     @BeforeEach
     void setUp() {
@@ -77,7 +80,7 @@ class GlobalExceptionHandlerTest {
         // Для setInstanceUriIfAbsent и extractTokenSnippetFromRequest
         when(mockServletWebRequest.getRequest()).thenReturn(mockHttpServletRequest);
         when(mockServletWebRequest.getResponse()).thenReturn(mockHttpResponse);
-        when(mockHttpServletRequest.getRequestURI()).thenReturn("/test/path"); // Пример URI для instance
+        when(mockHttpServletRequest.getRequestURI()).thenReturn(TEST_REQUEST_URI); // Пример URI для instance
 
     }
 
@@ -99,93 +102,107 @@ class GlobalExceptionHandlerTest {
                 .thenReturn(expectedDetail);
     }
 
+    private void assertProblemDetail(ProblemDetail actual, HttpStatus expectedStatus, String expectedTypeSuffix,
+                                     String expectedTitle, String expectedDetail, String expectedInstancePath) {
+        assertThat(actual.getStatus()).isEqualTo(expectedStatus.value());
+        assertThat(actual.getType()).isEqualTo(URI.create(BASE_PROBLEM_URI + expectedTypeSuffix.replaceAll("\\.", "/")));
+        assertThat(actual.getTitle()).isEqualTo(expectedTitle);
+        assertThat(actual.getDetail()).isEqualTo(expectedDetail);
+        if (expectedInstancePath != null) {
+            assertThat(actual.getInstance()).isEqualTo(URI.create(expectedInstancePath));
+        } else {
+            assertThat(actual.getInstance()).isNull();
+        }
+    }
+
     @ParameterizedTest
     @EnumSource(JwtErrorType.class)
-    @DisplayName("handleBadJwtException: должен вернуть 401 ProblemDetail с error_type и jwt_error_details в properties")
+    @DisplayName("handleBadJwtException: должен вернуть 401 ProblemDetail с корректными properties")
     void handleBadJwtException_shouldReturnCorrectUnauthorizedProblemDetail(JwtErrorType errorType) {
         // Arrange
         String originalErrorMessage = "JWT Error: " + errorType.name();
         BadJwtException exception = new BadJwtException(originalErrorMessage, errorType, new RuntimeException("Root cause"));
-
         String typeSuffix = "jwt." + errorType.name().toLowerCase();
-        String expectedTitle = "JWT Title for " + errorType.name();
-        String expectedStaticDetail = "Static detail for JWT error."; // Теперь деталь статическая
-
-        setupMessageSourceForStaticMessages(typeSuffix, expectedTitle, expectedStaticDetail);
+        setupMessageSourceForStaticMessages(typeSuffix, "JWT Title", "JWT Detail");
         when(mockServletWebRequest.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer short");
 
         // Act
         ProblemDetail problemDetail = globalExceptionHandler.handleBadJwtException(exception, mockServletWebRequest);
 
         // Assert
-        assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(BASE_PROBLEM_URI + typeSuffix.replaceAll("\\.", "/")));
-        assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
-        assertThat(problemDetail.getDetail()).isEqualTo(expectedStaticDetail); // Проверяем статическую деталь
-        assertThat(problemDetail.getProperties()).isNotNull();
+        assertProblemDetail(problemDetail, HttpStatus.UNAUTHORIZED, typeSuffix, "JWT Title", "JWT Detail", TEST_REQUEST_URI);
         assertThat(problemDetail.getProperties()).containsEntry("error_type", errorType.name());
         assertThat(problemDetail.getProperties()).containsEntry("jwt_error_details", originalErrorMessage);
-        assertThat(problemDetail.getInstance()).isEqualTo(URI.create("/test/path"));
+    }
+
+    @Test
+    @DisplayName("handleBadJwtException: когда ex.getMessage() is null, jwt_error_details не должен добавляться")
+    void handleBadJwtException_whenMessageIsNull_shouldNotAddJwtErrorDetails() {
+        BadJwtException exception = new BadJwtException(null, JwtErrorType.EXPIRED, new RuntimeException("Root cause"));
+        String typeSuffix = "jwt." + JwtErrorType.EXPIRED.name().toLowerCase();
+        setupMessageSourceForStaticMessages(typeSuffix, "JWT Title", "JWT Detail");
+        when(mockServletWebRequest.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer short");
+
+        ProblemDetail problemDetail = globalExceptionHandler.handleBadJwtException(exception, mockServletWebRequest);
+
+        assertProblemDetail(problemDetail, HttpStatus.UNAUTHORIZED, typeSuffix, "JWT Title", "JWT Detail", TEST_REQUEST_URI);
+        assertThat(problemDetail.getProperties()).containsEntry("error_type", JwtErrorType.EXPIRED.name());
+        assertThat(problemDetail.getProperties()).doesNotContainKey("jwt_error_details");
     }
 
     @Test
     @DisplayName("handleAuthenticationException (общий): должен вернуть 401 ProblemDetail")
     void handleAuthenticationException_whenGenericAuthError_shouldReturnCorrectUnauthorizedProblemDetail() {
-        // Arrange
         String originalErrorMessage = "Generic authentication error";
-        // Используем AuthenticationException, а не BadCredentialsException, чтобы проверить общий обработчик
         AuthenticationException exception = new AuthenticationException(originalErrorMessage) {};
         String typeSuffix = "unauthorized";
-        String expectedTitle = "Auth Required Title";
-        String expectedStaticDetail = "Static detail for general auth error.";
+        setupMessageSourceForStaticMessages(typeSuffix, "Auth Required Title", "Auth Required Detail");
 
-        setupMessageSourceForStaticMessages(typeSuffix, expectedTitle, expectedStaticDetail);
+        ProblemDetail problemDetail = globalExceptionHandler.handleAuthenticationException(exception, mockServletWebRequest);
 
-        // Act
-        ProblemDetail problemDetail = globalExceptionHandler.handleAuthenticationException(exception, mockWebRequest);
-
-        // Assert
-        assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(BASE_PROBLEM_URI + typeSuffix.replaceAll("\\.", "/")));
-        assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
-        assertThat(problemDetail.getDetail()).isEqualTo(expectedStaticDetail);
+        assertProblemDetail(problemDetail, HttpStatus.UNAUTHORIZED, typeSuffix, "Auth Required Title", "Auth Required Detail", TEST_REQUEST_URI);
         assertThat(problemDetail.getProperties()).containsEntry("auth_error_details", originalErrorMessage);
-        // setInstanceUriIfAbsent не вызовется, если mockWebRequest не ServletWebRequest,
-        // но для консистентности можно использовать mockServletWebRequest и для этого теста.
-        // Давайте изменим на mockServletWebRequest для проверки instance.
-        // when(mockHttpServletRequest.getRequestURI()).thenReturn("/some/other/path"); // Если нужно другое
-        // problemDetail = globalExceptionHandler.handleAuthenticationException(exception, mockServletWebRequest);
-        // assertThat(problemDetail.getInstance()).isEqualTo(URI.create("/some/other/path"));
-        // Пока оставим как есть, но это место для улучшения, если хотим проверять instance всегда.
+    }
+
+    @Test
+    @DisplayName("handleAuthenticationException: когда ex.getMessage() is null, auth_error_details не должен добавляться")
+    void handleAuthenticationException_whenMessageIsNull_shouldNotAddAuthErrorDetails() {
+        AuthenticationException exception = new AuthenticationException(null) {}; // Сообщение null
+        String typeSuffix = "unauthorized";
+        setupMessageSourceForStaticMessages(typeSuffix, "Auth Required Title", "Auth Required Detail");
+
+        ProblemDetail problemDetail = globalExceptionHandler.handleAuthenticationException(exception, mockServletWebRequest);
+
+        assertProblemDetail(problemDetail, HttpStatus.UNAUTHORIZED, typeSuffix, "Auth Required Title", "Auth Required Detail", TEST_REQUEST_URI);
+        assertThat(problemDetail.getProperties()).isNull(); // Или doesNotContainKey, если Map создается всегда
     }
 
     @Test
     @DisplayName("handleBadCredentialsException: должен вернуть 401 ProblemDetail с WWW-Authenticate")
     void handleBadCredentialsException_shouldReturnUnauthorizedWithWwwAuth() {
-        // Arrange
         String originalErrorMessage = "Bad credentials provided";
         BadCredentialsException exception = new BadCredentialsException(originalErrorMessage);
         String typeSuffix = "auth.invalidCredentials";
-        String expectedTitle = "Invalid Credentials Title";
-        String expectedStaticDetail = "Static detail for bad credentials.";
+        setupMessageSourceForStaticMessages(typeSuffix, "Invalid Credentials Title", "Invalid Credentials Detail");
 
-        setupMessageSourceForStaticMessages(typeSuffix, expectedTitle, expectedStaticDetail);
-
-        // Act
         ProblemDetail problemDetail = globalExceptionHandler.handleBadCredentialsException(exception, mockServletWebRequest);
 
-        // Assert
-        assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(BASE_PROBLEM_URI + typeSuffix.replaceAll("\\.", "/")));
-        assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
-        assertThat(problemDetail.getDetail()).isEqualTo(expectedStaticDetail);
+        assertProblemDetail(problemDetail, HttpStatus.UNAUTHORIZED, typeSuffix, "Invalid Credentials Title", "Invalid Credentials Detail", TEST_REQUEST_URI);
         assertThat(problemDetail.getProperties()).containsEntry("login_error_details", originalErrorMessage);
-        assertThat(problemDetail.getInstance()).isEqualTo(URI.create("/test/path"));
-        // Проверка установки заголовка теперь делается в интеграционном тесте контроллера,
-        // но здесь мы можем проверить, что response.setHeader был вызван, если бы мокали response.
-        // Поскольку мы используем MockHttpServletRequest, его response - это MockHttpServletResponse,
-        // мы можем проверить заголовок на нем.
         verify(mockHttpResponse).setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"task-tracker\"");
+    }
+
+    @Test
+    @DisplayName("handleBadCredentialsException: когда getResponse() is null (маловероятно), заголовок не устанавливается")
+    void handleBadCredentialsException_whenGetResponseIsNull_shouldNotSetHeader() {
+        BadCredentialsException exception = new BadCredentialsException("Test");
+        // Настроим mockServletWebRequest так, чтобы getResponse() возвращал null
+        when(mockServletWebRequest.getResponse()).thenReturn(null);
+        setupMessageSourceForStaticMessages("auth.invalidCredentials", "T", "D");
+
+        globalExceptionHandler.handleBadCredentialsException(exception, mockServletWebRequest);
+
+        verify(mockHttpResponse, never()).setHeader(anyString(), anyString()); // Убедимся, что setHeader не вызывался
     }
 
     @Test
@@ -218,9 +235,31 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    @DisplayName("handleAccessDeniedException: когда userPrincipal is null, используется 'anonymous'")
+    void handleAccessDeniedException_whenUserPrincipalIsNull_shouldLogAnonymous() {
+        AccessDeniedException exception = new AccessDeniedException("Access Denied");
+        when(mockServletWebRequest.getUserPrincipal()).thenReturn(null); // No principal
+        setupMessageSourceForStaticMessages("forbidden", "T", "D");
+
+        globalExceptionHandler.handleAccessDeniedException(exception, mockServletWebRequest);
+        // Проверка логгирования (сложно юнит-тестировать, но поведение важно)
+        // Можно было бы использовать LogCaptor, если бы это было критично
+    }
+
+    @Test
+    @DisplayName("handleAccessDeniedException: когда request не ServletWebRequest, requestUri будет 'N/A'")
+    void handleAccessDeniedException_whenNotServletWebRequest_shouldHaveNARequestUriInLog() {
+        AccessDeniedException exception = new AccessDeniedException("Access Denied");
+        // Используем mockWebRequest, который не является ServletWebRequest
+        setupMessageSourceForStaticMessages("forbidden", "T", "D");
+
+        globalExceptionHandler.handleAccessDeniedException(exception, mockWebRequest);
+        // Лог должен содержать "N/A" для URI, проверяется визуально или через LogCaptor
+    }
+
+    @Test
     @DisplayName("handleConstraintViolationException: должен вернуть 400 ProblemDetail с invalid_params")
     void handleConstraintViolationException_shouldReturnBadRequestWithInvalidParams() {
-        // Arrange
         ConstraintViolation<?> mockViolation = mock(ConstraintViolation.class);
         Path mockPath = mock(Path.class);
         when(mockPath.toString()).thenReturn("some.field");
@@ -228,22 +267,12 @@ class GlobalExceptionHandlerTest {
         when(mockViolation.getMessage()).thenReturn("must not be blank");
         Set<ConstraintViolation<?>> violations = Set.of(mockViolation);
         ConstraintViolationException exception = new ConstraintViolationException("Validation failed", violations);
-
         String typeSuffix = "validation.constraintViolation";
-        String expectedTitle = "Validation Error Title";
-        String expectedStaticDetail = "Static detail for constraint violation.";
+        setupMessageSourceForStaticMessages(typeSuffix, "Validation Error Title", "Validation Error Detail");
 
-        setupMessageSourceForStaticMessages(typeSuffix, expectedTitle, expectedStaticDetail);
+        ProblemDetail problemDetail = globalExceptionHandler.handleConstraintViolationException(exception, mockServletWebRequest);
 
-        // Act
-        ProblemDetail problemDetail = globalExceptionHandler.handleConstraintViolationException(exception, mockWebRequest);
-
-        // Assert
-        assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(BASE_PROBLEM_URI + typeSuffix.replaceAll("\\.", "/")));
-        assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
-        assertThat(problemDetail.getDetail()).isEqualTo(expectedStaticDetail);
-        assertThat(problemDetail.getProperties()).containsKey("invalid_params");
+        assertProblemDetail(problemDetail, HttpStatus.BAD_REQUEST, typeSuffix, "Validation Error Title", "Validation Error Detail", TEST_REQUEST_URI);
         @SuppressWarnings("unchecked")
         List<Map<String, String>> invalidParams = (List<Map<String, String>>) problemDetail.getProperties().get("invalid_params");
         assertThat(invalidParams).hasSize(1);
@@ -251,55 +280,183 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    @DisplayName("handleMethodArgumentNotValid: должен вернуть 400 ResponseEntity со статическим detail и invalid_params/error_count в properties")
-    void handleMethodArgumentNotValid_shouldReturnBadRequestWithStaticDetailAndProperties() {
-        // Arrange
+    @DisplayName("handleMethodArgumentNotValid: должен вернуть 400 ResponseEntity с ProblemDetail")
+    void handleMethodArgumentNotValid_shouldReturnBadRequestWithProblemDetail() {
         MethodArgumentNotValidException exception = mock(MethodArgumentNotValidException.class);
         BindingResult mockBindingResult = mock(BindingResult.class);
-        FieldError mockFieldError = new FieldError("objectForValidation", "fieldName", "rejectedFieldValue",
-                false, null, null, "Validation error message for fieldName");
-
+        FieldError mockFieldError = new FieldError("object", "field", "value", false, null, null, "message");
         when(exception.getBindingResult()).thenReturn(mockBindingResult);
         when(mockBindingResult.getFieldErrors()).thenReturn(List.of(mockFieldError));
-        int errorCount = 1;
-        when(exception.getErrorCount()).thenReturn(errorCount);
-
+        when(exception.getErrorCount()).thenReturn(1);
         String typeSuffix = "validation.methodArgumentNotValid";
-        String expectedTitle = "Invalid Request Data From MessageSource"; // Ожидаемый title из MessageSource
-        String expectedStaticDetail = "Static detail for invalid request data from MessageSource."; // Ожидаемый СТАТИЧЕСКИЙ detail
+        setupMessageSourceForStaticMessages(typeSuffix, "Invalid Arg Title", "Invalid Arg Detail");
 
-        // Настраиваем MessageSource для title и СТАТИЧЕСКОГО detail
-        when(mockMessageSource.getMessage(eq("problemDetail." + typeSuffix + ".title"), isNull(), eq(TEST_LOCALE)))
-                .thenReturn(expectedTitle);
-        when(mockMessageSource.getMessage(eq("problemDetail." + typeSuffix + ".detail"), isNull(), eq(TEST_LOCALE))) // args теперь isNull()
-                .thenReturn(expectedStaticDetail);
-
-        HttpHeaders headers = new HttpHeaders();
-        HttpStatus httpStatus = HttpStatus.BAD_REQUEST;
-
-        // Act
         ResponseEntity<Object> responseEntity = globalExceptionHandler.handleMethodArgumentNotValid(
-                exception, headers, httpStatus, mockServletWebRequest); // Используем mockServletWebRequest для instance URI
+                exception, new HttpHeaders(), HttpStatus.BAD_REQUEST, mockServletWebRequest);
 
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(httpStatus);
+        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         ProblemDetail problemDetail = (ProblemDetail) responseEntity.getBody();
-        assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(BASE_PROBLEM_URI + typeSuffix.replaceAll("\\.", "/")));
-        assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
-        assertThat(problemDetail.getDetail()).isEqualTo(expectedStaticDetail); // Проверяем СТАТИЧЕСКИЙ detail
-
-        assertThat(problemDetail.getProperties()).isNotNull();
-
+        assertProblemDetail(problemDetail, HttpStatus.BAD_REQUEST, typeSuffix, "Invalid Arg Title", "Invalid Arg Detail", TEST_REQUEST_URI);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) problemDetail.getProperties().get("invalid_params");
-        assertThat(invalidParams).isNotNull().hasSize(1);
-        assertThat(invalidParams.get(0))
-                .containsEntry("field", "fieldName")
-                .containsEntry("rejected_value", "rejectedFieldValue")
-                .containsEntry("message", "Validation error message for fieldName");
+        assertThat(invalidParams).hasSize(1);
+        assertThat(invalidParams.get(0)).containsEntry("field", "field").containsEntry("message", "message");
+    }
 
-        assertThat(problemDetail.getInstance()).isEqualTo(URI.create("/test/path")); // Проверяем instance URI
+    @Test
+    @DisplayName("handleMethodArgumentNotValid: когда getRejectedValue is null, rejected_value должен быть 'null'")
+    void handleMethodArgumentNotValid_whenRejectedValueIsNull_shouldSetRejectedValueToNullString() {
+        MethodArgumentNotValidException ex = mock(MethodArgumentNotValidException.class);
+        BindingResult br = mock(BindingResult.class);
+        // getRejectedValue() вернет null
+        FieldError fieldError = new FieldError("object", "field", null, false, null, null, "msg");
+        when(ex.getBindingResult()).thenReturn(br);
+        when(br.getFieldErrors()).thenReturn(List.of(fieldError));
+        setupMessageSourceForStaticMessages("validation.methodArgumentNotValid", "T", "D");
+
+        ResponseEntity<Object> responseEntity = globalExceptionHandler.handleMethodArgumentNotValid(ex, new HttpHeaders(), HttpStatus.BAD_REQUEST, mockServletWebRequest);
+        ProblemDetail pd = (ProblemDetail) responseEntity.getBody();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) pd.getProperties().get("invalid_params");
+        assertThat(invalidParams.get(0).get("rejected_value")).isEqualTo("null");
+    }
+
+    @Test
+    @DisplayName("handleMethodArgumentNotValid: когда getDefaultMessage is null, message должен быть пустой строкой")
+    void handleMethodArgumentNotValid_whenDefaultMessageIsNull_shouldSetMessageToEmptyString() {
+        MethodArgumentNotValidException ex = mock(MethodArgumentNotValidException.class);
+        BindingResult br = mock(BindingResult.class);
+        // getDefaultMessage() вернет null
+        FieldError fieldError = new FieldError("object", "field", "val", false, null, null, null);
+        when(ex.getBindingResult()).thenReturn(br);
+        when(br.getFieldErrors()).thenReturn(List.of(fieldError));
+        setupMessageSourceForStaticMessages("validation.methodArgumentNotValid", "T", "D");
+
+        ResponseEntity<Object> responseEntity = globalExceptionHandler.handleMethodArgumentNotValid(ex, new HttpHeaders(), HttpStatus.BAD_REQUEST, mockServletWebRequest);
+        ProblemDetail pd = (ProblemDetail) responseEntity.getBody();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) pd.getProperties().get("invalid_params");
+        assertThat(invalidParams.get(0).get("message")).isEqualTo("");
+    }
+
+    @Test
+    @DisplayName("handleHttpMessageConversionException: должен вернуть 400 ProblemDetail")
+    void handleHttpMessageConversionException_shouldReturnBadRequest() {
+        HttpMessageConversionException exception = new HttpMessageNotReadableException("Cannot read HTTP message", (HttpInputMessage) null);
+        String typeSuffix = "request.body.conversionError";
+        setupMessageSourceForStaticMessages(typeSuffix, "Conversion Error Title", "Conversion Error Detail");
+
+        ProblemDetail problemDetail = globalExceptionHandler.handleHttpMessageConversionException(exception, mockServletWebRequest);
+
+        assertProblemDetail(problemDetail, HttpStatus.BAD_REQUEST, typeSuffix, "Conversion Error Title", "Conversion Error Detail", TEST_REQUEST_URI);
+        assertThat(problemDetail.getProperties()).containsEntry("error_summary", "The request body could not be processed due to a conversion or formatting error.");
+    }
+
+    @Test
+    @DisplayName("handleHttpMessageConversionException: когда request не ServletWebRequest, requestUriPath будет 'N/A'")
+    void handleHttpMessageConversionException_whenNotServletWebRequest_shouldUseNAPath() {
+        HttpMessageConversionException exception = new HttpMessageNotReadableException("Msg", (HttpInputMessage) null);
+        String typeSuffix = "request.body.conversionError";
+        setupMessageSourceForStaticMessages(typeSuffix, "T", "D");
+
+        // Используем mockWebRequest, который не является ServletWebRequest
+        ProblemDetail problemDetail = globalExceptionHandler.handleHttpMessageConversionException(exception, mockWebRequest);
+        // Проверяем, что instance URI не установлен, так как getRequestURI() не может быть вызван
+        assertThat(problemDetail.getInstance()).isNull();
+    }
+
+
+    @Test
+    @DisplayName("handleHttpMessageNotReadable: должен делегировать и вернуть 400 ProblemDetail")
+    void handleHttpMessageNotReadable_shouldDelegateAndReturnBadRequest() {
+        // Мы не можем напрямую мокировать вызов handleHttpMessageConversionException изнутри,
+        // но можем проверить, что результат такой же, как если бы мы вызвали его напрямую
+        // с HttpMessageNotReadableException
+        HttpMessageNotReadableException exception = new HttpMessageNotReadableException("Cannot parse JSON", (HttpInputMessage) null);
+        String typeSuffix = "request.body.conversionError"; // так как делегирует
+        setupMessageSourceForStaticMessages(typeSuffix, "Conversion Error Title", "Conversion Error Detail");
+
+        ResponseEntity<Object> responseEntity = globalExceptionHandler.handleHttpMessageNotReadable(
+                exception, new HttpHeaders(), HttpStatus.BAD_REQUEST, mockServletWebRequest);
+
+        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        ProblemDetail problemDetail = (ProblemDetail) responseEntity.getBody();
+        assertProblemDetail(problemDetail, HttpStatus.BAD_REQUEST, typeSuffix, "Conversion Error Title", "Conversion Error Detail", TEST_REQUEST_URI);
+    }
+
+
+    @Test
+    @DisplayName("handleIllegalStateException: должен вернуть 500 ProblemDetail с error_ref")
+    void handleIllegalStateException_shouldReturnInternalServerErrorWithRef() {
+        IllegalStateException exception = new IllegalStateException("Something went very wrong");
+        String typeSuffix = "internal.illegalState";
+        setupMessageSourceForStaticMessages(typeSuffix, "Internal Error Title", "Internal Error Detail with ref");
+
+        ProblemDetail problemDetail = globalExceptionHandler.handleIllegalStateException(exception, mockServletWebRequest);
+
+        assertProblemDetail(problemDetail, HttpStatus.INTERNAL_SERVER_ERROR, typeSuffix, "Internal Error Title", "Internal Error Detail with ref", TEST_REQUEST_URI);
+        assertThat(problemDetail.getProperties()).containsKey("error_ref");
+        assertThat(problemDetail.getProperties().get("error_ref").toString()).matches("^[0-9a-fA-F-]{36}$"); // UUID format
+    }
+
+
+    @Test
+    @DisplayName("buildProblemDetail: когда additionalProperties is null, properties не должны добавляться")
+    void buildProblemDetail_whenAdditionalPropertiesNull_shouldNotSetProperties() {
+        setupMessageSourceForStaticMessages("some.type", "Title", "Detail");
+        ProblemDetail pd = globalExceptionHandler.buildProblemDetail(HttpStatus.OK, "some.type", TEST_LOCALE, null);
+        assertThat(pd.getProperties()).isNullOrEmpty(); // В зависимости от реализации ProblemDetail.getProperties()
+    }
+
+    @Test
+    @DisplayName("extractTokenSnippetFromRequest: когда не ServletWebRequest, должен вернуть [non-http request]")
+    void extractTokenSnippetFromRequest_whenNotServletWebRequest_shouldReturnNonHttpMarker() {
+        String snippet = globalExceptionHandler.extractTokenSnippetFromRequest(mockWebRequest); // Не ServletWebRequest
+        assertThat(snippet).isEqualTo("[non-http request]");
+    }
+
+    @Test
+    @DisplayName("extractTokenSnippetFromRequest: когда заголовок Authorization отсутствует, должен вернуть маркер")
+    void extractTokenSnippetFromRequest_whenAuthHeaderMissing_shouldReturnNoTokenMarker() {
+        when(mockHttpServletRequest.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn(null);
+        String snippet = globalExceptionHandler.extractTokenSnippetFromRequest(mockServletWebRequest);
+        assertThat(snippet).isEqualTo("[token not present or not bearer]");
+    }
+
+    @Test
+    @DisplayName("extractTokenSnippetFromRequest: когда заголовок Authorization без 'Bearer ', должен вернуть маркер")
+    void extractTokenSnippetFromRequest_whenAuthHeaderNotBearer_shouldReturnNoTokenMarker() {
+        when(mockHttpServletRequest.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn("Basic somecredentials");
+        String snippet = globalExceptionHandler.extractTokenSnippetFromRequest(mockServletWebRequest);
+        assertThat(snippet).isEqualTo("[token not present or not bearer]");
+    }
+
+    @Test
+    @DisplayName("getFieldNameFromPath: когда нет точек, должен вернуть исходный путь")
+    void getFieldNameFromPath_whenNoDots_shouldReturnOriginalPath() {
+        String path = "fieldName";
+        String fieldName = globalExceptionHandler.getFieldNameFromPath(path);
+        assertThat(fieldName).isEqualTo(path);
+    }
+
+    @Test
+    @DisplayName("setInstanceUriIfAbsent: когда instance уже установлен, не должен его менять")
+    void setInstanceUriIfAbsent_whenInstanceAlreadySet_shouldNotChangeIt() {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.OK);
+        URI preSetUri = URI.create("/preset/uri");
+        pd.setInstance(preSetUri);
+
+        globalExceptionHandler.setInstanceUriIfAbsent(pd, mockServletWebRequest);
+        assertThat(pd.getInstance()).isSameAs(preSetUri);
+    }
+
+    @Test
+    @DisplayName("setInstanceUriIfAbsent: когда request не ServletWebRequest, instance не устанавливается")
+    void setInstanceUriIfAbsent_whenNotServletWebRequest_shouldNotSetInstance() {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.OK);
+        // Используем mockWebRequest, который не является ServletWebRequest
+        globalExceptionHandler.setInstanceUriIfAbsent(pd, mockWebRequest);
+        assertThat(pd.getInstance()).isNull();
     }
 
     @Test

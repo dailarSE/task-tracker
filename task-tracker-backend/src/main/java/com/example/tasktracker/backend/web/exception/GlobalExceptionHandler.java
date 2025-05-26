@@ -496,7 +496,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      * @return Сконфигурированный объект {@link ProblemDetail}.
      * @throws NoSuchMessageException если ключ для {@code title} или {@code detail} не найден.
      */
-    private ProblemDetail buildProblemDetail(@NonNull HttpStatus status,
+     ProblemDetail buildProblemDetail(@NonNull HttpStatus status,
                                              @NonNull String typeSuffix,
                                              @NonNull Locale locale,
                                              @Nullable Map<String, Object> additionalProperties) {
@@ -545,7 +545,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      * @param propertyPath Полный путь к свойству.
      * @return Имя поля или исходный путь, если точка не найдена.
      */
-    private String getFieldNameFromPath(String propertyPath) {
+     String getFieldNameFromPath(String propertyPath) {
         // propertyPath может быть сложным, например, "methodName.arg0.fieldName"
         // Пытаемся извлечь последнюю часть.
         if (propertyPath.contains(".")) {
@@ -561,7 +561,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      * @param problemDetail Объект {@link ProblemDetail} для модификации.
      * @param request       Текущий веб-запрос.
      */
-    private void setInstanceUriIfAbsent(ProblemDetail problemDetail, WebRequest request) {
+     void setInstanceUriIfAbsent(ProblemDetail problemDetail, WebRequest request) {
         if (problemDetail.getInstance() == null && request instanceof ServletWebRequest swr) {
             problemDetail.setInstance(URI.create(swr.getRequest().getRequestURI()));
         }

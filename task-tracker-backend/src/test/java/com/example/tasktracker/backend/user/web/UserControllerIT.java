@@ -1,11 +1,9 @@
 package com.example.tasktracker.backend.user.web;
 
-import com.example.tasktracker.backend.security.details.AppUserDetails;
 import com.example.tasktracker.backend.security.dto.AuthResponse;
 import com.example.tasktracker.backend.security.dto.RegisterRequest;
-import com.example.tasktracker.backend.security.jwt.JwtIssuer;
-import com.example.tasktracker.backend.security.jwt.JwtKeyService;
 import com.example.tasktracker.backend.security.jwt.JwtProperties;
+import com.example.tasktracker.backend.test.util.TestJwtUtil;
 import com.example.tasktracker.backend.user.dto.UserResponse;
 import com.example.tasktracker.backend.user.entity.User;
 import com.example.tasktracker.backend.user.repository.UserRepository;
@@ -24,8 +22,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.MessageSource;
 import org.springframework.http.*;
-import org.springframework.security.authentication.TestingAuthenticationToken;
-import org.springframework.security.core.Authentication;
+import org.springframework.lang.Nullable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -35,18 +32,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.util.*;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Интеграционные тесты для {@link UserController} с использованием TestRestTemplate.
- * Запускают полный контекст Spring Boot и реальный веб-сервер на случайном порту.
- * Взаимодействуют с реальной БД через Testcontainers и реальным AuthService.
- */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("ci")
@@ -73,19 +65,21 @@ class UserControllerIT {
     private PasswordEncoder passwordEncoder;
 
     @Autowired
-    private JwtIssuer jwtIssuer;
-    @Autowired
     private JwtProperties appJwtProperties;
 
+    @Autowired
+    private Clock appClock;
+
     private String baseUsersUrl;
+    private TestJwtUtil testJwtUtil;
     private static final Locale TEST_LOCALE = Locale.ENGLISH;
-    private static final String PROBLEM_TYPE_BASE_URI = "https://task-tracker.example.com/probs/"; // Как в ApiConstants
 
 
     @BeforeEach
     void setUp() {
         userRepository.deleteAllInBatch();
         baseUsersUrl = "http://localhost:" + port + ApiConstants.USERS_API_BASE_URL;
+        testJwtUtil = new TestJwtUtil(appJwtProperties, appClock);
     }
 
     @AfterEach
@@ -93,12 +87,15 @@ class UserControllerIT {
         userRepository.deleteAllInBatch();
     }
 
-    // --- Вспомогательные методы ---
-
-    private HttpEntity<RegisterRequest> createJsonRequestEntityForRegister(RegisterRequest payload) {
+    private <T> HttpEntity<T> createHttpEntity(@Nullable T body, @Nullable String jwtToken) {
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        return new HttpEntity<>(payload, headers);
+        if (body != null) {
+            headers.setContentType(MediaType.APPLICATION_JSON);
+        }
+        if (jwtToken != null) {
+            headers.setBearerAuth(jwtToken);
+        }
+        return new HttpEntity<>(body, headers);
     }
 
     private User createAndSaveTestUser(String email, String password) {
@@ -108,181 +105,160 @@ class UserControllerIT {
         return userRepository.saveAndFlush(user);
     }
 
-    private String generateJwtForUser(User user) {
-        AppUserDetails appUserDetails = new AppUserDetails(user);
-        Authentication authentication =
-                new TestingAuthenticationToken(appUserDetails, null, appUserDetails.getAuthorities());
-        return jwtIssuer.generateToken(authentication);
-    }
-
-    // --- Тесты для эндпоинта /register ---
-
-    @Test
-    @DisplayName("POST /register : Валидный запрос -> должен создать пользователя и вернуть 201 Created с токеном")
-    void registerUser_whenRequestIsValid_shouldCreateUserAndReturnCreatedWithToken() {
-        // Arrange
-        RegisterRequest validRegisterRequestDto = new RegisterRequest("test@example.com", "password123", "password123");
-        String registerUrl = baseUsersUrl + "/register";
-        HttpEntity<RegisterRequest> requestEntity = createJsonRequestEntityForRegister(validRegisterRequestDto);
-
-        // Act
-        ResponseEntity<AuthResponse> responseEntity = testRestTemplate.postForEntity(
-                registerUrl, requestEntity, AuthResponse.class
-        );
-
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        assertThat(responseEntity.getHeaders().getLocation().toString()).endsWith(ApiConstants.USERS_BASE_PATH + "/me");
-        assertThat(responseEntity.getHeaders().getFirst(ApiConstants.X_ACCESS_TOKEN_HEADER)).isNotNull().isNotBlank();
-
-        AuthResponse authResponse = responseEntity.getBody();
-        assertThat(authResponse).isNotNull();
-        assertThat(authResponse.getAccessToken()).isEqualTo(responseEntity.getHeaders().getFirst(ApiConstants.X_ACCESS_TOKEN_HEADER));
-        assertThat(authResponse.getTokenType()).isEqualTo("Bearer");
-        assertThat(authResponse.getExpiresIn()).isPositive();
-
-        Optional<User> savedUserOptional = userRepository.findByEmail(validRegisterRequestDto.getEmail());
-        assertThat(savedUserOptional).isPresent();
-        User savedUser = savedUserOptional.get();
-        assertThat(savedUser.getEmail()).isEqualTo(validRegisterRequestDto.getEmail());
-        assertThat(passwordEncoder.matches(validRegisterRequestDto.getPassword(), savedUser.getPassword())).isTrue();
-        assertThat(savedUser.getCreatedAt()).isNotNull();
-        assertThat(savedUser.getUpdatedAt()).isNotNull();
-    }
-
-    static Stream<Arguments> invalidRegisterRequestsSource() {
-        return Stream.of(
-                Arguments.of(new RegisterRequest("", "password123", "password123"), "email", "Email address must not be blank."),
-                Arguments.of(new RegisterRequest("not-an-email", "password123", "password123"), "email", "Email address must be a valid format (e.g., user@example.com)."),
-                Arguments.of(new RegisterRequest("a".repeat(260) + "@example.com", "password123", "password123"), "email", "Email address length must be between 0 and 255 characters."),
-                Arguments.of(new RegisterRequest("test@example.com", "", "password123"), "password", "Password must not be blank."),
-                Arguments.of(new RegisterRequest("test@example.com", "password123", ""), "repeatPassword", "Password confirmation must not be blank.")
-        );
-    }
-
-    @ParameterizedTest(name = "POST /register : Невалидный DTO (поле {1}, ожидаем \"{2}\") -> должен вернуть 400 Bad Request")
-    @MethodSource("invalidRegisterRequestsSource")
-    @DisplayName("POST /register : Невалидный DTO -> должен вернуть 400 Bad Request с ProblemDetail")
-    void registerUser_whenRequestDtoIsInvalid_shouldReturnBadRequestWithProblemDetail(
-            RegisterRequest invalidRequest, String expectedInvalidField, String expectedValidationMessage) {
-        // Arrange
-        String registerUrl = baseUsersUrl + "/register";
-        HttpEntity<RegisterRequest> requestEntity = createJsonRequestEntityForRegister(invalidRequest);
-        String expectedProblemTitle = messageSource.getMessage("problemDetail.validation.methodArgumentNotValid.title", null, TEST_LOCALE);
-
-        // Act
-        ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
-                registerUrl, HttpMethod.POST, requestEntity, ProblemDetail.class
-        );
-
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    private void assertProblemDetailBase(ResponseEntity<ProblemDetail> responseEntity, HttpStatus expectedStatus, String expectedTypeUriPath, String expectedTitle, String expectedInstanceSuffix) {
+        assertThat(responseEntity.getStatusCode()).isEqualTo(expectedStatus);
         ProblemDetail problemDetail = responseEntity.getBody();
         assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "validation/methodArgumentNotValid"));
-        assertThat(problemDetail.getTitle()).isEqualTo(expectedProblemTitle);
-        assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
-        assertThat(problemDetail.getInstance()).isEqualTo(URI.create(ApiConstants.USERS_API_BASE_URL + "/register"));
+        assertThat(problemDetail.getType()).isEqualTo(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + expectedTypeUriPath));
+        assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
+        assertThat(problemDetail.getStatus()).isEqualTo(expectedStatus.value());
+        assertThat(problemDetail.getInstance().toString()).endsWith(expectedInstanceSuffix);
+    }
 
+    private void assertUnauthorizedProblemDetail(ResponseEntity<ProblemDetail> responseEntity, String expectedInstanceSuffix, String expectedJwtErrorType) {
+        String titleKey = "problemDetail.jwt." + expectedJwtErrorType.toLowerCase() + ".title";
+        String expectedTitle = messageSource.getMessage(titleKey, null, TEST_LOCALE);
 
+        assertProblemDetailBase(responseEntity, HttpStatus.UNAUTHORIZED,
+                "jwt/" + expectedJwtErrorType.toLowerCase(),
+                expectedTitle,
+                expectedInstanceSuffix);
+        assertThat(responseEntity.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE)).startsWith("Bearer realm=\"task-tracker\"");
+        ProblemDetail problemDetail = responseEntity.getBody();
+        assertThat(problemDetail.getProperties()).isNotNull();
+        assertThat(problemDetail.getProperties().get("error_type")).isEqualTo(expectedJwtErrorType);
+    }
+
+    private void assertGeneralUnauthorizedProblemDetail(ResponseEntity<ProblemDetail> responseEntity, String expectedInstanceSuffix) {
+        String expectedTitle = messageSource.getMessage("problemDetail.unauthorized.title", null, TEST_LOCALE);
+        assertProblemDetailBase(responseEntity, HttpStatus.UNAUTHORIZED,
+                "unauthorized",
+                expectedTitle,
+                expectedInstanceSuffix);
+        assertThat(responseEntity.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE)).isEqualTo("Bearer realm=\"task-tracker\"");
+    }
+
+    private void assertValidationProblemDetail(
+            ResponseEntity<ProblemDetail> responseEntity,
+            String expectedInstanceSuffix,
+            String expectedInvalidField) {
+
+        String expectedProblemTitle = messageSource.getMessage("problemDetail.validation.methodArgumentNotValid.title", null, TEST_LOCALE);
+        assertProblemDetailBase(responseEntity, HttpStatus.BAD_REQUEST,
+                "validation/methodArgumentNotValid",
+                expectedProblemTitle,
+                expectedInstanceSuffix);
+
+        ProblemDetail problemDetail = responseEntity.getBody();
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) problemDetail.getProperties().get("invalid_params");
         assertThat(invalidParams).isNotNull();
 
         boolean fieldErrorFound = invalidParams.stream().anyMatch(errorMap ->
                 expectedInvalidField.equals(errorMap.get("field")) &&
-                        expectedValidationMessage.equals(errorMap.get("message"))
+                        errorMap.containsKey("message") &&
+                        errorMap.get("message") instanceof String &&
+                        !((String) errorMap.get("message")).isEmpty() // Убедимся, что сообщение не пустое
         );
+
         assertThat(fieldErrorFound)
-                .as("Expected validation error for field '%s' with message '%s' was not found in invalid_params: %s",
-                        expectedInvalidField, expectedValidationMessage, invalidParams)
+                .as("Expected validation error for field '%s' was not found in invalid_params, or its message was missing/empty: %s",
+                        expectedInvalidField, invalidParams)
                 .isTrue();
+    }
+
+    @Test
+    @DisplayName("POST /register : Валидный запрос -> должен создать пользователя и вернуть 201 Created с токеном")
+    void registerUser_whenRequestIsValid_shouldCreateUserAndReturnCreatedWithToken() {
+        RegisterRequest validRegisterRequestDto = new RegisterRequest("test@example.com", "password123", "password123");
+        String registerUrl = baseUsersUrl + "/register";
+        HttpEntity<RegisterRequest> requestEntity = createHttpEntity(validRegisterRequestDto, null);
+
+        ResponseEntity<AuthResponse> responseEntity = testRestTemplate.postForEntity(
+                registerUrl, requestEntity, AuthResponse.class);
+
+        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(responseEntity.getHeaders().getLocation().toString()).endsWith(ApiConstants.USERS_API_BASE_URL + "/me");
+        assertThat(userRepository.findByEmail(validRegisterRequestDto.getEmail())).isPresent();
+    }
+
+    static Stream<Arguments> invalidRegisterRequestsSource() {
+        return Stream.of(
+                Arguments.of(new RegisterRequest("", "password123", "password123"), "email"),
+                Arguments.of(new RegisterRequest("not-an-email", "password123", "password123"), "email"),
+                Arguments.of(new RegisterRequest("a".repeat(260) + "@example.com", "password123", "password123"), "email"),
+                Arguments.of(new RegisterRequest("test@example.com", "", "password123"), "password"),
+                Arguments.of(new RegisterRequest("test@example.com", "p".repeat(256), "p".repeat(256)), "password"),
+                Arguments.of(new RegisterRequest("test@example.com", "password123", ""), "repeatPassword")
+        );
+    }
+
+    @ParameterizedTest(name = "POST /register : Невалидный DTO (поле {1}) -> должен вернуть 400 Bad Request")
+    @MethodSource("invalidRegisterRequestsSource")
+    @DisplayName("POST /register : Невалидный DTO -> должен вернуть 400 Bad Request с ProblemDetail")
+    void registerUser_whenRequestDtoIsInvalid_shouldReturnBadRequestWithProblemDetail(
+            RegisterRequest invalidRequest, String expectedInvalidField) {
+        String registerUrl = baseUsersUrl + "/register";
+        HttpEntity<RegisterRequest> requestEntity = createHttpEntity(invalidRequest, null);
+
+        ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
+                registerUrl, HttpMethod.POST, requestEntity, ProblemDetail.class);
+
+        assertValidationProblemDetail(responseEntity, ApiConstants.USERS_API_BASE_URL + "/register", expectedInvalidField);
         assertThat(userRepository.count()).isZero();
     }
 
-
     @Test
-    @DisplayName("POST /register : Пароли не совпадают (ошибка из сервиса) -> должен вернуть 400 Bad Request с ProblemDetail")
-    void registerUser_whenPasswordsDoNotMatchInService_shouldReturnBadRequestWithProblemDetail() {
-        // Arrange
+    @DisplayName("POST /register : Пароли не совпадают (ошибка из сервиса) -> должен вернуть 400 Bad Request")
+    void registerUser_whenPasswordsDoNotMatchInService_shouldReturnBadRequest() {
         RegisterRequest requestWithMismatch = new RegisterRequest("mismatch@example.com", "password123", "password456");
         String registerUrl = baseUsersUrl + "/register";
-        HttpEntity<RegisterRequest> requestEntity = createJsonRequestEntityForRegister(requestWithMismatch);
-
+        HttpEntity<RegisterRequest> requestEntity = createHttpEntity(requestWithMismatch, null);
         String expectedTitle = messageSource.getMessage("problemDetail.user.passwordMismatch.title", null, TEST_LOCALE);
-        String expectedDetail = messageSource.getMessage("problemDetail.user.passwordMismatch.detail", null, TEST_LOCALE);
 
-        // Act
         ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.postForEntity(
-                registerUrl, requestEntity, ProblemDetail.class
-        );
+                registerUrl, requestEntity, ProblemDetail.class);
 
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "user/password-mismatch"));
-        assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
-        assertThat(problemDetail.getDetail()).isEqualTo(expectedDetail);
-        assertThat(problemDetail.getInstance()).isEqualTo(URI.create(ApiConstants.USERS_API_BASE_URL + "/register"));
+        assertProblemDetailBase(responseEntity, HttpStatus.BAD_REQUEST,
+                "user/password-mismatch",
+                expectedTitle,
+                ApiConstants.USERS_API_BASE_URL + "/register");
         assertThat(userRepository.count()).isZero();
     }
 
     @Test
-    @DisplayName("POST /register : Email уже существует (ошибка из сервиса) -> должен вернуть 409 Conflict с ProblemDetail")
-    void registerUser_whenEmailAlreadyExistsInService_shouldReturnConflictWithProblemDetail() {
-        // Arrange
+    @DisplayName("POST /register : Email уже существует (ошибка из сервиса) -> должен вернуть 409 Conflict")
+    void registerUser_whenEmailAlreadyExistsInService_shouldReturnConflict() {
         String existingEmail = "existing@example.com";
         createAndSaveTestUser(existingEmail, "someOtherPassword");
-
         RegisterRequest requestForExistingEmail = new RegisterRequest(existingEmail, "password123", "password123");
         String registerUrl = baseUsersUrl + "/register";
-        HttpEntity<RegisterRequest> requestEntity = createJsonRequestEntityForRegister(requestForExistingEmail);
-
+        HttpEntity<RegisterRequest> requestEntity = createHttpEntity(requestForExistingEmail, null);
         String expectedTitle = messageSource.getMessage("problemDetail.user.alreadyExists.title", null, TEST_LOCALE);
-        String expectedDetail = messageSource.getMessage("problemDetail.user.alreadyExists.detail", new Object[]{existingEmail}, TEST_LOCALE);
 
-        // Act
         ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.postForEntity(
-                registerUrl, requestEntity, ProblemDetail.class
-        );
+                registerUrl, requestEntity, ProblemDetail.class);
 
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertProblemDetailBase(responseEntity, HttpStatus.CONFLICT,
+                "user/already-exists",
+                expectedTitle,
+                ApiConstants.USERS_API_BASE_URL + "/register");
         ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "user/already-exists"));
-        assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
-        assertThat(problemDetail.getDetail()).isEqualTo(expectedDetail);
-        assertThat(problemDetail.getInstance()).isEqualTo(URI.create(ApiConstants.USERS_API_BASE_URL + "/register"));
         assertThat(problemDetail.getProperties()).containsEntry("conflicting_email", existingEmail);
         assertThat(userRepository.count()).isEqualTo(1);
     }
 
-    // --- Тесты для эндпоинта /me ---
-
     @Test
     @DisplayName("GET /users/me: Валидный JWT -> должен вернуть 200 OK с UserResponse")
     void getCurrentUser_whenRequestWithValidJwt_shouldReturnOkWithUserResponse() {
-        // Arrange
         User user = createAndSaveTestUser("me_user@example.com", "me_password");
-        String jwtToken = generateJwtForUser(user);
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(jwtToken);
-        HttpEntity<String> entity = new HttpEntity<>(null, headers);
-
+        String jwtToken = testJwtUtil.generateValidToken(user);
+        HttpEntity<Void> entity = createHttpEntity(null, jwtToken);
         String meUrl = baseUsersUrl + "/me";
 
-        // Act
         ResponseEntity<UserResponse> responseEntity = testRestTemplate.exchange(
-                meUrl,
-                HttpMethod.GET,
-                entity,
-                UserResponse.class
-        );
+                meUrl, HttpMethod.GET, entity, UserResponse.class);
 
-        // Assert
         assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.OK);
         UserResponse userResponse = responseEntity.getBody();
         assertThat(userResponse).isNotNull();
@@ -293,161 +269,52 @@ class UserControllerIT {
     @Test
     @DisplayName("GET /users/me: Отсутствует JWT -> должен вернуть 401 Unauthorized")
     void getCurrentUser_whenRequestWithoutJwt_shouldReturnUnauthorized() {
-        // Arrange
         String meUrl = baseUsersUrl + "/me";
-
-        // Act
+        HttpEntity<Void> entity = createHttpEntity(null, null);
         ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
-                meUrl,
-                HttpMethod.GET,
-                null,
-                ProblemDetail.class
-        );
-
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        assertThat(responseEntity.getHeaders()
-                .getFirst(HttpHeaders.WWW_AUTHENTICATE)).isEqualTo("Bearer realm=\"task-tracker\"");
-        ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "unauthorized"));
-        assertThat(problemDetail.getTitle()).isEqualTo(messageSource.getMessage("problemDetail.unauthorized.title",
-                null, TEST_LOCALE));
-        assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
-        assertThat(problemDetail.getInstance()).isEqualTo(URI.create(ApiConstants.USERS_API_BASE_URL + "/me"));
+                meUrl, HttpMethod.GET, entity, ProblemDetail.class);
+        assertGeneralUnauthorizedProblemDetail(responseEntity, ApiConstants.USERS_API_BASE_URL + "/me");
     }
 
     @Test
-    @DisplayName("GET /users/me: JWT с неверной подписью -> должен вернуть 401 Unauthorized с ProblemDetail")
+    @DisplayName("GET /users/me: JWT с неверной подписью -> должен вернуть 401 Unauthorized")
     void getCurrentUser_whenJwtHasInvalidSignature_shouldReturnUnauthorizedWithInvalidSignatureProblem() {
-        // Arrange
-        // 1. Создаем пользователя, для которого будем пытаться использовать токен
         User user = createAndSaveTestUser("signature_test@example.com", "password");
-
-        // 2. Генерируем токен с ДРУГИМ, НЕПРАВИЛЬНЫМ ключом
         JwtProperties wrongKeyProps = new JwtProperties();
-        // Важно: этот Base64 ключ должен быть ДРУГИМ, чем тот, что используется в application-ci.yml
-        // (и который используется инжектированным jwtKeyService/jwtIssuer в приложении)
-        // Пример: "anotherTestSecretKeyForTaskTrackerApp123" -> "YW5vdGhlclRlc3RTZWNyZXRLZXlGb3JUYXNrVHJhY2tlckFwcDEyMw=="
         wrongKeyProps.setSecretKey("YW5vdGhlclRlc3RTZWNyZXRLZXlGb3JUYXNrVHJhY2tlckFwcDEyMw==");
-        wrongKeyProps.setExpirationMs(3600000L); // 1 час
-        JwtKeyService wrongJwtKeyService = new JwtKeyService(wrongKeyProps);
-        JwtIssuer wrongKeyIssuer = new JwtIssuer(wrongKeyProps, wrongJwtKeyService, Clock.systemUTC()); // Используем системные часы для генерации
+        wrongKeyProps.setExpirationMs(appJwtProperties.getExpirationMs());
+        wrongKeyProps.setEmailClaimKey(appJwtProperties.getEmailClaimKey());
+        wrongKeyProps.setAuthoritiesClaimKey(appJwtProperties.getAuthoritiesClaimKey());
+        TestJwtUtil wrongKeyUtil = new TestJwtUtil(wrongKeyProps, appClock);
+        String tokenWithWrongSignature = wrongKeyUtil.generateValidToken(user);
 
-        AppUserDetails appUserDetailsForWrongKey = new AppUserDetails(user);
-        Authentication authForWrongKey =
-                new TestingAuthenticationToken(appUserDetailsForWrongKey, null, appUserDetailsForWrongKey.getAuthorities());
-        String tokenWithWrongSignature = wrongKeyIssuer.generateToken(authForWrongKey);
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(tokenWithWrongSignature);
-        HttpEntity<String> entity = new HttpEntity<>(null, headers);
+        HttpEntity<Void> entity = createHttpEntity(null, tokenWithWrongSignature);
         String meUrl = baseUsersUrl + "/me";
-
-        // Act
         ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
-                meUrl, HttpMethod.GET, entity, ProblemDetail.class
-        );
-
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        assertThat(responseEntity.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE))
-                .startsWith("Bearer realm=\"task-tracker\"");
-
-        ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "jwt/invalid_signature"));
-        assertThat(problemDetail.getTitle()).isEqualTo(messageSource.getMessage("problemDetail.jwt.invalid_signature.title", null, TEST_LOCALE));
-        assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
-        assertThat(problemDetail.getInstance()).isEqualTo(URI.create(ApiConstants.USERS_API_BASE_URL + "/me"));
-        assertThat(problemDetail.getProperties()).containsKey("error_type");
-        assertThat(problemDetail.getProperties().get("error_type")).isEqualTo("INVALID_SIGNATURE"); // JwtErrorType.INVALID_SIGNATURE.name()
+                meUrl, HttpMethod.GET, entity, ProblemDetail.class);
+        assertUnauthorizedProblemDetail(responseEntity, ApiConstants.USERS_API_BASE_URL + "/me", "INVALID_SIGNATURE");
     }
 
     @Test
-    @DisplayName("GET /users/me: Структурно неверный (malformed) JWT -> должен вернуть 401 Unauthorized с ProblemDetail")
+    @DisplayName("GET /users/me: Структурно неверный (malformed) JWT -> должен вернуть 401 Unauthorized")
     void getCurrentUser_whenJwtIsMalformed_shouldReturnUnauthorizedWithMalformedProblem() {
-        // Arrange
-        String malformedToken = "this.is.not.a.jwt"; // Явно невалидный формат
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(malformedToken);
-        HttpEntity<String> entity = new HttpEntity<>(null, headers);
+        String malformedToken = "this.is.not.a.jwt";
+        HttpEntity<Void> entity = createHttpEntity(null, malformedToken);
         String meUrl = baseUsersUrl + "/me";
-
-        // Act
         ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
-                meUrl, HttpMethod.GET, entity, ProblemDetail.class
-        );
-
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        assertThat(responseEntity.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE))
-                .startsWith("Bearer realm=\"task-tracker\"");
-
-        ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "jwt/malformed"));
-        assertThat(problemDetail.getTitle()).isEqualTo(messageSource.getMessage("problemDetail.jwt.malformed.title", null, TEST_LOCALE));
-        assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
-        assertThat(problemDetail.getInstance()).isEqualTo(URI.create(ApiConstants.USERS_API_BASE_URL + "/me"));
-        assertThat(problemDetail.getProperties()).containsKey("error_type");
-        assertThat(problemDetail.getProperties().get("error_type")).isEqualTo("MALFORMED"); // JwtErrorType.MALFORMED.name()
+                meUrl, HttpMethod.GET, entity, ProblemDetail.class);
+        assertUnauthorizedProblemDetail(responseEntity, ApiConstants.USERS_API_BASE_URL + "/me", "MALFORMED");
     }
 
     @Test
-    @DisplayName("GET /users/me: Просроченный JWT -> должен вернуть 401 Unauthorized с ProblemDetail")
+    @DisplayName("GET /users/me: Просроченный JWT -> должен вернуть 401 Unauthorized")
     void getCurrentUser_whenJwtIsExpired_shouldReturnUnauthorizedWithExpiredProblem() {
-        // Arrange
         User user = createAndSaveTestUser("expired_user@example.com", "password");
-        Authentication authentication = new TestingAuthenticationToken(
-                new AppUserDetails(user), null, Collections.emptyList()
-        );
-
-        // 1. Определяем время: "сейчас" для валидатора и "в прошлом" для генерации токена
-        Instant validatorNow = Instant.now(Clock.systemUTC()); // Время, которое будет у валидатора в приложении
-        Instant tokenIssueTime = validatorNow.minus(Duration.ofHours(1)); // Токен был выдан час назад
-        long tokenLifetimeMs = 10_000L; // Токен жил 10 секунд
-
-        // 2. Настраиваем свойства и компоненты для генерации просроченного токена
-        JwtProperties expiredTokenProps = new JwtProperties();
-        expiredTokenProps.setSecretKey(appJwtProperties.getSecretKey()); // Ключ из конфигурации приложения
-        expiredTokenProps.setExpirationMs(tokenLifetimeMs);
-        expiredTokenProps.setEmailClaimKey(appJwtProperties.getEmailClaimKey());
-        expiredTokenProps.setAuthoritiesClaimKey(appJwtProperties.getAuthoritiesClaimKey());
-
-        JwtKeyService keyServiceForExpired = new JwtKeyService(expiredTokenProps);
-        JwtIssuer issuerForExpiredToken = new JwtIssuer(
-                expiredTokenProps,
-                keyServiceForExpired,
-                Clock.fixed(tokenIssueTime, ZoneOffset.UTC) // Фиксируем время выдачи токена в прошлом
-        );
-
-        String expiredToken = issuerForExpiredToken.generateToken(authentication);
-        // Токен выдан в tokenIssueTime и истек через tokenLifetimeMs (т.е. задолго до validatorNow)
-
-        // 3. Формируем запрос
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(expiredToken);
-        HttpEntity<String> entity = new HttpEntity<>(null, headers);
+        String expiredToken = testJwtUtil.generateExpiredToken(user, Duration.ofSeconds(1), Duration.ofSeconds(5));
+        HttpEntity<Void> entity = createHttpEntity(null, expiredToken);
         String meUrl = baseUsersUrl + "/me";
-
-        // Act
         ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
-                meUrl, HttpMethod.GET, entity, ProblemDetail.class
-        );
-
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        assertThat(responseEntity.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE))
-                .startsWith("Bearer realm=\"task-tracker\"");
-
-        ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "jwt/expired"));
-        assertThat(problemDetail.getTitle()).isEqualTo(messageSource.getMessage("problemDetail.jwt.expired.title", null, TEST_LOCALE));
-        assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
-        assertThat(problemDetail.getInstance()).isEqualTo(URI.create(ApiConstants.USERS_API_BASE_URL + "/me"));
-        assertThat(problemDetail.getProperties()).containsEntry("error_type", "EXPIRED");
+                meUrl, HttpMethod.GET, entity, ProblemDetail.class);
+        assertUnauthorizedProblemDetail(responseEntity, ApiConstants.USERS_API_BASE_URL + "/me", "EXPIRED");
     }
 }

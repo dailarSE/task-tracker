@@ -24,6 +24,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.*;
 import org.springframework.security.authentication.TestingAuthenticationToken;
@@ -119,6 +120,17 @@ class TaskControllerIT {
         }
         return new HttpEntity<>(body, headers);
     }
+
+    // Вспомогательный метод в TaskControllerIT для создания Task, чтобы не дублировать код
+    private Task createTaskEntityForTest(String title, User owner, TaskStatus status) {
+        Task task = new Task();
+        task.setTitle(title);
+        task.setUser(owner);
+        task.setStatus(status);
+        // createdAt/updatedAt будут установлены JPA Auditing при save
+        return task;
+    }
+
 
     @Test
     @DisplayName("POST /tasks: Валидный запрос с валидным JWT -> должен вернуть 201 Created и созданную задачу")
@@ -294,5 +306,109 @@ class TaskControllerIT {
         assertThat(problemDetail.getProperties()).containsEntry("error_type", "EXPIRED");
 
         assertThat(taskRepository.findAllByUserId(testUser.getId(), Pageable.unpaged()).getTotalElements()).isZero();
+    }
+
+    @Test
+    @DisplayName("GET /tasks: Валидный JWT, пользователь имеет задачи -> должен вернуть 200 OK со списком задач, отсортированных по createdAt DESC")
+    void getAllTasks_whenValidJwtAndUserHasTasks_shouldReturn200AndTaskListSorted() {
+        // Arrange
+        // testUser уже создан в @BeforeEach и для него есть jwtForTestUser
+        // Создаем несколько задач для testUser с разными createdAt (используем Clock для контроля времени)
+        // Для этого нам нужен доступ к Clock или возможность его мокировать в IT,
+        // что сложнее с TestRestTemplate. Проще создать их с небольшими задержками.
+
+        Task task1 = new Task(null, "Task Old", "Old desc", TaskStatus.PENDING, null, null, null, testUser);
+        taskRepository.saveAndFlush(task1); // Сохраняем, чтобы createdAt установился
+
+
+        Task task2 = new Task(null, "Task New", "New desc", TaskStatus.COMPLETED, null, null, Instant.now(appClock), testUser);
+        taskRepository.saveAndFlush(task2);
+
+        HttpEntity<Object> requestEntityWithJwt = createHttpEntityWithJwtAndBody(null, jwtForTestUser);
+
+        // Act
+        ResponseEntity<List<TaskResponse>> responseEntity = testRestTemplate.exchange(
+                baseTasksUrl, // GET /api/v1/tasks
+                HttpMethod.GET,
+                requestEntityWithJwt,
+                new ParameterizedTypeReference<List<TaskResponse>>() {} // Для получения списка
+        );
+
+        // Assert
+        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.OK);
+        List<TaskResponse> tasks = responseEntity.getBody();
+        assertThat(tasks)
+                .isNotNull()
+                .hasSize(2)
+                .extracting(TaskResponse::getTitle)
+                .containsExactly("Task New", "Task Old"); // Проверяем порядок (новые первыми)
+
+        assertThat(tasks.get(0).getId()).isEqualTo(task2.getId());
+        assertThat(tasks.get(1).getId()).isEqualTo(task1.getId());
+        assertThat(tasks).allMatch(task -> task.getUserId().equals(testUser.getId()));
+    }
+
+    @Test
+    @DisplayName("GET /tasks: Валидный JWT, у пользователя нет задач -> должен вернуть 200 OK с пустым списком")
+    void getAllTasks_whenValidJwtAndUserHasNoTasks_shouldReturn200AndEmptyList() {
+        // Arrange
+        HttpEntity<Object> requestEntityWithJwt = createHttpEntityWithJwtAndBody(null, jwtForTestUser);
+
+        // Act
+        ResponseEntity<List<TaskResponse>> responseEntity = testRestTemplate.exchange(
+                baseTasksUrl,
+                HttpMethod.GET,
+                requestEntityWithJwt,
+                new ParameterizedTypeReference<List<TaskResponse>>() {}
+        );
+
+        // Assert
+        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.OK);
+        List<TaskResponse> tasks = responseEntity.getBody();
+        assertThat(tasks).isNotNull().isEmpty();
+    }
+
+    @Test
+    @DisplayName("GET /tasks: Пользователь видит только свои задачи")
+    void getAllTasks_shouldReturnOnlyOwnTasks() {
+        // Arrange
+        // testUser (пользователь 1) - для него есть jwtForTestUser
+        Task taskUser1 = taskRepository.save(createTaskEntityForTest("Task User 1", testUser, TaskStatus.PENDING));
+
+        // Создаем другого пользователя и его задачу
+
+        User anotherUser = userRepository.save(new User(null, "another@example.com",
+                passwordEncoder.encode("password"), null, null));
+        taskRepository.saveAndFlush(createTaskEntityForTest("Task Another User", anotherUser, TaskStatus.PENDING));
+
+        HttpEntity<Object> requestEntityUser1 = createHttpEntityWithJwtAndBody(null, jwtForTestUser);
+
+        // Act: Запрос от testUser
+        ResponseEntity<List<TaskResponse>> responseEntityUser1 = testRestTemplate.exchange(
+                baseTasksUrl, HttpMethod.GET, requestEntityUser1, new ParameterizedTypeReference<List<TaskResponse>>() {});
+
+        // Assert: testUser видит только свою задачу
+        assertThat(responseEntityUser1.getStatusCode()).isEqualTo(HttpStatus.OK);
+        List<TaskResponse> tasksUser1 = responseEntityUser1.getBody();
+        assertThat(tasksUser1)
+                .isNotNull()
+                .hasSize(1)
+                .extracting(TaskResponse::getId)
+                .containsExactly(taskUser1.getId());
+    }
+
+    @Test
+    @DisplayName("GET /tasks: Отсутствует JWT -> должен вернуть 401 Unauthorized")
+    void getAllTasks_whenNoJwt_shouldReturn401() {
+        // Arrange
+        HttpEntity<Object> requestEntityNoJwt = createHttpEntityWithJwtAndBody(null, null);
+
+        // Act
+        ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
+                baseTasksUrl, HttpMethod.GET, requestEntityNoJwt, ProblemDetail.class);
+
+        // Assert
+        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        // Проверки ProblemDetail и WWW-Authenticate в тестах для UserControllerIT
     }
 }

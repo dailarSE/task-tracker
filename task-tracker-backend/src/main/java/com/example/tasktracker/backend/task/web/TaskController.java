@@ -12,13 +12,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
+import java.util.List;
 
 /**
  * REST-контроллер для операций, связанных с задачами (Tasks).
@@ -67,13 +65,13 @@ public class TaskController {
      * в формате Problem Details.
      * </p>
      *
-     * @param request         DTO с данными для создания задачи. Должен быть аннотирован {@code @Valid}
-     *                        для активации валидации.
+     * @param request            DTO с данными для создания задачи. Должен быть аннотирован {@code @Valid}
+     *                           для активации валидации.
      * @param currentUserDetails Детали текущего аутентифицированного пользователя,
      *                           внедренные Spring Security. Ожидается, что не будет {@code null}
      *                           для защищенного эндпоинта.
      * @return {@link ResponseEntity} с {@link TaskResponse} в теле и статусом 201 Created,
-     *         либо ответ об ошибке, сформированный {@link GlobalExceptionHandler}.
+     * либо ответ об ошибке, сформированный {@link GlobalExceptionHandler}.
      * @throws IllegalStateException если {@code currentUserDetails} не может быть разрешен в корректный {@link AppUserDetails} с ID (выбрасывается из {@link ControllerSecurityUtils}).
      */
     @PostMapping
@@ -98,4 +96,34 @@ public class TaskController {
 
         return ResponseEntity.created(location).body(createdTaskResponse);
     }
+
+    /**
+     * Получает список всех задач для текущего аутентифицированного пользователя.
+     * Задачи отсортированы по времени создания (новые сначала).
+     * <p>
+     * Эндпоинт: {@code GET /api/v1/tasks}
+     * </p>
+     * <p>
+     * Доступен только для аутентифицированных пользователей. При успешном запросе
+     * возвращает HTTP статус 200 OK со списком {@link TaskResponse} в теле.
+     * Если у пользователя нет задач, возвращается пустой список.
+     * </p>
+     *
+     * @param currentUserDetails Детали текущего аутентифицированного пользователя.
+     * @return {@link ResponseEntity} со списком {@link TaskResponse} и статусом 200 OK.
+     * @throws IllegalStateException если principal не может быть разрешен (от {@link ControllerSecurityUtils}).
+     */
+    @GetMapping
+    public ResponseEntity<List<TaskResponse>> getAllTasksForCurrentUser(
+            @AuthenticationPrincipal AppUserDetails currentUserDetails) {
+
+        Long currentUserId = ControllerSecurityUtils.getCurrentUserId(currentUserDetails);
+        log.info("Processing request to get all tasks for user ID: {}", currentUserId);
+
+        List<TaskResponse> tasks = taskService.getAllTasksForCurrentUser(currentUserId);
+        log.info("Retrieved all tasks for user ID: {}", currentUserId);
+
+        return ResponseEntity.ok(tasks);
+    }
+
 }

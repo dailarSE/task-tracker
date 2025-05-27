@@ -126,4 +126,38 @@ public class TaskController {
         return ResponseEntity.ok(tasks);
     }
 
+    /**
+     * Получает задачу по ее ID для текущего аутентифицированного пользователя.
+     * <p>
+     * Эндпоинт: {@code GET /api/v1/tasks/{taskId}}
+     * </p>
+     * <p>
+     * Доступен только для аутентифицированных пользователей.
+     * Если задача найдена и принадлежит пользователю, возвращает HTTP 200 OK с {@link TaskResponse}.
+     * Если задача не найдена или не принадлежит пользователю, {@link TaskService} выбросит
+     * {@link com.example.tasktracker.backend.task.exception.TaskNotFoundException},
+     * которая будет обработана {@link com.example.tasktracker.backend.web.exception.GlobalExceptionHandler}
+     * для возврата HTTP 404 Not Found с ProblemDetail.
+     * Если {@code taskId} в пути некорректного формата, будет возвращен HTTP 400 Bad Request
+     * с ProblemDetail (также через {@code GlobalExceptionHandler}).
+     * </p>
+     *
+     * @param taskId ID запрашиваемой задачи, извлекаемый из пути URL.
+     * @param currentUserDetails Детали текущего аутентифицированного пользователя.
+     * @return {@link ResponseEntity} с {@link TaskResponse} и статусом 200 OK,
+     *         либо ответ об ошибке от {@code GlobalExceptionHandler}.
+     * @throws com.example.tasktracker.backend.task.exception.TaskNotFoundException если задача не найдена для пользователя.
+     * @throws IllegalStateException если principal не может быть разрешен (от {@link ControllerSecurityUtils}).
+     */
+    @GetMapping("/{taskId}")
+    public ResponseEntity<TaskResponse> getTaskById(@PathVariable Long taskId,
+                                                    @AuthenticationPrincipal AppUserDetails currentUserDetails) {
+        Long currentUserId = ControllerSecurityUtils.getCurrentUserId(currentUserDetails);
+        log.info("Processing request to get task ID: {} for user ID: {}", taskId, currentUserId);
+
+        TaskResponse taskResponse = taskService.getTaskByIdForCurrentUserOrThrow(taskId, currentUserId);
+
+        log.info("Successfully retrieved task ID: {} for user ID: {}", taskId, currentUserId);
+        return ResponseEntity.ok(taskResponse);
+    }
 }

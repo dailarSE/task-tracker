@@ -4,6 +4,7 @@ import com.example.tasktracker.backend.task.dto.TaskCreateRequest;
 import com.example.tasktracker.backend.task.dto.TaskResponse;
 import com.example.tasktracker.backend.task.entity.Task;
 import com.example.tasktracker.backend.task.entity.TaskStatus;
+import com.example.tasktracker.backend.task.exception.TaskNotFoundException;
 import com.example.tasktracker.backend.task.repository.TaskRepository;
 import com.example.tasktracker.backend.user.repository.UserRepository;
 import lombok.NonNull;
@@ -44,12 +45,12 @@ public class TaskService {
      * Дата создания и обновления устанавливаются автоматически через JPA Auditing.
      * </p>
      *
-     * @param request         DTO {@link TaskCreateRequest} с данными для создания задачи. Не должен быть null.
-     * @param currentUserId   ID текущего аутентифицированного пользователя, который будет владельцем задачи.
-     *                        Не должен быть null.
+     * @param request       DTO {@link TaskCreateRequest} с данными для создания задачи. Не должен быть null.
+     * @param currentUserId ID текущего аутентифицированного пользователя, который будет владельцем задачи.
+     *                      Не должен быть null.
      * @return {@link TaskResponse} DTO, представляющий созданную задачу.
      * @throws org.springframework.orm.jpa.JpaObjectRetrievalFailureException если пользователь с {@code currentUserId} не найден (выбрасывается {@code userRepository.getReferenceById}).
-     * @throws NullPointerException если {@code request} или {@code currentUserId} равны {@code null}.
+     * @throws NullPointerException                                           если {@code request} или {@code currentUserId} равны {@code null}.
      */
     @Transactional
     public TaskResponse createTask(@NonNull TaskCreateRequest request, @NonNull Long currentUserId) {
@@ -90,4 +91,27 @@ public class TaskService {
         return responses;
     }
 
+    /**
+     * Находит задачу по ее ID для указанного пользователя.
+     * Если задача не найдена или не принадлежит пользователю, выбрасывает {@link TaskNotFoundException}.
+     *
+     * @param taskId        ID запрашиваемой задачи. Не должен быть null.
+     * @param currentUserId ID текущего аутентифицированного пользователя. Не должен быть null.
+     * @return {@link TaskResponse} DTO, представляющий найденную задачу.
+     * @throws TaskNotFoundException если задача не найдена или не принадлежит пользователю.
+     * @throws NullPointerException  если taskId или currentUserId равны null (из-за @NonNull).
+     */
+    public TaskResponse getTaskByIdForCurrentUserOrThrow(@NonNull Long taskId, @NonNull Long currentUserId) {
+        log.debug("Attempting to find task with ID: {} for user ID: {}", taskId, currentUserId);
+
+        return taskRepository.findByIdAndUserId(taskId, currentUserId)
+                .map(task -> {
+                    log.info("Successfully retrieved task with ID: {} for user ID: {}", task.getId(), currentUserId);
+                    return TaskResponse.fromEntity(task);
+                })
+                .orElseThrow(() -> { // Если Optional пуст
+                    log.warn("Task not found or access denied for task ID: {} and user ID: {}", taskId, currentUserId);
+                    return new TaskNotFoundException(taskId, currentUserId);
+                });
+    }
 }

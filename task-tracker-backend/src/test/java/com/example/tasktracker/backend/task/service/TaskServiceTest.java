@@ -4,6 +4,7 @@ import com.example.tasktracker.backend.task.dto.TaskCreateRequest;
 import com.example.tasktracker.backend.task.dto.TaskResponse;
 import com.example.tasktracker.backend.task.entity.Task;
 import com.example.tasktracker.backend.task.entity.TaskStatus;
+import com.example.tasktracker.backend.task.exception.TaskNotFoundException;
 import com.example.tasktracker.backend.task.repository.TaskRepository;
 import com.example.tasktracker.backend.user.entity.User;
 import com.example.tasktracker.backend.user.repository.UserRepository;
@@ -20,6 +21,7 @@ import org.springframework.orm.jpa.JpaObjectRetrievalFailureException;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -238,6 +240,71 @@ class TaskServiceTest {
                 .isThrownBy(() -> taskService.getAllTasksForCurrentUser(null))
                 .withMessageContaining("currentUserId is marked non-null but is null");
         verifyNoInteractions(mockTaskRepository);
+    }
+
+    @Test
+    @DisplayName("getTaskByIdForCurrentUserOrThrow: задача найдена и принадлежит пользователю -> должен вернуть TaskResponse")
+    void getTaskByIdForCurrentUserOrThrow_whenTaskExistsAndBelongsToUser_shouldReturnTaskResponse() {
+        // Arrange
+        Long taskId = 1L;
+        Long userId = USER_ID; // USER_ID из @BeforeEach или определить локально
+
+        Task foundTaskEntity = new Task();
+        foundTaskEntity.setId(taskId);
+        foundTaskEntity.setTitle("Found Task");
+        // Устанавливаем мок пользователя в сущность Task
+        User mockUserForTask= mock(User.class);
+        when(mockUserForTask.getId()).thenReturn(userId);
+        foundTaskEntity.setUser(mockUserForTask);
+        // ... (другие поля Task, если они важны для TaskResponse.fromEntity)
+
+        when(mockTaskRepository.findByIdAndUserId(taskId, userId)).thenReturn(Optional.of(foundTaskEntity));
+
+        // Act
+        TaskResponse response = taskService.getTaskByIdForCurrentUserOrThrow(taskId, userId);
+
+        // Assert
+        assertThat(response).isNotNull();
+        assertThat(response.getId()).isEqualTo(taskId);
+        assertThat(response.getTitle()).isEqualTo("Found Task");
+        assertThat(response.getUserId()).isEqualTo(userId); // Проверяем, что userId корректно смаппился
+
+        verify(mockTaskRepository).findByIdAndUserId(taskId, userId);
+    }
+
+    @Test
+    @DisplayName("getTaskByIdForCurrentUserOrThrow: задача не найдена -> должен выбросить TaskNotFoundException")
+    void getTaskByIdForCurrentUserOrThrow_whenTaskNotFound_shouldThrowTaskNotFoundException() {
+        // Arrange
+        Long taskId = 1L;
+        Long userId = USER_ID;
+        when(mockTaskRepository.findByIdAndUserId(taskId, userId)).thenReturn(Optional.empty());
+
+        // Act & Assert
+        assertThatExceptionOfType(TaskNotFoundException.class)
+                .isThrownBy(() -> taskService.getTaskByIdForCurrentUserOrThrow(taskId, userId))
+                .satisfies(ex -> {
+                    assertThat(ex.getRequestedTaskId()).isEqualTo(taskId);
+                    assertThat(ex.getCurrentUserId()).isEqualTo(userId);
+                });
+
+        verify(mockTaskRepository).findByIdAndUserId(taskId, userId);
+    }
+
+    @Test
+    @DisplayName("getTaskByIdForCurrentUserOrThrow: taskId null -> должен выбросить NullPointerException")
+    void getTaskByIdForCurrentUserOrThrow_whenTaskIdIsNull_shouldThrowNullPointerException() {
+        assertThatNullPointerException()
+                .isThrownBy(() -> taskService.getTaskByIdForCurrentUserOrThrow(null, USER_ID))
+                .withMessageContaining("taskId is marked non-null but is null");
+    }
+
+    @Test
+    @DisplayName("getTaskByIdForCurrentUserOrThrow: currentUserId null -> должен выбросить NullPointerException")
+    void getTaskByIdForCurrentUserOrThrow_whenUserIdIsNull_shouldThrowNullPointerException() {
+        assertThatNullPointerException()
+                .isThrownBy(() -> taskService.getTaskByIdForCurrentUserOrThrow(1L, null))
+                .withMessageContaining("currentUserId is marked non-null but is null");
     }
 
 }

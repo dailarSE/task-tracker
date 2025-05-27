@@ -132,22 +132,22 @@ public class TaskController {
      * Эндпоинт: {@code GET /api/v1/tasks/{taskId}}
      * </p>
      * <p>
-     * Доступен только для аутентифицированных пользователей.
-     * Если задача найдена и принадлежит пользователю, возвращает HTTP 200 OK с {@link TaskResponse}.
-     * Если задача не найдена или не принадлежит пользователю, {@link TaskService} выбросит
-     * {@link com.example.tasktracker.backend.task.exception.TaskNotFoundException},
-     * которая будет обработана {@link com.example.tasktracker.backend.web.exception.GlobalExceptionHandler}
-     * для возврата HTTP 404 Not Found с ProblemDetail.
-     * Если {@code taskId} в пути некорректного формата, будет возвращен HTTP 400 Bad Request
-     * с ProblemDetail (также через {@code GlobalExceptionHandler}).
+     * При успешном запросе возвращает HTTP 200 OK с {@link TaskResponse} в теле,
+     * содержащим полную информацию о запрошенной задаче.
      * </p>
      *
      * @param taskId ID запрашиваемой задачи, извлекаемый из пути URL.
-     * @param currentUserDetails Детали текущего аутентифицированного пользователя.
-     * @return {@link ResponseEntity} с {@link TaskResponse} и статусом 200 OK,
-     *         либо ответ об ошибке от {@code GlobalExceptionHandler}.
-     * @throws com.example.tasktracker.backend.task.exception.TaskNotFoundException если задача не найдена для пользователя.
-     * @throws IllegalStateException если principal не может быть разрешен (от {@link ControllerSecurityUtils}).
+     *               Должен быть валидным числовым идентификатором.
+     * @param currentUserDetails Детали текущего аутентифицированного пользователя,
+     *                           внедренные Spring Security. Ожидается, что не будет {@code null}.
+     * @return {@link ResponseEntity} с {@link TaskResponse} и статусом 200 OK.
+     * @throws com.example.tasktracker.backend.task.exception.TaskNotFoundException если задача с указанным ID
+     *         не найдена для текущего пользователя или не существует. В этом случае будет возвращен
+     *         HTTP 404 Not Found.
+     * @throws IllegalStateException если principal текущего пользователя не может быть корректно разрешен
+     *         (например, отсутствует ID пользователя в {@code AppUserDetails}). В этом случае будет возвращен
+     *         HTTP 500 Internal Server Error.
+     * @see com.example.tasktracker.backend.web.exception.GlobalExceptionHandler Для деталей обработки ошибок API.
      */
     @GetMapping("/{taskId}")
     public ResponseEntity<TaskResponse> getTaskById(@PathVariable Long taskId,

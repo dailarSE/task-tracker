@@ -109,7 +109,7 @@ public class TaskService {
                     log.info("Successfully retrieved task with ID: {} for user ID: {}", task.getId(), currentUserId);
                     return TaskResponse.fromEntity(task);
                 })
-                .orElseThrow(() -> { // Если Optional пуст
+                .orElseThrow(() -> {
                     log.warn("Task not found or access denied for task ID: {} and user ID: {}", taskId, currentUserId);
                     return new TaskNotFoundException(taskId, currentUserId);
                 });

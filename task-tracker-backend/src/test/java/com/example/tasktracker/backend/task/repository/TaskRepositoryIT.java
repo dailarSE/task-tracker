@@ -23,6 +23,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
@@ -178,6 +179,47 @@ class TaskRepositoryIT {
     }
 
     @Test
+    @DisplayName("findAllByUserIdOrderByCreatedAtDesc: должен вернуть задачи пользователя, отсортированные по createdAt DESC")
+    void findAllByUserIdOrderByCreatedAtDesc_shouldReturnUserTasksSorted() {
+        // Arrange
+        // user1 (testUser) и user2 (anotherUser) создаются в @BeforeEach
+
+        // Задачи для testUser (user1)
+        Task task1User1 = taskRepository.saveAndFlush(createTaskEntity("U1 Task 1 Old", testUser, TaskStatus.PENDING)); // Сохраняем первым, createdAt будет раньше
+        // Небольшая пауза, чтобы гарантировать разное время создания
+
+        Task task2User1 = taskRepository.save(createTaskEntity("U1 Task 2 New", testUser, TaskStatus.COMPLETED));
+
+        // Задача для anotherUser (user2)
+        taskRepository.saveAndFlush(createTaskEntity("U2 Task 1", anotherUser, TaskStatus.PENDING));
+
+        // Act
+        List<Task> resultTasksUser1 = taskRepository.findAllByUserIdOrderByCreatedAtDesc(testUser.getId());
+        List<Task> resultTasksUser2 = taskRepository.findAllByUserIdOrderByCreatedAtDesc(anotherUser.getId());
+        List<Task> resultTasksNonExistentUser = taskRepository.findAllByUserIdOrderByCreatedAtDesc(999L);
+
+
+        // Assert
+        // Для testUser
+        assertThat(resultTasksUser1)
+                .isNotNull()
+                .hasSize(2)
+                .extracting(Task::getTitle)
+                .containsExactly("U1 Task 2 New", "U1 Task 1 Old"); // Проверяем порядок
+        assertThat(resultTasksUser1).allMatch(task -> task.getUser().getId().equals(testUser.getId()));
+
+        // Для anotherUser
+        assertThat(resultTasksUser2)
+                .isNotNull()
+                .hasSize(1)
+                .extracting(Task::getTitle)
+                .containsExactly("U2 Task 1");
+
+        // Для несуществующего пользователя
+        assertThat(resultTasksNonExistentUser).isNotNull().isEmpty();
+    }
+
+    @Test
     @DisplayName("findAllByUserIdAndStatus: Должен вернуть задачи пользователя с указанным статусом")
     void findAllByUserIdAndStatus_shouldReturnFilteredTasks() {
         taskRepository.save(createTaskEntity("U1 Pending 1", testUser, TaskStatus.PENDING));
@@ -191,7 +233,7 @@ class TaskRepositoryIT {
 
         Page<Task> completedTasks = taskRepository.findAllByUserIdAndStatus(testUser.getId(), TaskStatus.COMPLETED, pageable);
         assertThat(completedTasks.getTotalElements()).isEqualTo(1);
-        assertThat(completedTasks.getContent().get(0).getTitle()).isEqualTo("U1 Completed 1");
+        assertThat(completedTasks.getContent().getFirst().getTitle()).isEqualTo("U1 Completed 1");
     }
 
     @Test

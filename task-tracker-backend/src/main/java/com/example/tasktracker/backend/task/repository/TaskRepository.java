@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -40,6 +41,15 @@ public interface TaskRepository extends Repository<Task, Long> {
      */
     @Query("SELECT t FROM Task t WHERE t.user.id = :userId")
     Page<Task> findAllByUserId(@Param("userId") Long userId, Pageable pageable);
+
+    /**
+     * Находит все задачи для указанного пользователя, отсортированные по времени создания (новые сначала).
+     *
+     * @param userId ID пользователя.
+     * @return Список задач пользователя, отсортированный по createdAt DESC.
+     */
+    @Query("SELECT t FROM Task t WHERE t.user.id = :userId ORDER BY t.createdAt DESC")
+    List<Task> findAllByUserIdOrderByCreatedAtDesc(@Param("userId") Long userId);
 
     /**
      * Находит все задачи для указанного пользователя с определенным статусом и пагинацией.

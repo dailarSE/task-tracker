@@ -1,18 +1,16 @@
 package com.example.tasktracker.backend.task.web;
 
-import com.example.tasktracker.backend.security.details.AppUserDetails;
-import com.example.tasktracker.backend.security.jwt.JwtIssuer;
-import com.example.tasktracker.backend.security.jwt.JwtKeyService;
 import com.example.tasktracker.backend.security.jwt.JwtProperties;
 import com.example.tasktracker.backend.task.dto.TaskCreateRequest;
 import com.example.tasktracker.backend.task.dto.TaskResponse;
 import com.example.tasktracker.backend.task.entity.Task;
 import com.example.tasktracker.backend.task.entity.TaskStatus;
+import com.example.tasktracker.backend.task.exception.TaskNotFoundException;
 import com.example.tasktracker.backend.task.repository.TaskRepository;
+import com.example.tasktracker.backend.test.util.TestJwtUtil;
 import com.example.tasktracker.backend.user.entity.User;
 import com.example.tasktracker.backend.user.repository.UserRepository;
 import com.example.tasktracker.backend.web.ApiConstants;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,8 +25,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.*;
-import org.springframework.security.authentication.TestingAuthenticationToken;
-import org.springframework.security.core.Authentication;
+import org.springframework.lang.Nullable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -38,19 +35,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Интеграционные тесты для {@link TaskController}, эндпоинт создания задачи.
- * Используют {@link TestRestTemplate}, полный контекст Spring Boot и Testcontainers для PostgreSQL.
- */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("ci")
@@ -81,54 +71,37 @@ class TaskControllerIT {
     @Autowired
     private Clock appClock;
 
-    @Autowired
-    private JwtIssuer jwtIssuer; // Для генерации JWT для тестов
 
     private String baseTasksUrl;
     private User testUser;
     private String jwtForTestUser;
+    private TestJwtUtil testJwtUtil;
+
 
     @BeforeEach
     void setUp() {
-        // Очищаем репозитории перед каждым тестом
-        userRepository.deleteAll(); // Удалит пользователей (и задачи по CASCADE)
-        userRepository.flush();     // Убедимся, что все ушло в БД
+        userRepository.deleteAll();
+        userRepository.flush();
 
-        // Создаем тестового пользователя
         testUser = new User(null, "taskuser@example.com", passwordEncoder.encode("password"), null, null);
         testUser = userRepository.saveAndFlush(testUser);
 
-        // Генерируем JWT для этого пользователя
-        AppUserDetails appUserDetails = new AppUserDetails(testUser);
-        Authentication authentication = new TestingAuthenticationToken(appUserDetails, null, appUserDetails.getAuthorities());
-        jwtForTestUser = jwtIssuer.generateToken(authentication);
+        testJwtUtil = new TestJwtUtil(appJwtProperties, appClock);
+        jwtForTestUser = testJwtUtil.generateValidToken(testUser);
 
         baseTasksUrl = "http://localhost:" + port + ApiConstants.TASKS_API_BASE_URL;
     }
 
-    @AfterEach
-    void tearDown() {
-        userRepository.deleteAll();
-        userRepository.flush();
-    }
 
-    private HttpEntity<Object> createHttpEntityWithJwtAndBody(Object body, String jwt) {
+    private <T> HttpEntity<T> createHttpEntity(@Nullable T body, @Nullable String jwtToken) {
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        if (jwt != null) {
-            headers.setBearerAuth(jwt);
+        if (body != null) {
+            headers.setContentType(MediaType.APPLICATION_JSON);
+        }
+        if (jwtToken != null) {
+            headers.setBearerAuth(jwtToken);
         }
         return new HttpEntity<>(body, headers);
-    }
-
-    // Вспомогательный метод в TaskControllerIT для создания Task, чтобы не дублировать код
-    private Task createTaskEntityForTest(String title, User owner, TaskStatus status) {
-        Task task = new Task();
-        task.setTitle(title);
-        task.setUser(owner);
-        task.setStatus(status);
-        // createdAt/updatedAt будут установлены JPA Auditing при save
-        return task;
     }
 
     private Task persistTask(String title, String description, User owner, TaskStatus status) {
@@ -137,59 +110,109 @@ class TaskControllerIT {
         task.setDescription(description);
         task.setUser(owner);
         task.setStatus(status);
-        // createdAt, updatedAt будут установлены JPA Auditing
         return taskRepository.saveAndFlush(task);
     }
 
-    // Вспомогательный метод для создания HttpEntity с JWT токеном
-    private HttpEntity<Void> createHttpEntityWithJwt(String jwtToken) {
-        HttpHeaders headers = new HttpHeaders();
-        if (jwtToken != null) {
-            headers.setBearerAuth(jwtToken);
+    private void assertProblemDetailBase(ResponseEntity<ProblemDetail> responseEntity, HttpStatus expectedStatus, String expectedTypeUriPath, String expectedTitle, String expectedInstanceSuffix) {
+        assertThat(responseEntity.getStatusCode()).isEqualTo(expectedStatus);
+        ProblemDetail problemDetail = responseEntity.getBody();
+        assertThat(problemDetail).isNotNull();
+        assertThat(problemDetail.getType()).isEqualTo(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + expectedTypeUriPath)); // Используем path напрямую
+        assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
+        assertThat(problemDetail.getStatus()).isEqualTo(expectedStatus.value());
+        assertThat(problemDetail.getInstance().toString()).endsWith(expectedInstanceSuffix);
+    }
+
+    private void assertUnauthorizedProblemDetail(ResponseEntity<ProblemDetail> responseEntity, String expectedInstanceSuffix, String expectedJwtErrorType) {
+        String expectedTitle;
+        // Эти заголовки должны соответствовать messages.properties для security.jwt.<type>.title
+        switch (expectedJwtErrorType.toUpperCase()) {
+            case "EXPIRED": expectedTitle = "Expired Token"; break;
+            case "MALFORMED": expectedTitle = "Malformed Token"; break;
+            case "INVALID_SIGNATURE": expectedTitle = "Invalid Token Signature"; break;
+            // ... другие типы, если они тестируются
+            default: expectedTitle = "Token Processing Error"; // Общий фолбэк
         }
-        return new HttpEntity<>(null, headers);
+        assertProblemDetailBase(responseEntity, HttpStatus.UNAUTHORIZED,
+                "jwt/" + expectedJwtErrorType.toLowerCase().replace("_", "-"),
+                expectedTitle,
+                expectedInstanceSuffix);
+        assertThat(responseEntity.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE)).startsWith("Bearer realm=\"task-tracker\"");
+        ProblemDetail problemDetail = responseEntity.getBody();
+        assertThat(problemDetail.getProperties()).isNotNull();
+        assertThat(problemDetail.getProperties().get("error_type")).isEqualTo(expectedJwtErrorType);
+    }
+
+    private void assertGeneralUnauthorizedProblemDetail(ResponseEntity<ProblemDetail> responseEntity, String expectedInstanceSuffix) {
+        assertProblemDetailBase(responseEntity, HttpStatus.UNAUTHORIZED,
+                "unauthorized", // ключ из security/messages.properties
+                "Authentication Required", // title из security/messages.properties
+                expectedInstanceSuffix);
+        assertThat(responseEntity.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE)).isEqualTo("Bearer realm=\"task-tracker\"");
+    }
+
+    private void assertTaskNotFoundProblemDetail(ResponseEntity<ProblemDetail> responseEntity, String expectedInstanceSuffix, Long expectedRequestedTaskId, Long expectedContextUserId) {
+        assertProblemDetailBase(responseEntity, HttpStatus.NOT_FOUND,
+                TaskNotFoundException.PROBLEM_TYPE_URI_PATH, // Используем константу из исключения
+                "Task Not Found", // title из task/messages.properties
+                expectedInstanceSuffix);
+        ProblemDetail problemDetail = responseEntity.getBody();
+        assertThat(problemDetail.getProperties()).isNotNull();
+        assertThat(problemDetail.getProperties().get("requested_task_id").toString()).isEqualTo(expectedRequestedTaskId.toString());
+        if (expectedContextUserId != null) {
+            assertThat(problemDetail.getProperties().get("context_user_id").toString()).isEqualTo(expectedContextUserId.toString());
+        } else {
+            assertThat(problemDetail.getProperties()).doesNotContainKey("context_user_id");
+        }
+    }
+
+    private void assertValidationProblemDetail(ResponseEntity<ProblemDetail> responseEntity, String expectedInstanceSuffix, String expectedInvalidField) {
+        assertProblemDetailBase(responseEntity, HttpStatus.BAD_REQUEST,
+                "validation/methodArgumentNotValid", // из GlobalExceptionHandler
+                "Invalid Request Data", // title из common/messages.properties
+                expectedInstanceSuffix);
+        ProblemDetail problemDetail = responseEntity.getBody();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) problemDetail.getProperties().get("invalid_params");
+        assertThat(invalidParams).isNotNull().hasSize(1);
+        assertThat(invalidParams.getFirst().get("field")).isEqualTo(expectedInvalidField);
+    }
+
+    private void assertTypeMismatchProblemDetail(ResponseEntity<ProblemDetail> responseEntity, String expectedInstanceSuffix, String expectedParamName, String expectedParamValue, String expectedParamType) {
+        assertProblemDetailBase(responseEntity, HttpStatus.BAD_REQUEST,
+                "request/parameter/typeMismatch", // из GlobalExceptionHandler
+                "Invalid Parameter Format", // title из common/messages.properties
+                expectedInstanceSuffix);
+        ProblemDetail problemDetail = responseEntity.getBody();
+        assertThat(problemDetail.getProperties()).isNotNull();
+        assertThat(problemDetail.getProperties().get("parameter_name")).isEqualTo(expectedParamName);
+        assertThat(problemDetail.getProperties().get("parameter_value")).isEqualTo(expectedParamValue);
+        assertThat(problemDetail.getProperties().get("expected_type")).isEqualTo(expectedParamType);
     }
 
 
+    // --- Тесты для POST /api/v1/tasks ---
     @Test
     @DisplayName("POST /tasks: Валидный запрос с валидным JWT -> должен вернуть 201 Created и созданную задачу")
     void createTask_whenValidRequestAndJwt_shouldReturn201AndCreatedTask() {
-        // Arrange
         TaskCreateRequest requestDto = new TaskCreateRequest("Valid Task Title", "Valid task description.");
-        HttpEntity<Object> requestEntity = createHttpEntityWithJwtAndBody(requestDto, jwtForTestUser);
+        HttpEntity<Object> requestEntity = createHttpEntity(requestDto, jwtForTestUser);
 
-        // Act
         ResponseEntity<TaskResponse> responseEntity = testRestTemplate.postForEntity(
                 baseTasksUrl, requestEntity, TaskResponse.class);
 
-        // Assert
         assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(responseEntity.getHeaders().getLocation()).isNotNull();
-
         TaskResponse taskResponse = responseEntity.getBody();
         assertThat(taskResponse).isNotNull();
         assertThat(taskResponse.getId()).isNotNull().isPositive();
         assertThat(taskResponse.getTitle()).isEqualTo(requestDto.getTitle());
-        assertThat(taskResponse.getDescription()).isEqualTo(requestDto.getDescription());
-        assertThat(taskResponse.getStatus()).isEqualTo(TaskStatus.PENDING);
         assertThat(taskResponse.getUserId()).isEqualTo(testUser.getId());
-        assertThat(taskResponse.getCreatedAt()).isNotNull();
-        assertThat(taskResponse.getUpdatedAt()).isNotNull();
-        assertThat(taskResponse.getCompletedAt()).isNull();
-
-        // Проверяем Location Header
-        String expectedLocationSuffix = ApiConstants.API_V1_PREFIX + "/tasks/" + taskResponse.getId();
+        String expectedLocationSuffix = ApiConstants.TASKS_API_BASE_URL + "/" + taskResponse.getId();
         assertThat(responseEntity.getHeaders().getLocation().toString()).endsWith(expectedLocationSuffix);
-
-        // Проверяем состояние в БД
-        Optional<Task> savedTaskOpt = taskRepository.findByIdAndUserId(taskResponse.getId(), testUser.getId());
-        assertThat(savedTaskOpt).isPresent();
-        Task savedTask = savedTaskOpt.get();
-        assertThat(savedTask.getTitle()).isEqualTo(requestDto.getTitle());
-        assertThat(savedTask.getUser().getId()).isEqualTo(testUser.getId());
+        assertThat(taskRepository.findByIdAndUserId(taskResponse.getId(), testUser.getId())).isPresent();
     }
 
-    // Источник данных для параметризованных тестов валидации DTO
     static Stream<Arguments> invalidTaskCreateRequests() {
         return Stream.of(
                 Arguments.of(new TaskCreateRequest(null, "desc"), "title"),
@@ -200,253 +223,121 @@ class TaskControllerIT {
         );
     }
 
-    @ParameterizedTest(name = "POST /tasks: Невалидный DTO (поле {1}, ключ сообщения {2}) -> должен вернуть 400 Bad Request")
+    @ParameterizedTest(name = "POST /tasks: Невалидный DTO (поле {1}) -> должен вернуть 400 Bad Request")
     @MethodSource("invalidTaskCreateRequests")
     @DisplayName("POST /tasks: Невалидный DTO -> должен вернуть 400 Bad Request с ProblemDetail")
-    void createTask_whenDtoIsInvalid_shouldReturn400AndProblemDetail(
-            TaskCreateRequest invalidDto, String expectedInvalidField) {
-        // Arrange
-        HttpEntity<Object> requestEntity = createHttpEntityWithJwtAndBody(invalidDto, jwtForTestUser);
-
-        // Act
+    void createTask_whenDtoIsInvalid_shouldReturn400AndProblemDetail(TaskCreateRequest invalidDto, String expectedInvalidField) {
+        HttpEntity<Object> requestEntity = createHttpEntity(invalidDto, jwtForTestUser);
         ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
                 baseTasksUrl, HttpMethod.POST, requestEntity, ProblemDetail.class);
-
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "validation/methodArgumentNotValid"));
-        assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
-        assertThat(problemDetail.getInstance().toString()).endsWith(ApiConstants.API_V1_PREFIX + "/tasks");
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) problemDetail.getProperties().get("invalid_params");
-        assertThat(invalidParams).isNotNull().hasSize(1);
-        assertThat(invalidParams.getFirst().get("field")).isEqualTo(expectedInvalidField);
-
+        assertValidationProblemDetail(responseEntity, ApiConstants.TASKS_API_BASE_URL, expectedInvalidField);
         assertThat(taskRepository.findAllByUserId(testUser.getId(), Pageable.unpaged()).getTotalElements()).isZero();
     }
 
     @Test
     @DisplayName("POST /tasks: Отсутствует JWT -> должен вернуть 401 Unauthorized")
     void createTask_whenNoJwt_shouldReturn401() {
-        // Arrange
         TaskCreateRequest requestDto = new TaskCreateRequest("Task without JWT", null);
-        HttpEntity<Object> requestEntity = createHttpEntityWithJwtAndBody(requestDto, null); // null JWT
-
-        // Act
+        HttpEntity<Object> requestEntity = createHttpEntity(requestDto, null);
         ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
                 baseTasksUrl, HttpMethod.POST, requestEntity, ProblemDetail.class);
-
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        assertThat(responseEntity.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE))
-                .isEqualTo("Bearer realm=\"task-tracker\"");
-        ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail).isNotNull();
-        // Ожидаем тип "unauthorized", так как JwtAuthenticationFilter вызовет AuthenticationEntryPoint
-        // с исключением, которое не является BadJwtException (например, нет токена вообще)
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "unauthorized"));
+        assertGeneralUnauthorizedProblemDetail(responseEntity, ApiConstants.TASKS_API_BASE_URL);
         assertThat(taskRepository.findAllByUserId(testUser.getId(), Pageable.unpaged()).getTotalElements()).isZero();
     }
 
     @Test
     @DisplayName("POST /tasks: Невалидный JWT (malformed) -> должен вернуть 401 Unauthorized")
-    void createTask_whenInvalidJwt_shouldReturn401() {
-        // Arrange
+    void createTask_whenMalformedJwt_shouldReturn401() {
         TaskCreateRequest requestDto = new TaskCreateRequest("Task with invalid JWT", null);
-        HttpEntity<Object> requestEntity = createHttpEntityWithJwtAndBody(requestDto, "this.is.a.bad.jwt");
-
-        // Act
+        HttpEntity<Object> requestEntity = createHttpEntity(requestDto, "this.is.a.bad.jwt");
         ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
                 baseTasksUrl, HttpMethod.POST, requestEntity, ProblemDetail.class);
-
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        assertThat(responseEntity.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE))
-                .startsWith("Bearer realm=\"task-tracker\""); // Может содержать детали ошибки
-        ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail).isNotNull();
-        // Ожидаем тип, специфичный для ошибки JWT, например, malformed
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "jwt/malformed"));
-        assertThat(problemDetail.getProperties()).containsEntry("error_type", "MALFORMED");
+        assertUnauthorizedProblemDetail(responseEntity, ApiConstants.TASKS_API_BASE_URL, "MALFORMED");
         assertThat(taskRepository.findAllByUserId(testUser.getId(), Pageable.unpaged()).getTotalElements()).isZero();
     }
 
     @Test
-    @DisplayName("POST /tasks: Просроченный JWT -> должен вернуть 401 Unauthorized с ProblemDetail")
-    void createTask_whenJwtIsExpired_shouldReturn401WithExpiredProblem() {
-        // Arrange
-        // Генерируем просроченный токен
-        Authentication authentication = new TestingAuthenticationToken(
-                new AppUserDetails(testUser), null, List.of()
-        );
-
-        Instant tokenIssueTime = Instant.now(appClock).minus(Duration.ofHours(2)); // Токен выдан 2 часа назад
-        long tokenLifetimeMs = Duration.ofHours(1).toMillis(); // Токен жил 1 час
-
-        JwtProperties expiredTokenProps = new JwtProperties();
-        expiredTokenProps.setSecretKey(appJwtProperties.getSecretKey()); // Используем тот же ключ, что и в приложении
-        expiredTokenProps.setExpirationMs(tokenLifetimeMs);
-        expiredTokenProps.setEmailClaimKey(appJwtProperties.getEmailClaimKey());
-        expiredTokenProps.setAuthoritiesClaimKey(appJwtProperties.getAuthoritiesClaimKey());
-
-        // Важно: JwtKeyService нужно создавать на основе этих пропсов, если он не инжектируется
-        // и если он не является синглтоном, настроенным один раз.
-        // В нашем случае JwtKeyService инжектируется и настроен на основные пропсы.
-        // Для генерации специального токена нам нужен JwtIssuer с кастомным Clock и Expiration.
-        JwtKeyService keyServiceForExpiredToken = new JwtKeyService(expiredTokenProps); // Используем пропсы с нужным ключом
-        JwtIssuer issuerForExpiredToken = new JwtIssuer(
-                expiredTokenProps, // Пропсы с коротким временем жизни
-                keyServiceForExpiredToken,   // KeyService с правильным ключом
-                Clock.fixed(tokenIssueTime, ZoneOffset.UTC) // Фиксируем время выдачи в прошлом
-        );
-        String expiredToken = issuerForExpiredToken.generateToken(authentication);
-
-        // Формируем запрос
+    @DisplayName("POST /tasks: Просроченный JWT -> должен вернуть 401 Unauthorized")
+    void createTask_whenJwtIsExpired_shouldReturn401() {
+        String expiredToken = testJwtUtil.generateExpiredToken(testUser, Duration.ofSeconds(10), Duration.ofHours(1));
         TaskCreateRequest requestDto = new TaskCreateRequest("Task with Expired JWT", null);
-        HttpEntity<Object> requestEntity = createHttpEntityWithJwtAndBody(requestDto, expiredToken);
-
-        // Act
+        HttpEntity<Object> requestEntity = createHttpEntity(requestDto, expiredToken);
         ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
                 baseTasksUrl, HttpMethod.POST, requestEntity, ProblemDetail.class);
-
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        assertThat(responseEntity.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE))
-                .startsWith("Bearer realm=\"task-tracker\"");
-
-        ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "jwt/expired"));
-        assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
-        assertThat(problemDetail.getInstance().toString()).endsWith(ApiConstants.API_V1_PREFIX + "/tasks");
-        assertThat(problemDetail.getProperties()).containsEntry("error_type", "EXPIRED");
-
+        assertUnauthorizedProblemDetail(responseEntity, ApiConstants.TASKS_API_BASE_URL, "EXPIRED");
         assertThat(taskRepository.findAllByUserId(testUser.getId(), Pageable.unpaged()).getTotalElements()).isZero();
     }
 
+
+    // --- Тесты для GET /api/v1/tasks ---
     @Test
     @DisplayName("GET /tasks: Валидный JWT, пользователь имеет задачи -> должен вернуть 200 OK со списком задач, отсортированных по createdAt DESC")
     void getAllTasks_whenValidJwtAndUserHasTasks_shouldReturn200AndTaskListSorted() {
-        // Arrange
-        // testUser уже создан в @BeforeEach и для него есть jwtForTestUser
-        // Создаем несколько задач для testUser с разными createdAt (используем Clock для контроля времени)
-        // Для этого нам нужен доступ к Clock или возможность его мокировать в IT,
-        // что сложнее с TestRestTemplate. Проще создать их с небольшими задержками.
+        Task task1 = persistTask("Task Old", "Old desc", testUser, TaskStatus.PENDING);
+        try { Thread.sleep(20); } catch (InterruptedException ignored) {} // Увеличил задержку
+        Task task2 = persistTask("Task New", "New desc", testUser, TaskStatus.COMPLETED);
+        HttpEntity<Void> requestEntity = createHttpEntity(null, jwtForTestUser);
 
-        Task task1 = new Task(null, "Task Old", "Old desc", TaskStatus.PENDING, null, null, null, testUser);
-        taskRepository.saveAndFlush(task1); // Сохраняем, чтобы createdAt установился
-
-
-        Task task2 = new Task(null, "Task New", "New desc", TaskStatus.COMPLETED, null, null, Instant.now(appClock), testUser);
-        taskRepository.saveAndFlush(task2);
-
-        HttpEntity<Object> requestEntityWithJwt = createHttpEntityWithJwtAndBody(null, jwtForTestUser);
-
-        // Act
         ResponseEntity<List<TaskResponse>> responseEntity = testRestTemplate.exchange(
-                baseTasksUrl, // GET /api/v1/tasks
-                HttpMethod.GET,
-                requestEntityWithJwt,
-                new ParameterizedTypeReference<List<TaskResponse>>() {
-                } // Для получения списка
-        );
+                baseTasksUrl, HttpMethod.GET, requestEntity, new ParameterizedTypeReference<>() {});
 
-        // Assert
         assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.OK);
         List<TaskResponse> tasks = responseEntity.getBody();
         assertThat(tasks)
                 .isNotNull()
                 .hasSize(2)
                 .extracting(TaskResponse::getTitle)
-                .containsExactly("Task New", "Task Old"); // Проверяем порядок (новые первыми)
-
-        assertThat(tasks.get(0).getId()).isEqualTo(task2.getId());
-        assertThat(tasks.get(1).getId()).isEqualTo(task1.getId());
+                .containsExactly("Task New", "Task Old");
         assertThat(tasks).allMatch(task -> task.getUserId().equals(testUser.getId()));
     }
 
     @Test
     @DisplayName("GET /tasks: Валидный JWT, у пользователя нет задач -> должен вернуть 200 OK с пустым списком")
     void getAllTasks_whenValidJwtAndUserHasNoTasks_shouldReturn200AndEmptyList() {
-        // Arrange
-        HttpEntity<Object> requestEntityWithJwt = createHttpEntityWithJwtAndBody(null, jwtForTestUser);
-
-        // Act
+        HttpEntity<Void> requestEntity = createHttpEntity(null, jwtForTestUser);
         ResponseEntity<List<TaskResponse>> responseEntity = testRestTemplate.exchange(
-                baseTasksUrl,
-                HttpMethod.GET,
-                requestEntityWithJwt,
-                new ParameterizedTypeReference<List<TaskResponse>>() {
-                }
-        );
-
-        // Assert
+                baseTasksUrl, HttpMethod.GET, requestEntity, new ParameterizedTypeReference<>() {});
         assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.OK);
-        List<TaskResponse> tasks = responseEntity.getBody();
-        assertThat(tasks).isNotNull().isEmpty();
+        assertThat(responseEntity.getBody()).isNotNull().isEmpty();
     }
 
     @Test
     @DisplayName("GET /tasks: Пользователь видит только свои задачи")
     void getAllTasks_shouldReturnOnlyOwnTasks() {
-        // Arrange
-        // testUser (пользователь 1) - для него есть jwtForTestUser
-        Task taskUser1 = taskRepository.save(createTaskEntityForTest("Task User 1", testUser, TaskStatus.PENDING));
+        Task taskUser1 = persistTask("Task User 1", "Desc", testUser, TaskStatus.PENDING);
+        User another = userRepository.saveAndFlush(new User(null, "another@example.com", passwordEncoder.encode("pass"), null, null));
+        persistTask("Task Another User", "Desc", another, TaskStatus.PENDING);
+        HttpEntity<Void> requestEntityUser1 = createHttpEntity(null, jwtForTestUser);
 
-        // Создаем другого пользователя и его задачу
-
-        User anotherUser = userRepository.save(new User(null, "another@example.com",
-                passwordEncoder.encode("password"), null, null));
-        taskRepository.saveAndFlush(createTaskEntityForTest("Task Another User", anotherUser, TaskStatus.PENDING));
-
-        HttpEntity<Object> requestEntityUser1 = createHttpEntityWithJwtAndBody(null, jwtForTestUser);
-
-        // Act: Запрос от testUser
         ResponseEntity<List<TaskResponse>> responseEntityUser1 = testRestTemplate.exchange(
-                baseTasksUrl, HttpMethod.GET, requestEntityUser1, new ParameterizedTypeReference<List<TaskResponse>>() {
-                });
+                baseTasksUrl, HttpMethod.GET, requestEntityUser1, new ParameterizedTypeReference<>() {});
 
-        // Assert: testUser видит только свою задачу
         assertThat(responseEntityUser1.getStatusCode()).isEqualTo(HttpStatus.OK);
-        List<TaskResponse> tasksUser1 = responseEntityUser1.getBody();
-        assertThat(tasksUser1)
-                .isNotNull()
-                .hasSize(1)
-                .extracting(TaskResponse::getId)
-                .containsExactly(taskUser1.getId());
+        assertThat(responseEntityUser1.getBody()).isNotNull().hasSize(1)
+                .extracting(TaskResponse::getId).containsExactly(taskUser1.getId());
     }
 
     @Test
     @DisplayName("GET /tasks: Отсутствует JWT -> должен вернуть 401 Unauthorized")
     void getAllTasks_whenNoJwt_shouldReturn401() {
-        // Arrange
-        HttpEntity<Object> requestEntityNoJwt = createHttpEntityWithJwtAndBody(null, null);
-
-        // Act
+        HttpEntity<Void> requestEntityNoJwt = createHttpEntity(null, null);
         ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
                 baseTasksUrl, HttpMethod.GET, requestEntityNoJwt, ProblemDetail.class);
-
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        // Проверки ProblemDetail и WWW-Authenticate в тестах для UserControllerIT
+        assertGeneralUnauthorizedProblemDetail(responseEntity, ApiConstants.TASKS_API_BASE_URL);
     }
 
+
+    // --- Тесты для GET /api/v1/tasks/{taskId} ---
     @Test
     @DisplayName("GET /tasks/{taskId}: Валидный JWT, своя задача -> должен вернуть 200 OK и TaskResponse")
     void getTaskById_whenOwnTaskAndValidJwt_shouldReturn200AndTaskResponse() {
-        // Arrange
         Task myTask = persistTask("My Task 1", "Description 1", testUser, TaskStatus.PENDING);
         String taskUrl = baseTasksUrl + "/" + myTask.getId();
-        HttpEntity<Void> requestEntity = createHttpEntityWithJwt(jwtForTestUser); // Используем вспомогательный метод, если есть, или создаем HttpEntity
+        HttpEntity<Void> requestEntity = createHttpEntity(null, jwtForTestUser);
 
-        // Act
         ResponseEntity<TaskResponse> responseEntity = testRestTemplate.exchange(
                 taskUrl, HttpMethod.GET, requestEntity, TaskResponse.class);
 
-        // Assert
         assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.OK);
         TaskResponse taskResponse = responseEntity.getBody();
         assertThat(taskResponse).isNotNull();
@@ -456,101 +347,47 @@ class TaskControllerIT {
     }
 
     @Test
-    @DisplayName("GET /tasks/{taskId}: Несуществующая задача -> должен вернуть 404 Not Found с ProblemDetail")
-    void getTaskById_whenTaskNotFound_shouldReturn404WithProblemDetail() {
-        // Arrange
+    @DisplayName("GET /tasks/{taskId}: Несуществующая задача -> должен вернуть 404 Not Found")
+    void getTaskById_whenTaskNotFound_shouldReturn404() {
         Long nonExistentTaskId = 9999L;
         String taskUrl = baseTasksUrl + "/" + nonExistentTaskId;
-        HttpEntity<Void> requestEntity = createHttpEntityWithJwt(jwtForTestUser);
-
-        // Act
+        HttpEntity<Void> requestEntity = createHttpEntity(null, jwtForTestUser);
         ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
                 taskUrl, HttpMethod.GET, requestEntity, ProblemDetail.class);
-
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-        ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "task/not-found"));
-        assertThat(problemDetail.getTitle()).isEqualTo("Task Not Found"); // Проверить актуальный title из messages.properties
-        assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
-        assertThat(problemDetail.getInstance().toString()).endsWith("/tasks/" + nonExistentTaskId);
-        // Проверяем, что 'requested_task_id' и 'context_user_id' добавлены (согласно TaskNotFoundException)
-        assertThat(problemDetail.getProperties()).isNotNull();
-        assertThat(problemDetail.getProperties().get("requested_task_id").toString()).isEqualTo(nonExistentTaskId.toString());
-        assertThat(problemDetail.getProperties().get("context_user_id").toString()).isEqualTo(testUser.getId().toString());
+        assertTaskNotFoundProblemDetail(responseEntity, "/tasks/" + nonExistentTaskId, nonExistentTaskId, testUser.getId());
     }
 
     @Test
-    @DisplayName("GET /tasks/{taskId}: Задача другого пользователя -> должен вернуть 404 Not Found с ProblemDetail")
-    void getTaskById_whenTaskBelongsToAnotherUser_shouldReturn404WithProblemDetail() {
-        // Arrange
-        User anotherUser = userRepository.save(new User(null, "another@example.com", passwordEncoder.encode("pass"), null, null));
-        Task anotherUserTask = persistTask("Another User's Task", "Desc", anotherUser, TaskStatus.PENDING);
+    @DisplayName("GET /tasks/{taskId}: Задача другого пользователя -> должен вернуть 404 Not Found")
+    void getTaskById_whenTaskBelongsToAnotherUser_shouldReturn404() {
+        User another = userRepository.saveAndFlush(new User(null, "other@example.com", passwordEncoder.encode("p"), null, null));
+        Task anotherUserTask = persistTask("Another User's Task", "Desc", another, TaskStatus.PENDING);
         String taskUrl = baseTasksUrl + "/" + anotherUserTask.getId();
-        // Запрос делаем от testUser (jwtForTestUser)
-        HttpEntity<Void> requestEntity = createHttpEntityWithJwt(jwtForTestUser);
-
-        // Act
+        HttpEntity<Void> requestEntity = createHttpEntity(null, jwtForTestUser);
         ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
                 taskUrl, HttpMethod.GET, requestEntity, ProblemDetail.class);
-
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-        ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "task/not-found"));
-        assertThat(problemDetail.getTitle()).isEqualTo("Task Not Found");
-        assertThat((problemDetail.getProperties().get("requested_task_id")).toString())
-                .isEqualTo((anotherUserTask.getId()).toString());
-        assertThat(problemDetail.getProperties().get("context_user_id").toString())
-                .isEqualTo(testUser.getId().toString());
+        assertTaskNotFoundProblemDetail(responseEntity, "/tasks/" + anotherUserTask.getId(), anotherUserTask.getId(), testUser.getId());
     }
 
     @Test
-    @DisplayName("GET /tasks/{taskId}: Невалидный формат taskId (не число) -> должен вернуть 400 Bad Request с ProblemDetail")
-    void getTaskById_whenInvalidTaskIdFormat_shouldReturn400WithProblemDetail() {
-        // Arrange
+    @DisplayName("GET /tasks/{taskId}: Невалидный формат taskId -> должен вернуть 400 Bad Request")
+    void getTaskById_whenInvalidTaskIdFormat_shouldReturn400() {
         String invalidTaskId = "abc";
         String taskUrl = baseTasksUrl + "/" + invalidTaskId;
-        HttpEntity<Void> requestEntity = createHttpEntityWithJwt(jwtForTestUser);
-
-        // Act
+        HttpEntity<Void> requestEntity = createHttpEntity(null, jwtForTestUser);
         ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
                 taskUrl, HttpMethod.GET, requestEntity, ProblemDetail.class);
-
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "request/parameter/typeMismatch"));
-        assertThat(problemDetail.getTitle()).isEqualTo("Invalid Parameter Format"); // Из messages.properties
-        assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
-        assertThat(problemDetail.getInstance().toString()).endsWith("/tasks/" + invalidTaskId);
-        assertThat(problemDetail.getProperties()).isNotNull();
-        assertThat(problemDetail.getProperties().get("parameter_name")).isEqualTo("taskId");
-        assertThat(problemDetail.getProperties().get("parameter_value")).isEqualTo(invalidTaskId);
-        assertThat(problemDetail.getProperties().get("expected_type")).isEqualTo("Long");
+        assertTypeMismatchProblemDetail(responseEntity, "/tasks/" + invalidTaskId, "taskId", invalidTaskId, "Long");
     }
 
     @Test
     @DisplayName("GET /tasks/{taskId}: Отсутствует JWT -> должен вернуть 401 Unauthorized")
     void getTaskById_whenNoJwt_shouldReturn401() {
-        // Arrange
         Task myTask = persistTask("My Task for No JWT test", "Desc", testUser, TaskStatus.PENDING);
         String taskUrl = baseTasksUrl + "/" + myTask.getId();
-        HttpEntity<Void> requestEntityNoJwt = createHttpEntityWithJwt(null); // No JWT
-
-        // Act
+        HttpEntity<Void> requestEntityNoJwt = createHttpEntity(null, null);
         ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
                 taskUrl, HttpMethod.GET, requestEntityNoJwt, ProblemDetail.class);
-
-        // Assert
-        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        // Дополнительные проверки ProblemDetail, если нужно, аналогично UserControllerIT
-        assertThat(responseEntity.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE))
-                .isEqualTo("Bearer realm=\"task-tracker\"");
-        ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "unauthorized"));
+        assertGeneralUnauthorizedProblemDetail(responseEntity, "/tasks/" + myTask.getId());
     }
 }

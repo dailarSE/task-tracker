@@ -276,7 +276,7 @@ class GlobalExceptionHandlerTest {
         @SuppressWarnings("unchecked")
         List<Map<String, String>> invalidParams = (List<Map<String, String>>) problemDetail.getProperties().get("invalid_params");
         assertThat(invalidParams).hasSize(1);
-        assertThat(invalidParams.get(0)).containsEntry("field", "field").containsEntry("message", "must not be blank");
+        assertThat(invalidParams.getFirst()).containsEntry("field", "field").containsEntry("message", "must not be blank");
     }
 
     @Test
@@ -300,7 +300,7 @@ class GlobalExceptionHandlerTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) problemDetail.getProperties().get("invalid_params");
         assertThat(invalidParams).hasSize(1);
-        assertThat(invalidParams.get(0)).containsEntry("field", "field").containsEntry("message", "message");
+        assertThat(invalidParams.getFirst()).containsEntry("field", "field").containsEntry("message", "message");
     }
 
     @Test
@@ -318,7 +318,7 @@ class GlobalExceptionHandlerTest {
         ProblemDetail pd = (ProblemDetail) responseEntity.getBody();
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) pd.getProperties().get("invalid_params");
-        assertThat(invalidParams.get(0).get("rejected_value")).isEqualTo("null");
+        assertThat(invalidParams.getFirst().get("rejected_value")).isEqualTo("null");
     }
 
     @Test
@@ -336,7 +336,7 @@ class GlobalExceptionHandlerTest {
         ProblemDetail pd = (ProblemDetail) responseEntity.getBody();
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) pd.getProperties().get("invalid_params");
-        assertThat(invalidParams.get(0).get("message")).isEqualTo("");
+        assertThat(invalidParams.getFirst().get("message")).isEqualTo("");
     }
 
     @Test

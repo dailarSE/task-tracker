@@ -2,8 +2,8 @@ package com.example.tasktracker.backend.web.exception;
 
 import com.example.tasktracker.backend.security.exception.BadJwtException;
 import com.example.tasktracker.backend.security.jwt.JwtErrorType;
-import com.example.tasktracker.backend.security.jwt.JwtValidator; // Для мока в extractTokenSnippetFromRequest
-import com.example.tasktracker.backend.web.ApiConstants; // Для BASE_PROBLEM_URI
+import com.example.tasktracker.backend.security.jwt.JwtValidator;
+import com.example.tasktracker.backend.web.ApiConstants;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
@@ -33,10 +33,14 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.net.URI;
 import java.security.Principal;
-import java.util.*;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;

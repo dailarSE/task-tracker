@@ -12,6 +12,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 /**
  * Сервис для управления бизнес-логикой, связанной с задачами.
  * <p>
@@ -65,4 +68,26 @@ public class TaskService {
 
         return TaskResponse.fromEntity(savedTask);
     }
+
+    /**
+     * Получает все задачи для текущего аутентифицированного пользователя,
+     * отсортированные по времени создания (новые сначала).
+     *
+     * @param currentUserId ID текущего пользователя. Не должен быть null.
+     * @return Список {@link TaskResponse} DTO. Список будет пустым, если у пользователя нет задач.
+     * @throws NullPointerException если {@code currentUserId} равен {@code null}.
+     */
+    public List<TaskResponse> getAllTasksForCurrentUser(@NonNull Long currentUserId) {
+        log.debug("Fetching all tasks for user ID: {}", currentUserId);
+
+        List<Task> tasks = taskRepository.findAllByUserIdOrderByCreatedAtDesc(currentUserId);
+
+        List<TaskResponse> responses = tasks.stream()
+                .map(TaskResponse::fromEntity)
+                .collect(Collectors.toList());
+
+        log.info("Found {} tasks for user ID: {}", responses.size(), currentUserId);
+        return responses;
+    }
+
 }

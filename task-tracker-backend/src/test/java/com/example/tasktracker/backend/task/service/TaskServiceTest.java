@@ -18,6 +18,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.orm.jpa.JpaObjectRetrievalFailureException;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -180,4 +182,62 @@ class TaskServiceTest {
                 .isThrownBy(() -> taskService.createTask(request, null))
                 .withMessageContaining("currentUserId is marked non-null but is null");
     }
+
+    @Test
+    @DisplayName("getAllTasksForCurrentUser: когда репозиторий возвращает задачи -> должен вернуть смапленные TaskResponse")
+    void getAllTasksForCurrentUser_whenRepositoryReturnsTasks_shouldReturnMappedTaskResponses() {
+        // Arrange
+        Long currentUserId = 1L;
+        User mockUser = new User(); // Для TaskResponse.fromEntity нужен User в Task
+        mockUser.setId(currentUserId);
+
+        Task task1 = new Task(10L, "Task 1", "Desc 1", TaskStatus.PENDING, Instant.now(), Instant.now(), null, mockUser);
+        Task task2 = new Task(11L, "Task 2", "Desc 2", TaskStatus.COMPLETED, Instant.now(), Instant.now(), Instant.now(), mockUser);
+        List<Task> mockTasksFromRepo = List.of(task1, task2);
+
+        when(mockTaskRepository.findAllByUserIdOrderByCreatedAtDesc(currentUserId)).thenReturn(mockTasksFromRepo);
+
+        // Act
+        List<TaskResponse> result = taskService.getAllTasksForCurrentUser(currentUserId);
+
+        // Assert
+        assertThat(result)
+                .isNotNull()
+                .hasSize(2);
+
+        assertThat(result.getFirst().getId()).isEqualTo(task1.getId());
+        assertThat(result.getFirst().getTitle()).isEqualTo(task1.getTitle());
+        assertThat(result.getFirst().getUserId()).isEqualTo(currentUserId);
+
+        assertThat(result.get(1).getId()).isEqualTo(task2.getId());
+        assertThat(result.get(1).getTitle()).isEqualTo(task2.getTitle());
+        assertThat(result.get(1).getUserId()).isEqualTo(currentUserId);
+
+        verify(mockTaskRepository).findAllByUserIdOrderByCreatedAtDesc(currentUserId);
+    }
+
+    @Test
+    @DisplayName("getAllTasksForCurrentUser: когда репозиторий возвращает пустой список -> должен вернуть пустой список TaskResponse")
+    void getAllTasksForCurrentUser_whenRepositoryReturnsEmptyList_shouldReturnEmptyTaskResponseList() {
+        // Arrange
+        Long currentUserId = 1L;
+        when(mockTaskRepository.findAllByUserIdOrderByCreatedAtDesc(currentUserId)).thenReturn(Collections.emptyList());
+
+        // Act
+        List<TaskResponse> result = taskService.getAllTasksForCurrentUser(currentUserId);
+
+        // Assert
+        assertThat(result).isNotNull().isEmpty();
+        verify(mockTaskRepository).findAllByUserIdOrderByCreatedAtDesc(currentUserId);
+    }
+
+    @Test
+    @DisplayName("getAllTasksForCurrentUser: currentUserId null -> должен выбросить NullPointerException (Lombok @NonNull)")
+    void getAllTasksForCurrentUser_whenCurrentUserIdIsNull_shouldThrowNullPointerException() {
+        assertThatNullPointerException()
+                .isThrownBy(() -> taskService.getAllTasksForCurrentUser(null))
+                .withMessageContaining("currentUserId is marked non-null but is null");
+        verifyNoInteractions(mockTaskRepository);
+    }
+
 }

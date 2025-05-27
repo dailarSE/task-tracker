@@ -7,6 +7,7 @@ import jakarta.validation.ConstraintViolationException;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.TypeMismatchException;
 import org.springframework.context.MessageSource;
 import org.springframework.context.NoSuchMessageException;
 import org.springframework.http.*;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import java.net.URI;
@@ -370,6 +372,54 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         ProblemDetail problemDetail = handleHttpMessageConversionException(ex, request);
 
         return ResponseEntity.of(problemDetail).build();
+    }
+
+    /**
+     * Кастомизирует обработку {@link TypeMismatchException} (например, для ошибок
+     * конвертации PathVariable или RequestParam) для формирования ответа в формате Problem Details.
+     * Переопределяет стандартное поведение из {@link ResponseEntityExceptionHandler}.
+     *
+     * @param ex      Исключение {@link TypeMismatchException}.
+     * @param headers Заголовки HTTP.
+     * @param status  HTTP-статус, предложенный Spring (обычно {@link HttpStatus#BAD_REQUEST}).
+     * @param request Текущий веб-запрос.
+     * @return {@link ResponseEntity} с {@link ProblemDetail} в теле.
+     * @throws NoSuchMessageException если ключи для {@code title} или {@code detail} не найдены.
+     */
+    @Override
+    protected ResponseEntity<Object> handleTypeMismatch(
+            @NonNull TypeMismatchException ex,
+            @NonNull HttpHeaders headers,
+            @NonNull HttpStatusCode status,
+            @NonNull WebRequest request) {
+
+        String parameterName = ex.getPropertyName(); // Имя параметра
+        Object value = ex.getValue();
+        String requiredType = Optional.ofNullable(ex.getRequiredType()).map(Class::getSimpleName).orElse("N/A");
+
+        // MethodArgumentTypeMismatchException дает более точное имя параметра из аннотации
+        if (ex instanceof MethodArgumentTypeMismatchException matme) {
+            parameterName = matme.getName();
+        }
+
+        log.warn("Request parameter type mismatch: Parameter '{}' with value '{}' could not be converted to type '{}'. {}",
+                parameterName, value, requiredType, ex.getMessage());
+
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("parameter_name", parameterName);
+        properties.put("parameter_value", value != null ? value.toString() : "null");
+        properties.put("expected_type", requiredType);
+
+        ProblemDetail body = buildProblemDetail(
+                (HttpStatus) status,
+                "request.parameter.typeMismatch",
+                request.getLocale(),
+                properties
+        );
+        setInstanceUriIfAbsent(body, request); // Устанавливаем instance URI
+
+        // Используем handleExceptionInternal для консистентности с другими обработчиками ResponseEntityExceptionHandler
+        return handleExceptionInternal(ex, body, headers, status, request);
     }
 
     // --- Обработчик для отсутствующих ключей локализации ---

@@ -2,23 +2,30 @@ package com.example.tasktracker.backend.task.service;
 
 import com.example.tasktracker.backend.task.dto.TaskCreateRequest;
 import com.example.tasktracker.backend.task.dto.TaskResponse;
+import com.example.tasktracker.backend.task.dto.TaskUpdateRequest;
 import com.example.tasktracker.backend.task.entity.Task;
 import com.example.tasktracker.backend.task.entity.TaskStatus;
 import com.example.tasktracker.backend.task.exception.TaskNotFoundException;
 import com.example.tasktracker.backend.task.repository.TaskRepository;
 import com.example.tasktracker.backend.user.entity.User;
 import com.example.tasktracker.backend.user.repository.UserRepository;
-import jakarta.persistence.EntityNotFoundException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.orm.jpa.JpaObjectRetrievalFailureException;
+import org.springframework.orm.jpa.JpaObjectRetrievalFailureException; // Для TC_CS_CREATE_02
+import jakarta.persistence.EntityNotFoundException; // Для cause в JpaObjectRetrievalFailureException
 
+
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -27,284 +34,451 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-/**
- * Юнит-тесты для {@link TaskService}.
- */
 @ExtendWith(MockitoExtension.class)
 class TaskServiceTest {
 
     @Mock
     private TaskRepository mockTaskRepository;
-
     @Mock
     private UserRepository mockUserRepository;
+    @Mock
+    private Clock mockClock;
 
     @InjectMocks
     private TaskService taskService;
 
-    private static final Long USER_ID = 1L;
-    private static final String TASK_TITLE = "New Test Task";
-    private static final String TASK_DESCRIPTION = "Description for the new task.";
-    private static final Long SAVED_TASK_ID = 10L;
+    // --- Общие тестовые данные и вспомогательные методы ---
+    private static final Long DEFAULT_USER_ID = 1L;
+    private static final Long DEFAULT_TASK_ID = 10L;
+    private static final String DEFAULT_TASK_TITLE = "Test Task";
+    private static final String DEFAULT_TASK_DESCRIPTION = "Test Description";
+    private static final Instant FIXED_INSTANT_NOW = Instant.parse("2025-01-01T12:00:00Z");
 
-    @Test
-    @DisplayName("createTask: Валидный запрос -> должен сохранить задачу и вернуть корректный TaskResponse")
-    void createTask_whenValidRequest_shouldSaveTaskAndReturnResponse() {
-        // Arrange
-        TaskCreateRequest request = new TaskCreateRequest(TASK_TITLE, TASK_DESCRIPTION);
-        User mockUserReference = mock(User.class); // Мокаем User ссылку
-        when(mockUserReference.getId()).thenReturn(USER_ID); // Для маппинга в TaskResponse
+    private User mockUserReference;
 
-        // Настраиваем мок userRepository.getReferenceById
-        when(mockUserRepository.getReferenceById(USER_ID)).thenReturn(mockUserReference);
+    @Captor
+    private ArgumentCaptor<Task> taskArgumentCaptor;
 
-        // Настраиваем мок taskRepository.save
-        // Он должен вернуть сущность Task с установленным ID и полями аудита (симулируем это)
-        Task taskToSaveArgument = new Task(); // Это будет захвачено ArgumentCaptor
-        taskToSaveArgument.setTitle(TASK_TITLE);
-        taskToSaveArgument.setDescription(TASK_DESCRIPTION);
-        taskToSaveArgument.setStatus(TaskStatus.PENDING);
-        taskToSaveArgument.setUser(mockUserReference);
-        // Симулируем, что после сохранения JPA установит ID и временные метки
-        Task savedTaskEntity = new Task();
-        savedTaskEntity.setId(SAVED_TASK_ID);
-        savedTaskEntity.setTitle(TASK_TITLE);
-        savedTaskEntity.setDescription(TASK_DESCRIPTION);
-        savedTaskEntity.setStatus(TaskStatus.PENDING);
-        savedTaskEntity.setUser(mockUserReference);
-        savedTaskEntity.setCreatedAt(Instant.now().minusSeconds(10)); // Примерные значения
-        savedTaskEntity.setUpdatedAt(Instant.now().minusSeconds(5));  // Примерные значения
-        savedTaskEntity.setCompletedAt(null);
+    @BeforeEach
+    void setUpForEachTest() {
+        // Настраиваем мок Clock для всех тестов, где он может быть использован
+        lenient().when(mockClock.instant()).thenReturn(FIXED_INSTANT_NOW);
+        lenient().when(mockClock.getZone()).thenReturn(ZoneId.of("UTC")); // Если Clock.systemUTC() используется где-то
 
-        when(mockTaskRepository.save(any(Task.class))).thenReturn(savedTaskEntity);
-
-        // Act
-        TaskResponse response = taskService.createTask(request, USER_ID);
-
-        // Assert
-        // 1. Проверяем, что getReferenceById был вызван с правильным ID
-        verify(mockUserRepository).getReferenceById(USER_ID);
-
-        // 2. Захватываем аргумент, переданный в taskRepository.save()
-        ArgumentCaptor<Task> taskArgumentCaptor = ArgumentCaptor.forClass(Task.class);
-        verify(mockTaskRepository).save(taskArgumentCaptor.capture());
-        Task capturedTask = taskArgumentCaptor.getValue();
-
-        // 3. Проверяем поля захваченной задачи перед сохранением
-        assertThat(capturedTask.getTitle()).isEqualTo(TASK_TITLE);
-        assertThat(capturedTask.getDescription()).isEqualTo(TASK_DESCRIPTION);
-        assertThat(capturedTask.getStatus()).isEqualTo(TaskStatus.PENDING);
-        assertThat(capturedTask.getUser()).isSameAs(mockUserReference); // Убеждаемся, что установлена ссылка на пользователя
-        assertThat(capturedTask.getId()).isNull(); // ID еще не должен быть установлен до вызова save
-
-        // 4. Проверяем возвращенный TaskResponse
-        assertThat(response).isNotNull();
-        assertThat(response.getId()).isEqualTo(SAVED_TASK_ID);
-        assertThat(response.getTitle()).isEqualTo(TASK_TITLE);
-        assertThat(response.getDescription()).isEqualTo(TASK_DESCRIPTION);
-        assertThat(response.getStatus()).isEqualTo(TaskStatus.PENDING);
-        assertThat(response.getUserId()).isEqualTo(USER_ID);
-        assertThat(response.getCreatedAt()).isEqualTo(savedTaskEntity.getCreatedAt());
-        assertThat(response.getUpdatedAt()).isEqualTo(savedTaskEntity.getUpdatedAt());
-        assertThat(response.getCompletedAt()).isNull();
+        // Общий мок для User, используемый в разных тестах
+        mockUserReference = mock(User.class);
+        lenient().when(mockUserReference.getId()).thenReturn(DEFAULT_USER_ID);
     }
 
-    @Test
-    @DisplayName("createTask: Описание null в запросе -> задача сохраняется с null описанием")
-    void createTask_whenDescriptionIsNullInRequest_shouldSaveTaskWithNullDescription() {
-        // Arrange
-        TaskCreateRequest requestWithNullDesc = new TaskCreateRequest(TASK_TITLE, null);
-        User mockUserReference = mock(User.class);
-        when(mockUserReference.getId()).thenReturn(USER_ID);
-        when(mockUserRepository.getReferenceById(USER_ID)).thenReturn(mockUserReference);
-
-        Task savedTaskEntity = new Task(); // Упрощенный мок для возврата из save
-        savedTaskEntity.setId(SAVED_TASK_ID);
-        savedTaskEntity.setTitle(TASK_TITLE);
-        savedTaskEntity.setDescription(null); // Ожидаем null
-        savedTaskEntity.setStatus(TaskStatus.PENDING);
-        savedTaskEntity.setUser(mockUserReference);
-        savedTaskEntity.setCreatedAt(Instant.now());
-        savedTaskEntity.setUpdatedAt(Instant.now());
-
-        when(mockTaskRepository.save(any(Task.class))).thenAnswer(invocation -> {
-            Task taskArg = invocation.getArgument(0);
-            // Копируем поля, чтобы быть ближе к реальности, и проверяем, что description действительно null
-            savedTaskEntity.setTitle(taskArg.getTitle());
-            savedTaskEntity.setDescription(taskArg.getDescription()); // Это должно быть null
-            savedTaskEntity.setStatus(taskArg.getStatus());
-            savedTaskEntity.setUser(taskArg.getUser());
-            return savedTaskEntity;
-        });
-
-
-        // Act
-        TaskResponse response = taskService.createTask(requestWithNullDesc, USER_ID);
-
-        // Assert
-        verify(mockTaskRepository).save(argThat(task -> task.getDescription() == null));
-        assertThat(response.getDescription()).isNull();
-        assertThat(response.getTitle()).isEqualTo(TASK_TITLE);
+    private TaskCreateRequest createValidTaskCreateRequest(String title, String description) {
+        return new TaskCreateRequest(title, description);
     }
 
-    @Test
-    @DisplayName("createTask: Пользователь не найден (userRepository.getReferenceById выбрасывает исключение) -> должен пробросить исключение")
-    void createTask_whenUserNotFound_shouldPropagateException() {
-        // Arrange
-        TaskCreateRequest request = new TaskCreateRequest(TASK_TITLE, TASK_DESCRIPTION);
-        Long nonExistentUserId = 999L;
-        // Симулируем, что getReferenceById выбрасывает EntityNotFoundException (или JpaObjectRetrievalFailureException, если используется Spring Data)
-        EntityNotFoundException entityNotFoundCause = new EntityNotFoundException("User not found with ID: " + nonExistentUserId);
-        JpaObjectRetrievalFailureException jpaException = new JpaObjectRetrievalFailureException(entityNotFoundCause);
-
-        when(mockUserRepository.getReferenceById(nonExistentUserId)).thenThrow(jpaException);
-
-        // Act & Assert
-        assertThatExceptionOfType(JpaObjectRetrievalFailureException.class)
-                .isThrownBy(() -> taskService.createTask(request, nonExistentUserId))
-                .withCause(entityNotFoundCause)
-                .withMessageContaining("User not found with ID: " + nonExistentUserId); // Проверяем, что причина сохранена
-
-        verify(mockTaskRepository, never()).save(any(Task.class)); // save не должен вызываться
+    private TaskUpdateRequest createValidTaskUpdateRequest(String title, String description, TaskStatus status) {
+        return new TaskUpdateRequest(title, description, status);
     }
 
-    @Test
-    @DisplayName("createTask: TaskCreateRequest null -> должен выбросить NullPointerException (через @NonNull)")
-    void createTask_whenRequestIsNull_shouldThrowNullPointerException() {
-        assertThatNullPointerException()
-                .isThrownBy(() -> taskService.createTask(null, USER_ID))
-                .withMessageContaining("request is marked non-null but is null"); // Проверяем имя параметра
+    private Task createTaskEntity(Long id, String title, String description, TaskStatus status, User user, Instant createdAt, Instant updatedAt, Instant completedAt) {
+        Task task = new Task();
+        task.setId(id);
+        task.setTitle(title);
+        task.setDescription(description);
+        task.setStatus(status);
+        task.setUser(user);
+        task.setCreatedAt(createdAt);
+        task.setUpdatedAt(updatedAt);
+        task.setCompletedAt(completedAt);
+        return task;
     }
 
-    @Test
-    @DisplayName("createTask: currentUserId null -> должен выбросить NullPointerException (через @NonNull)")
-    void createTask_whenCurrentUserIdIsNull_shouldThrowNullPointerException() {
-        TaskCreateRequest request = new TaskCreateRequest(TASK_TITLE, TASK_DESCRIPTION);
-        assertThatNullPointerException()
-                .isThrownBy(() -> taskService.createTask(request, null))
-                .withMessageContaining("currentUserId is marked non-null but is null");
+
+    // =====================================================================================
+    // == Тесты для метода createTask(TaskCreateRequest, Long)
+    // =====================================================================================
+    @Nested
+    @DisplayName("createTask Tests")
+    class CreateTaskTests {
+        @Test
+        @DisplayName("TC_CS_CREATE_01: Успешное создание задачи (с description)")
+        void createTask_whenValidRequestWithDescription_shouldSaveAndReturnCorrectResponse() {
+            // Arrange
+            TaskCreateRequest request = createValidTaskCreateRequest(DEFAULT_TASK_TITLE, DEFAULT_TASK_DESCRIPTION);
+            when(mockUserRepository.getReferenceById(DEFAULT_USER_ID)).thenReturn(mockUserReference);
+
+            Task savedTaskEntity = createTaskEntity(DEFAULT_TASK_ID, DEFAULT_TASK_TITLE, DEFAULT_TASK_DESCRIPTION, TaskStatus.PENDING,
+                    mockUserReference, FIXED_INSTANT_NOW, FIXED_INSTANT_NOW, null);
+            when(mockTaskRepository.save(any(Task.class))).thenReturn(savedTaskEntity);
+
+            // Act
+            TaskResponse response = taskService.createTask(request, DEFAULT_USER_ID);
+
+            // Assert
+            verify(mockUserRepository).getReferenceById(DEFAULT_USER_ID);
+            verify(mockTaskRepository).save(taskArgumentCaptor.capture());
+            Task capturedTask = taskArgumentCaptor.getValue();
+
+            assertThat(capturedTask.getTitle()).isEqualTo(DEFAULT_TASK_TITLE);
+            assertThat(capturedTask.getDescription()).isEqualTo(DEFAULT_TASK_DESCRIPTION);
+            assertThat(capturedTask.getStatus()).isEqualTo(TaskStatus.PENDING);
+            assertThat(capturedTask.getUser()).isSameAs(mockUserReference);
+            assertThat(capturedTask.getCreatedAt()).isEqualTo(FIXED_INSTANT_NOW);
+            assertThat(capturedTask.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW);
+            assertThat(capturedTask.getCompletedAt()).isNull();
+
+            assertThat(response).isNotNull();
+            assertThat(response.getId()).isEqualTo(DEFAULT_TASK_ID);
+            assertThat(response.getTitle()).isEqualTo(DEFAULT_TASK_TITLE);
+            assertThat(response.getDescription()).isEqualTo(DEFAULT_TASK_DESCRIPTION);
+            assertThat(response.getUserId()).isEqualTo(DEFAULT_USER_ID);
+        }
+
+        @Test
+        @DisplayName("TC_CS_CREATE_01: Успешное создание задачи (без description)")
+        void createTask_whenValidRequestWithoutDescription_shouldSaveAndReturnCorrectResponse() {
+            // Arrange
+            TaskCreateRequest request = createValidTaskCreateRequest(DEFAULT_TASK_TITLE, null);
+            when(mockUserRepository.getReferenceById(DEFAULT_USER_ID)).thenReturn(mockUserReference);
+
+            Task savedTaskEntity = createTaskEntity(DEFAULT_TASK_ID, DEFAULT_TASK_TITLE, null, TaskStatus.PENDING,
+                    mockUserReference, FIXED_INSTANT_NOW, FIXED_INSTANT_NOW, null);
+            when(mockTaskRepository.save(any(Task.class))).thenReturn(savedTaskEntity);
+
+            // Act
+            TaskResponse response = taskService.createTask(request, DEFAULT_USER_ID);
+
+            // Assert
+            verify(mockTaskRepository).save(taskArgumentCaptor.capture());
+            Task capturedTask = taskArgumentCaptor.getValue();
+            assertThat(capturedTask.getDescription()).isNull();
+
+            assertThat(response.getDescription()).isNull();
+            assertThat(response.getTitle()).isEqualTo(DEFAULT_TASK_TITLE);
+        }
+
+        @Test
+        @DisplayName("TC_CS_CREATE_02: Пользователь не найден")
+        void createTask_whenUserNotFound_shouldThrowJpaObjectRetrievalFailureException() {
+            // Arrange
+            TaskCreateRequest request = createValidTaskCreateRequest(DEFAULT_TASK_TITLE, DEFAULT_TASK_DESCRIPTION);
+            Long nonExistentUserId = 999L;
+            EntityNotFoundException cause = new EntityNotFoundException("User not found");
+            when(mockUserRepository.getReferenceById(nonExistentUserId)).thenThrow(new JpaObjectRetrievalFailureException(cause));
+
+            // Act & Assert
+            assertThatThrownBy(() -> taskService.createTask(request, nonExistentUserId))
+                    .isInstanceOf(JpaObjectRetrievalFailureException.class)
+                    .hasCauseInstanceOf(EntityNotFoundException.class);
+            verify(mockTaskRepository, never()).save(any(Task.class));
+        }
+
+        @Test
+        @DisplayName("TC_CS_CREATE_03: TaskCreateRequest равен null")
+        void createTask_whenRequestIsNull_shouldThrowNullPointerException() {
+            assertThatNullPointerException()
+                    .isThrownBy(() -> taskService.createTask(null, DEFAULT_USER_ID))
+                    .withMessageContaining("request");
+        }
+
+        @Test
+        @DisplayName("TC_CS_CREATE_04: currentUserId равен null")
+        void createTask_whenCurrentUserIdIsNull_shouldThrowNullPointerException() {
+            TaskCreateRequest request = createValidTaskCreateRequest(DEFAULT_TASK_TITLE, DEFAULT_TASK_DESCRIPTION);
+            assertThatNullPointerException()
+                    .isThrownBy(() -> taskService.createTask(request, null))
+                    .withMessageContaining("currentUserId");
+        }
     }
 
-    @Test
-    @DisplayName("getAllTasksForCurrentUser: когда репозиторий возвращает задачи -> должен вернуть смапленные TaskResponse")
-    void getAllTasksForCurrentUser_whenRepositoryReturnsTasks_shouldReturnMappedTaskResponses() {
-        // Arrange
-        Long currentUserId = 1L;
-        User mockUser = new User(); // Для TaskResponse.fromEntity нужен User в Task
-        mockUser.setId(currentUserId);
+    // =====================================================================================
+    // == Тесты для метода getAllTasksForCurrentUser(Long)
+    // =====================================================================================
+    @Nested
+    @DisplayName("getAllTasksForCurrentUser Tests")
+    class GetAllTasksForCurrentUserTests {
+        @Test
+        @DisplayName("TC_CS_GETALL_01: У пользователя есть задачи")
+        void getAllTasksForCurrentUser_whenUserHasTasks_shouldReturnListOfTaskResponses() {
+            // Arrange
+            Task task1 = createTaskEntity(1L, "Task 1", "Desc 1", TaskStatus.PENDING, mockUserReference, FIXED_INSTANT_NOW, FIXED_INSTANT_NOW, null);
+            Task task2 = createTaskEntity(2L, "Task 2", "Desc 2", TaskStatus.COMPLETED, mockUserReference, FIXED_INSTANT_NOW, FIXED_INSTANT_NOW, FIXED_INSTANT_NOW);
+            when(mockTaskRepository.findAllByUserIdOrderByCreatedAtDesc(DEFAULT_USER_ID)).thenReturn(List.of(task1, task2));
 
-        Task task1 = new Task(10L, "Task 1", "Desc 1", TaskStatus.PENDING, Instant.now(), Instant.now(), null, mockUser);
-        Task task2 = new Task(11L, "Task 2", "Desc 2", TaskStatus.COMPLETED, Instant.now(), Instant.now(), Instant.now(), mockUser);
-        List<Task> mockTasksFromRepo = List.of(task1, task2);
+            // Act
+            List<TaskResponse> responses = taskService.getAllTasksForCurrentUser(DEFAULT_USER_ID);
 
-        when(mockTaskRepository.findAllByUserIdOrderByCreatedAtDesc(currentUserId)).thenReturn(mockTasksFromRepo);
+            // Assert
+            assertThat(responses).hasSize(2);
+            assertThat(responses.get(0).getId()).isEqualTo(task1.getId());
+            assertThat(responses.get(1).getId()).isEqualTo(task2.getId());
+            verify(mockTaskRepository).findAllByUserIdOrderByCreatedAtDesc(DEFAULT_USER_ID);
+        }
 
-        // Act
-        List<TaskResponse> result = taskService.getAllTasksForCurrentUser(currentUserId);
+        @Test
+        @DisplayName("TC_CS_GETALL_02: У пользователя нет задач")
+        void getAllTasksForCurrentUser_whenUserHasNoTasks_shouldReturnEmptyList() {
+            // Arrange
+            when(mockTaskRepository.findAllByUserIdOrderByCreatedAtDesc(DEFAULT_USER_ID)).thenReturn(Collections.emptyList());
 
-        // Assert
-        assertThat(result)
-                .isNotNull()
-                .hasSize(2);
+            // Act
+            List<TaskResponse> responses = taskService.getAllTasksForCurrentUser(DEFAULT_USER_ID);
 
-        assertThat(result.getFirst().getId()).isEqualTo(task1.getId());
-        assertThat(result.getFirst().getTitle()).isEqualTo(task1.getTitle());
-        assertThat(result.getFirst().getUserId()).isEqualTo(currentUserId);
+            // Assert
+            assertThat(responses).isEmpty();
+            verify(mockTaskRepository).findAllByUserIdOrderByCreatedAtDesc(DEFAULT_USER_ID);
+        }
 
-        assertThat(result.get(1).getId()).isEqualTo(task2.getId());
-        assertThat(result.get(1).getTitle()).isEqualTo(task2.getTitle());
-        assertThat(result.get(1).getUserId()).isEqualTo(currentUserId);
-
-        verify(mockTaskRepository).findAllByUserIdOrderByCreatedAtDesc(currentUserId);
+        @Test
+        @DisplayName("TC_CS_GETALL_03: currentUserId равен null")
+        void getAllTasksForCurrentUser_whenCurrentUserIdIsNull_shouldThrowNullPointerException() {
+            assertThatNullPointerException()
+                    .isThrownBy(() -> taskService.getAllTasksForCurrentUser(null))
+                    .withMessageContaining("currentUserId");
+        }
     }
 
-    @Test
-    @DisplayName("getAllTasksForCurrentUser: когда репозиторий возвращает пустой список -> должен вернуть пустой список TaskResponse")
-    void getAllTasksForCurrentUser_whenRepositoryReturnsEmptyList_shouldReturnEmptyTaskResponseList() {
-        // Arrange
-        Long currentUserId = 1L;
-        when(mockTaskRepository.findAllByUserIdOrderByCreatedAtDesc(currentUserId)).thenReturn(Collections.emptyList());
+    // =====================================================================================
+    // == Тесты для метода getTaskByIdForCurrentUserOrThrow(Long, Long)
+    // =====================================================================================
+    @Nested
+    @DisplayName("getTaskByIdForCurrentUserOrThrow Tests")
+    class GetTaskByIdForCurrentUserOrThrowTests {
+        @Test
+        @DisplayName("TC_CS_GETBYID_01: Задача найдена и принадлежит пользователю")
+        void getTaskById_whenTaskExistsAndBelongsToUser_shouldReturnTaskResponse() {
+            // Arrange
+            Task foundTask = createTaskEntity(DEFAULT_TASK_ID, DEFAULT_TASK_TITLE, DEFAULT_TASK_DESCRIPTION, TaskStatus.PENDING, mockUserReference, FIXED_INSTANT_NOW, FIXED_INSTANT_NOW, null);
+            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.of(foundTask));
 
-        // Act
-        List<TaskResponse> result = taskService.getAllTasksForCurrentUser(currentUserId);
+            // Act
+            TaskResponse response = taskService.getTaskByIdForCurrentUserOrThrow(DEFAULT_TASK_ID, DEFAULT_USER_ID);
 
-        // Assert
-        assertThat(result).isNotNull().isEmpty();
-        verify(mockTaskRepository).findAllByUserIdOrderByCreatedAtDesc(currentUserId);
+            // Assert
+            assertThat(response.getId()).isEqualTo(DEFAULT_TASK_ID);
+            assertThat(response.getTitle()).isEqualTo(DEFAULT_TASK_TITLE);
+            verify(mockTaskRepository).findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID);
+        }
+
+        @Test
+        @DisplayName("TC_CS_GETBYID_02: Задача не найдена / не принадлежит пользователю")
+        void getTaskById_whenTaskNotFoundOrNotBelongsToUser_shouldThrowTaskNotFoundException() {
+            // Arrange
+            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.empty());
+
+            // Act & Assert
+            assertThatThrownBy(() -> taskService.getTaskByIdForCurrentUserOrThrow(DEFAULT_TASK_ID, DEFAULT_USER_ID))
+                    .isInstanceOf(TaskNotFoundException.class)
+                    .satisfies(ex -> {
+                        TaskNotFoundException e = (TaskNotFoundException) ex;
+                        assertThat(e.getRequestedTaskId()).isEqualTo(DEFAULT_TASK_ID);
+                        assertThat(e.getCurrentUserId()).isEqualTo(DEFAULT_USER_ID);
+                    });
+            verify(mockTaskRepository).findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID);
+        }
+
+        @Test
+        @DisplayName("TC_CS_GETBYID_03: taskId равен null")
+        void getTaskById_whenTaskIdIsNull_shouldThrowNullPointerException() {
+            assertThatNullPointerException()
+                    .isThrownBy(() -> taskService.getTaskByIdForCurrentUserOrThrow(null, DEFAULT_USER_ID))
+                    .withMessageContaining("taskId");
+        }
+
+        @Test
+        @DisplayName("TC_CS_GETBYID_04: currentUserId равен null")
+        void getTaskById_whenCurrentUserIdIsNull_shouldThrowNullPointerException() {
+            assertThatNullPointerException()
+                    .isThrownBy(() -> taskService.getTaskByIdForCurrentUserOrThrow(DEFAULT_TASK_ID, null))
+                    .withMessageContaining("currentUserId");
+        }
     }
 
-    @Test
-    @DisplayName("getAllTasksForCurrentUser: currentUserId null -> должен выбросить NullPointerException (Lombok @NonNull)")
-    void getAllTasksForCurrentUser_whenCurrentUserIdIsNull_shouldThrowNullPointerException() {
-        assertThatNullPointerException()
-                .isThrownBy(() -> taskService.getAllTasksForCurrentUser(null))
-                .withMessageContaining("currentUserId is marked non-null but is null");
-        verifyNoInteractions(mockTaskRepository);
+    // =====================================================================================
+    // == Тесты для метода updateTaskForCurrentUserOrThrow(Long, TaskUpdateRequest, Long)
+    // =====================================================================================
+    @Nested
+    @DisplayName("updateTaskForCurrentUserOrThrow Tests")
+    class UpdateTaskForCurrentUserOrThrowTests {
+
+        @Test
+        @DisplayName("TC_CS_UPDATE_01: Успешное обновление задачи (меняем title, description, status PENDING -> COMPLETED)")
+        void updateTask_whenValidRequestAndTaskExists_shouldUpdateAndReturnTaskResponse() {
+            // Arrange
+            TaskUpdateRequest updateRequest = createValidTaskUpdateRequest("Updated Title", "Updated Desc", TaskStatus.COMPLETED);
+            Task existingTask = createTaskEntity(DEFAULT_TASK_ID, DEFAULT_TASK_TITLE, DEFAULT_TASK_DESCRIPTION, TaskStatus.PENDING, mockUserReference, FIXED_INSTANT_NOW.minusSeconds(100), FIXED_INSTANT_NOW.minusSeconds(100), null);
+
+            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.of(existingTask));
+            // Мокаем save так, чтобы он вернул переданный ему объект (или его копию с теми же изменениями)
+            when(mockTaskRepository.save(any(Task.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+
+            // Act
+            TaskResponse response = taskService.updateTaskForCurrentUserOrThrow(DEFAULT_TASK_ID, updateRequest, DEFAULT_USER_ID);
+
+            // Assert
+            verify(mockTaskRepository).findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID);
+            verify(mockTaskRepository).save(taskArgumentCaptor.capture());
+            Task savedTask = taskArgumentCaptor.getValue();
+
+            assertThat(savedTask.getTitle()).isEqualTo("Updated Title");
+            assertThat(savedTask.getDescription()).isEqualTo("Updated Desc");
+            assertThat(savedTask.getStatus()).isEqualTo(TaskStatus.COMPLETED);
+            assertThat(savedTask.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW); // Ручная установка
+            assertThat(savedTask.getCompletedAt()).isEqualTo(FIXED_INSTANT_NOW); // Установлено через updateCompletedAtBasedOnStatus
+            assertThat(savedTask.getCreatedAt()).isEqualTo(FIXED_INSTANT_NOW.minusSeconds(100)); // Не должно меняться
+
+            assertThat(response.getTitle()).isEqualTo("Updated Title");
+            assertThat(response.getStatus()).isEqualTo(TaskStatus.COMPLETED);
+            assertThat(response.getCompletedAt()).isEqualTo(FIXED_INSTANT_NOW);
+            assertThat(response.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW);
+        }
+
+        @Test
+        @DisplayName("TC_CS_UPDATE_02: Задача не найдена / не принадлежит пользователю")
+        void updateTask_whenTaskNotFoundOrNotBelongsToUser_shouldThrowTaskNotFoundException() {
+            // Arrange
+            TaskUpdateRequest updateRequest = createValidTaskUpdateRequest("Upd", "Upd", TaskStatus.PENDING);
+            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.empty());
+
+            // Act & Assert
+            assertThatThrownBy(() -> taskService.updateTaskForCurrentUserOrThrow(DEFAULT_TASK_ID, updateRequest, DEFAULT_USER_ID))
+                    .isInstanceOf(TaskNotFoundException.class);
+            verify(mockTaskRepository, never()).save(any(Task.class));
+        }
+
+        @Test
+        @DisplayName("TC_CS_UPDATE_03: taskId равен null")
+        void updateTask_whenTaskIdIsNull_shouldThrowNullPointerException() {
+            TaskUpdateRequest request = createValidTaskUpdateRequest("T", "D", TaskStatus.PENDING);
+            assertThatNullPointerException()
+                    .isThrownBy(() -> taskService.updateTaskForCurrentUserOrThrow(null, request, DEFAULT_USER_ID))
+                    .withMessageContaining("taskId");
+        }
+
+        @Test
+        @DisplayName("TC_CS_UPDATE_04: TaskUpdateRequest равен null")
+        void updateTask_whenRequestIsNull_shouldThrowNullPointerException() {
+            assertThatNullPointerException()
+                    .isThrownBy(() -> taskService.updateTaskForCurrentUserOrThrow(DEFAULT_TASK_ID, null, DEFAULT_USER_ID))
+                    .withMessageContaining("request");
+        }
+
+        @Test
+        @DisplayName("TC_CS_UPDATE_05: currentUserId равен null")
+        void updateTask_whenCurrentUserIdIsNull_shouldThrowNullPointerException() {
+            TaskUpdateRequest request = createValidTaskUpdateRequest("T", "D", TaskStatus.PENDING);
+            assertThatNullPointerException()
+                    .isThrownBy(() -> taskService.updateTaskForCurrentUserOrThrow(DEFAULT_TASK_ID, request, null))
+                    .withMessageContaining("currentUserId");
+        }
     }
 
-    @Test
-    @DisplayName("getTaskByIdForCurrentUserOrThrow: задача найдена и принадлежит пользователю -> должен вернуть TaskResponse")
-    void getTaskByIdForCurrentUserOrThrow_whenTaskExistsAndBelongsToUser_shouldReturnTaskResponse() {
-        // Arrange
-        Long taskId = 1L;
-        Long userId = USER_ID; // USER_ID из @BeforeEach или определить локально
+    // =====================================================================================
+    // == Тесты для package-private метода updateCompletedAtBasedOnStatus(Task, TaskStatus, Instant)
+    // =====================================================================================
+    @Nested
+    @DisplayName("updateCompletedAtBasedOnStatus Tests (package-private)")
+    class UpdateCompletedAtBasedOnStatusTests {
 
-        Task foundTaskEntity = new Task();
-        foundTaskEntity.setId(taskId);
-        foundTaskEntity.setTitle("Found Task");
-        // Устанавливаем мок пользователя в сущность Task
-        User mockUserForTask= mock(User.class);
-        when(mockUserForTask.getId()).thenReturn(userId);
-        foundTaskEntity.setUser(mockUserForTask);
-        // ... (другие поля Task, если они важны для TaskResponse.fromEntity)
+        private Task task;
 
-        when(mockTaskRepository.findByIdAndUserId(taskId, userId)).thenReturn(Optional.of(foundTaskEntity));
+        @BeforeEach
+        void setUpForThisNestedClass() {
+            task = new Task(); // Простая задача для тестов этого метода
+            task.setId(DEFAULT_TASK_ID);
+            // Clock уже настроен в @BeforeEach внешнего класса на FIXED_INSTANT_NOW
+        }
 
-        // Act
-        TaskResponse response = taskService.getTaskByIdForCurrentUserOrThrow(taskId, userId);
+        @Test
+        @DisplayName("TC_CS_PRIV_COMP_01: Старый PENDING, новый COMPLETED")
+        void updateCompletedAt_whenStatusChangesToCompleted_shouldSetCompletedAt() {
+            // Arrange
+            task.setStatus(TaskStatus.PENDING);
+            task.setCompletedAt(null); // Изначально не завершена
 
-        // Assert
-        assertThat(response).isNotNull();
-        assertThat(response.getId()).isEqualTo(taskId);
-        assertThat(response.getTitle()).isEqualTo("Found Task");
-        assertThat(response.getUserId()).isEqualTo(userId); // Проверяем, что userId корректно смаппился
+            // Act
+            taskService.updateCompletedAtBasedOnStatus(task, TaskStatus.COMPLETED, FIXED_INSTANT_NOW);
 
-        verify(mockTaskRepository).findByIdAndUserId(taskId, userId);
+            // Assert
+            assertThat(task.getCompletedAt()).isEqualTo(FIXED_INSTANT_NOW);
+        }
+
+        @Test
+        @DisplayName("TC_CS_PRIV_COMP_02: Старый COMPLETED, новый PENDING")
+        void updateCompletedAt_whenStatusChangesFromCompletedToPending_shouldSetCompletedAtToNull() {
+            // Arrange
+            task.setStatus(TaskStatus.COMPLETED);
+            task.setCompletedAt(FIXED_INSTANT_NOW.minusSeconds(10)); // Была завершена ранее
+
+            // Act
+            taskService.updateCompletedAtBasedOnStatus(task, TaskStatus.PENDING, FIXED_INSTANT_NOW);
+
+            // Assert
+            assertThat(task.getCompletedAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("TC_CS_PRIV_COMP_03: Старый COMPLETED, новый COMPLETED")
+        void updateCompletedAt_whenStatusIsCompletedAndRemainsCompleted_shouldNotChangeCompletedAt() {
+            // Arrange
+            Instant previousCompletedAt = FIXED_INSTANT_NOW.minusSeconds(60);
+            task.setStatus(TaskStatus.COMPLETED);
+            task.setCompletedAt(previousCompletedAt);
+
+            // Act
+            taskService.updateCompletedAtBasedOnStatus(task, TaskStatus.COMPLETED, FIXED_INSTANT_NOW);
+
+            // Assert
+            assertThat(task.getCompletedAt()).isEqualTo(previousCompletedAt); // Не должно измениться
+        }
+
+        @Test
+        @DisplayName("TC_CS_PRIV_COMP_04: Старый PENDING, новый PENDING")
+        void updateCompletedAt_whenStatusIsPendingAndRemainsPending_shouldNotChangeCompletedAt() {
+            // Arrange
+            task.setStatus(TaskStatus.PENDING);
+            task.setCompletedAt(null);
+
+            // Act
+            taskService.updateCompletedAtBasedOnStatus(task, TaskStatus.PENDING, FIXED_INSTANT_NOW);
+
+            // Assert
+            assertThat(task.getCompletedAt()).isNull(); // Должно остаться null
+        }
+
+        @Test
+        @DisplayName("TC_CS_PRIV_COMP_05: task равен null")
+        void updateCompletedAt_whenTaskIsNull_shouldThrowNullPointerException() {
+            assertThatNullPointerException()
+                    .isThrownBy(() -> taskService.updateCompletedAtBasedOnStatus(null, TaskStatus.COMPLETED, FIXED_INSTANT_NOW))
+                    .withMessageContaining("task");
+        }
+
+        @Test
+        @DisplayName("TC_CS_PRIV_COMP_06: newStatus равен null")
+        void updateCompletedAt_whenNewStatusIsNull_shouldThrowNullPointerException() {
+            assertThatNullPointerException()
+                    .isThrownBy(() -> taskService.updateCompletedAtBasedOnStatus(task, null, FIXED_INSTANT_NOW))
+                    .withMessageContaining("newStatus");
+        }
+
+        @Test
+        @DisplayName("TC_CS_PRIV_COMP_07: timestamp равен null")
+        void updateCompletedAt_whenTimestampIsNull_shouldThrowNullPointerException() {
+            assertThatNullPointerException()
+                    .isThrownBy(() -> taskService.updateCompletedAtBasedOnStatus(task, TaskStatus.COMPLETED, null))
+                    .withMessageContaining("timestamp");
+        }
+
+        @Test
+        @DisplayName("TC_CS_PRIV_COMP_08: task.getStatus() (старый статус) равен null")
+        void updateCompletedAt_whenTaskOldStatusIsNull_shouldThrowNullPointerException() {
+            // Arrange
+            task.setStatus(null); // Устанавливаем старый статус в null
+
+            // Act & Assert
+            assertThatNullPointerException()
+                    .isThrownBy(() -> taskService.updateCompletedAtBasedOnStatus(task, TaskStatus.COMPLETED, FIXED_INSTANT_NOW))
+                    .withMessage("Old status of the task cannot be null when updating completedAt.");
+        }
     }
-
-    @Test
-    @DisplayName("getTaskByIdForCurrentUserOrThrow: задача не найдена -> должен выбросить TaskNotFoundException")
-    void getTaskByIdForCurrentUserOrThrow_whenTaskNotFound_shouldThrowTaskNotFoundException() {
-        // Arrange
-        Long taskId = 1L;
-        Long userId = USER_ID;
-        when(mockTaskRepository.findByIdAndUserId(taskId, userId)).thenReturn(Optional.empty());
-
-        // Act & Assert
-        assertThatExceptionOfType(TaskNotFoundException.class)
-                .isThrownBy(() -> taskService.getTaskByIdForCurrentUserOrThrow(taskId, userId))
-                .satisfies(ex -> {
-                    assertThat(ex.getRequestedTaskId()).isEqualTo(taskId);
-                    assertThat(ex.getCurrentUserId()).isEqualTo(userId);
-                });
-
-        verify(mockTaskRepository).findByIdAndUserId(taskId, userId);
-    }
-
-    @Test
-    @DisplayName("getTaskByIdForCurrentUserOrThrow: taskId null -> должен выбросить NullPointerException")
-    void getTaskByIdForCurrentUserOrThrow_whenTaskIdIsNull_shouldThrowNullPointerException() {
-        assertThatNullPointerException()
-                .isThrownBy(() -> taskService.getTaskByIdForCurrentUserOrThrow(null, USER_ID))
-                .withMessageContaining("taskId is marked non-null but is null");
-    }
-
-    @Test
-    @DisplayName("getTaskByIdForCurrentUserOrThrow: currentUserId null -> должен выбросить NullPointerException")
-    void getTaskByIdForCurrentUserOrThrow_whenUserIdIsNull_shouldThrowNullPointerException() {
-        assertThatNullPointerException()
-                .isThrownBy(() -> taskService.getTaskByIdForCurrentUserOrThrow(1L, null))
-                .withMessageContaining("currentUserId is marked non-null but is null");
-    }
-
 }

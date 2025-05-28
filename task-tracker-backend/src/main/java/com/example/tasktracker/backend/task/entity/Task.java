@@ -7,9 +7,6 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 import org.hibernate.proxy.HibernateProxy;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
 import java.util.Objects;
@@ -25,9 +22,7 @@ import java.util.Objects;
 @NoArgsConstructor
 @AllArgsConstructor
 @ToString(exclude = {"user"})
-@EntityListeners(AuditingEntityListener.class)
 public class Task {
-
     /**
      * Уникальный идентификатор задачи (primary key).
      * Генерируется с использованием sequence "tasks_id_seq" с allocationSize = 50.
@@ -67,7 +62,6 @@ public class Task {
      * Временная метка создания задачи.
      * Заполняется автоматически. Хранится в UTC.
      */
-    @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -75,7 +69,6 @@ public class Task {
      * Временная метка последнего обновления задачи.
      * Обновляется автоматически. Хранится в UTC.
      */
-    @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
@@ -130,6 +123,7 @@ public class Task {
 
     /**
      * Возвращает хеш-код для данной сущности {@code Task}.
+     *
      * @return хеш-код.
      */
     @Override

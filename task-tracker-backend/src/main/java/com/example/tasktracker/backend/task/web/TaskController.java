@@ -235,4 +235,40 @@ public class TaskController {
                 updatedTaskResponse.getId(), currentUserId, updatedTaskResponse.getStatus());
         return ResponseEntity.ok(updatedTaskResponse);
     }
+
+    /**
+     * Удаляет задачу по ее ID для текущего аутентифицированного пользователя.
+     * <p>
+     * Эндпоинт: {@code DELETE /api/v1/tasks/{taskId}}
+     * </p>
+     * <p>
+     * При успешном удалении задачи, принадлежащей текущему пользователю,
+     * возвращается HTTP статус 204 No Content.
+     * </p>
+     *
+     * @param taskId             ID удаляемой задачи, извлекаемый из пути URL.
+     *                           Должен быть валидным числовым идентификатором.
+     * @param currentUserDetails Детали текущего аутентифицированного пользователя,
+     *                           внедренные Spring Security. Ожидается, что не будет {@code null}.
+     * @return {@link ResponseEntity} со статусом 204 No Content в случае успеха.
+     * @throws com.example.tasktracker.backend.task.exception.TaskNotFoundException если задача с указанным ID
+     *         не найдена для текущего пользователя или не существует. В этом случае будет возвращен
+     *         HTTP 404 Not Found.
+     * @throws org.springframework.beans.TypeMismatchException если {@code taskId} не может быть
+     *         преобразован в {@link Long}. В этом случае будет возвращен HTTP 400 Bad Request.
+     * @throws IllegalStateException если principal текущего пользователя не может быть корректно разрешен.
+     *         В этом случае будет возвращен HTTP 500 Internal Server Error.
+     * @see com.example.tasktracker.backend.web.exception.GlobalExceptionHandler Для деталей обработки ошибок API.
+     */
+    @DeleteMapping("/{taskId}")
+    public ResponseEntity<Void> deleteTask(@PathVariable Long taskId,
+                                           @AuthenticationPrincipal AppUserDetails currentUserDetails) {
+        Long currentUserId = ControllerSecurityUtils.getCurrentUserId(currentUserDetails);
+        log.info("Processing request to delete task ID: {} for user ID: {}", taskId, currentUserId);
+
+        taskService.deleteTaskForCurrentUserOrThrow(taskId, currentUserId);
+
+        log.info("Task ID: {} for user ID: {} deleted successfully.", taskId, currentUserId);
+        return ResponseEntity.noContent().build();
+    }
 }

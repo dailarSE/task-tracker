@@ -781,4 +781,131 @@ class TaskControllerIT {
             assertTypeMismatchProblemDetail(responseEntity, "/tasks/" + invalidTaskId, "taskId", invalidTaskId, "Long");
         }
     }
+
+    // =====================================================================================
+    // == Тесты для DELETE /api/v1/tasks/{taskId} (US8)
+    // =====================================================================================
+    @Nested
+    @DisplayName("DELETE /api/v1/tasks/{taskId} (Delete Task) Tests")
+    class DeleteTaskITests {
+
+        // Вспомогательный метод для DELETE запроса
+        private ResponseEntity<ProblemDetail> deleteTaskApiReturnProblemDetail(Long taskId, String jwtToken) {
+            String taskUrl = baseTasksUrl + "/" + taskId;
+            HttpEntity<Void> entity = createHttpEntity(null, jwtToken);
+            // Используем exchange для получения ProblemDetail при ошибке
+            return testRestTemplate.exchange(taskUrl, HttpMethod.DELETE, entity, ProblemDetail.class);
+        }
+
+        private ResponseEntity<Void> deleteTaskApiReturnVoid(Long taskId, String jwtToken) {
+            String taskUrl = baseTasksUrl + "/" + taskId;
+            HttpEntity<Void> entity = createHttpEntity(null, jwtToken);
+            return testRestTemplate.exchange(taskUrl, HttpMethod.DELETE, entity, Void.class);
+        }
+
+        // TC_IT_DELETE_01 (US8_AC2)
+        @Test
+        @DisplayName("Успешное удаление своей задачи -> должен вернуть 204 No Content и задача должна быть удалена")
+        void deleteTask_whenOwnTaskAndValidJwt_shouldReturn204AndTaskIsDeleted() {
+            // Arrange: Создаем задачу через API, чтобы у нее был ID
+            TaskResponse createdTask = createTaskApi("Task to Delete", "This task will be deleted", jwtForTestUser1);
+            Long taskIdToDelete = createdTask.getId();
+
+            // Act: Удаляем задачу
+            ResponseEntity<Void> deleteResponseEntity = deleteTaskApiReturnVoid(taskIdToDelete, jwtForTestUser1);
+
+            // Assert: Проверяем статус ответа DELETE
+            assertThat(deleteResponseEntity.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+            assertThat(deleteResponseEntity.getBody()).isNull(); // У 204 No Content не должно быть тела
+
+            // Assert: Проверяем, что задача действительно удалена (GET должен вернуть 404)
+            String taskUrl = baseTasksUrl + "/" + taskIdToDelete;
+            HttpEntity<Void> getEntity = createHttpEntity(null, jwtForTestUser1);
+            ResponseEntity<ProblemDetail> getResponseEntity = testRestTemplate.exchange(
+                    taskUrl, HttpMethod.GET, getEntity, ProblemDetail.class);
+
+            assertTaskNotFoundProblemDetail(getResponseEntity, "/tasks/" + taskIdToDelete, taskIdToDelete, testUser1.getId());
+        }
+
+        // TC_IT_DELETE_02 (US8_AC3)
+        @Test
+        @DisplayName("Попытка удалить несуществующую задачу -> должен вернуть 404 Not Found")
+        void deleteTask_whenTaskNotFound_shouldReturn404() {
+            // Arrange
+            Long nonExistentTaskId = 9999L; // ID, которого точно нет
+
+            // Act
+            ResponseEntity<ProblemDetail> responseEntity = deleteTaskApiReturnProblemDetail(nonExistentTaskId, jwtForTestUser1);
+
+            // Assert
+            assertTaskNotFoundProblemDetail(responseEntity, "/tasks/" + nonExistentTaskId, nonExistentTaskId, testUser1.getId());
+        }
+
+        // TC_IT_DELETE_03 (US8_AC3)
+        @Test
+        @DisplayName("Попытка удалить чужую задачу -> должен вернуть 404 Not Found")
+        void deleteTask_whenTaskBelongsToAnotherUser_shouldReturn404() {
+            // Arrange: testUser2 создает задачу
+            TaskResponse anotherUserTask = createTaskApi("Another User's Task", "This task belongs to user2", jwtForTestUser2);
+            Long taskIdOfAnotherUser = anotherUserTask.getId();
+
+            // Act: testUser1 пытается удалить задачу testUser2
+            ResponseEntity<ProblemDetail> responseEntity = deleteTaskApiReturnProblemDetail(taskIdOfAnotherUser, jwtForTestUser1);
+
+            // Assert
+            assertTaskNotFoundProblemDetail(responseEntity, "/tasks/" + taskIdOfAnotherUser, taskIdOfAnotherUser, testUser1.getId());
+
+            // Дополнительная проверка: задача user2 все еще должна существовать
+            ResponseEntity<TaskResponse> getResponseUser2 = getTaskApi(taskIdOfAnotherUser, jwtForTestUser2);
+            assertThat(getResponseUser2.getStatusCode()).isEqualTo(HttpStatus.OK); // user2 все еще может получить свою задачу
+        }
+
+        // TC_IT_DELETE_04 (US8_AC4)
+        @Test
+        @DisplayName("Попытка удалить задачу с невалидным taskId в URL (строка) -> должен вернуть 400 Bad Request")
+        void deleteTask_whenInvalidTaskIdFormat_shouldReturn400() {
+            // Arrange
+            String invalidTaskId = "abc-not-a-number";
+            String taskUrl = baseTasksUrl + "/" + invalidTaskId;
+            HttpEntity<Void> requestEntity = createHttpEntity(null, jwtForTestUser1);
+
+            // Act
+            ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
+                    taskUrl, HttpMethod.DELETE, requestEntity, ProblemDetail.class);
+
+            // Assert
+            assertTypeMismatchProblemDetail(responseEntity, "/tasks/" + invalidTaskId, "taskId", invalidTaskId, "Long");
+        }
+
+        // TC_IT_DELETE_05 (US8_AC1)
+        @Test
+        @DisplayName("Попытка удалить задачу без JWT -> должен вернуть 401 Unauthorized")
+        void deleteTask_whenNoJwt_shouldReturn401() {
+            // Arrange: Создаем задачу, чтобы было что удалять (хотя до этого не дойдет)
+            TaskResponse createdTask = createTaskApi("Task for No JWT Delete", "Desc", jwtForTestUser1);
+            Long taskId = createdTask.getId();
+
+            // Act
+            ResponseEntity<ProblemDetail> responseEntity = deleteTaskApiReturnProblemDetail(taskId, null); // No JWT
+
+            // Assert
+            assertGeneralUnauthorizedProblemDetail(responseEntity, "/tasks/" + taskId);
+        }
+
+        // TC_IT_DELETE_06 (US8_AC1)
+        @Test
+        @DisplayName("Попытка удалить задачу с просроченным JWT -> должен вернуть 401 Unauthorized")
+        void deleteTask_whenJwtIsExpired_shouldReturn401() {
+            // Arrange
+            TaskResponse createdTask = createTaskApi("Task for Expired JWT Delete", "Desc", jwtForTestUser1);
+            Long taskId = createdTask.getId();
+            String expiredToken = testJwtUtil.generateExpiredToken(testUser1, Duration.ofSeconds(1), Duration.ofSeconds(5));
+
+            // Act
+            ResponseEntity<ProblemDetail> responseEntity = deleteTaskApiReturnProblemDetail(taskId, expiredToken);
+
+            // Assert
+            assertUnauthorizedProblemDetail(responseEntity, "/tasks/" + taskId, "EXPIRED");
+        }
+    }
 }

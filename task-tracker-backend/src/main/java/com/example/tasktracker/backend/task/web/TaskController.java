@@ -4,6 +4,7 @@ import com.example.tasktracker.backend.security.common.ControllerSecurityUtils;
 import com.example.tasktracker.backend.security.details.AppUserDetails;
 import com.example.tasktracker.backend.task.dto.TaskCreateRequest;
 import com.example.tasktracker.backend.task.dto.TaskResponse;
+import com.example.tasktracker.backend.task.dto.TaskStatusUpdateRequest;
 import com.example.tasktracker.backend.task.dto.TaskUpdateRequest;
 import com.example.tasktracker.backend.task.service.TaskService;
 import com.example.tasktracker.backend.web.ApiConstants;
@@ -23,7 +24,6 @@ import java.util.List;
  * REST-контроллер для операций, связанных с задачами (Tasks).
  * <p>
  * Предоставляет API эндпоинты для управления задачами пользователей.
- * На данный момент реализован эндпоинт для создания новых задач.
  * </p>
  * <p>
  * Все эндпоинты в этом контроллере требуют аутентификации пользователя.
@@ -196,6 +196,43 @@ public class TaskController {
         TaskResponse updatedTaskResponse = taskService.updateTaskForCurrentUserOrThrow(taskId, request, currentUserId);
 
         log.info("Task ID: {} for user ID: {} updated successfully.", updatedTaskResponse.getId(), currentUserId);
+        return ResponseEntity.ok(updatedTaskResponse);
+    }
+
+    /**
+     * Частично обновляет существующую задачу, позволяя изменить только ее статус.
+     * <p>
+     * Эндпоинт: {@code PATCH /api/v1/tasks/{taskId}}
+     * </p>
+     * <p>
+     * Принимает {@link TaskStatusUpdateRequest} в теле запроса, содержащий новый статус.
+     * В случае успешного обновления возвращается HTTP статус 200 OK с {@link TaskResponse},
+     * содержащим обновленные данные задачи (включая новый статус и, возможно, обновленный
+     * {@code completedAt} и {@code updatedAt}).
+     * </p>
+     *
+     * @param taskId             ID обновляемой задачи, извлекаемый из пути URL.
+     * @param request            DTO {@link TaskStatusUpdateRequest} с новым статусом для задачи.
+     * @param currentUserDetails Детали текущего аутентифицированного пользователя.
+     * @return {@link ResponseEntity} с {@link TaskResponse} и статусом 200 OK.
+     * @throws com.example.tasktracker.backend.task.exception.TaskNotFoundException если задача не найдена.
+     * @throws IllegalStateException если principal не может быть разрешен.
+     * @throws jakarta.validation.ValidationException если данные в {@code request} не проходят валидацию.
+     */
+    @PatchMapping("/{taskId}")
+    public ResponseEntity<TaskResponse> updateTaskStatus(
+            @PathVariable Long taskId,
+            @Valid @RequestBody TaskStatusUpdateRequest request,
+            @AuthenticationPrincipal AppUserDetails currentUserDetails) {
+
+        Long currentUserId = ControllerSecurityUtils.getCurrentUserId(currentUserDetails);
+        log.info("Processing request to update status for task ID: {} for user ID: {} to new status: {}",
+                taskId, currentUserId, request.getStatus());
+
+        TaskResponse updatedTaskResponse = taskService.updateTaskStatusForCurrentUserOrThrow(taskId, request, currentUserId);
+
+        log.info("Task status for task ID: {} (user ID: {}) updated successfully to: {}. Pending transaction commit.",
+                updatedTaskResponse.getId(), currentUserId, updatedTaskResponse.getStatus());
         return ResponseEntity.ok(updatedTaskResponse);
     }
 }

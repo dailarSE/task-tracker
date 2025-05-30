@@ -3,6 +3,7 @@ package com.example.tasktracker.backend.task.web;
 import com.example.tasktracker.backend.security.jwt.JwtProperties;
 import com.example.tasktracker.backend.task.dto.TaskCreateRequest;
 import com.example.tasktracker.backend.task.dto.TaskResponse;
+import com.example.tasktracker.backend.task.dto.TaskStatusUpdateRequest;
 import com.example.tasktracker.backend.task.dto.TaskUpdateRequest;
 import com.example.tasktracker.backend.task.entity.TaskStatus;
 import com.example.tasktracker.backend.task.exception.TaskNotFoundException; // Для assert'а type URI
@@ -645,6 +646,137 @@ class TaskControllerIT {
 
             ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
                     taskUrl, HttpMethod.PUT, requestEntity, ProblemDetail.class);
+
+            assertTypeMismatchProblemDetail(responseEntity, "/tasks/" + invalidTaskId, "taskId", invalidTaskId, "Long");
+        }
+    }
+
+    // =====================================================================================
+    // == Тесты для PATCH /api/v1/tasks/{taskId} (US9 - Update Task Status)
+    // =====================================================================================
+    @Nested
+    @DisplayName("PATCH /api/v1/tasks/{taskId} (Update Task Status) Tests")
+    class UpdateTaskStatusITests {
+
+        // Вспомогательный метод для PATCH запроса
+        private ResponseEntity<TaskResponse> patchTaskStatusApi(Long taskId, TaskStatusUpdateRequest updateRequest, String jwtToken) {
+            String taskUrl = baseTasksUrl + "/" + taskId;
+            HttpEntity<TaskStatusUpdateRequest> entity = createHttpEntity(updateRequest, jwtToken);
+            return testRestTemplate.exchange(taskUrl, HttpMethod.PATCH, entity, TaskResponse.class);
+        }
+
+        // TC_IT_PATCH_STATUS_01 (US9_AC3 - PENDING -> COMPLETED)
+        @Test
+        void updateTaskStatus_whenPendingToCompleted_shouldReturn200AndUpdatedTask() {
+            TaskResponse createdTask = createTaskApi("Task PENDING for PATCH", "Desc", jwtForTestUser1); // Изначально PENDING
+            assertThat(createdTask.getStatus()).isEqualTo(TaskStatus.PENDING);
+            assertThat(createdTask.getCompletedAt()).isNull();
+            Instant initialUpdatedAt = createdTask.getUpdatedAt();
+
+            TaskStatusUpdateRequest statusRequest = new TaskStatusUpdateRequest(TaskStatus.COMPLETED);
+            ResponseEntity<TaskResponse> patchResponse = patchTaskStatusApi(createdTask.getId(), statusRequest, jwtForTestUser1);
+
+            assertThat(patchResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+            TaskResponse updatedTask = patchResponse.getBody();
+            assertThat(updatedTask).isNotNull();
+            assertThat(updatedTask.getId()).isEqualTo(createdTask.getId());
+            assertThat(updatedTask.getStatus()).isEqualTo(TaskStatus.COMPLETED);
+            assertThat(updatedTask.getCompletedAt()).isNotNull().isAfterOrEqualTo(initialUpdatedAt); // completedAt установился
+            assertThat(updatedTask.getUpdatedAt()).isNotNull().isAfterOrEqualTo(initialUpdatedAt); // updatedAt обновился
+            assertThat(updatedTask.getCompletedAt()).isEqualTo(updatedTask.getUpdatedAt());
+        }
+
+        // TC_IT_PATCH_STATUS_02 (US9_AC3 - COMPLETED -> PENDING)
+        @Test
+        void updateTaskStatus_whenCompletedToPending_shouldReturn200AndResetCompletedAt() {
+            TaskResponse taskInitiallyPending = createTaskApi("Task COMPLETED for PATCH", "Desc", jwtForTestUser1);
+            // Сначала делаем COMPLETED через PUT (или PATCH, если бы он был первым)
+            TaskUpdateRequest makeCompletedRequest = new TaskUpdateRequest(taskInitiallyPending.getTitle(), taskInitiallyPending.getDescription(), TaskStatus.COMPLETED);
+            updateTaskApi(taskInitiallyPending.getId(), makeCompletedRequest, jwtForTestUser1); // Используем PUT для перевода в COMPLETED
+
+            ResponseEntity<TaskResponse> completedTaskGetResponse = getTaskApi(taskInitiallyPending.getId(), jwtForTestUser1);
+            assertThat(completedTaskGetResponse.getBody().getStatus()).isEqualTo(TaskStatus.COMPLETED);
+            assertThat(completedTaskGetResponse.getBody().getCompletedAt()).isNotNull();
+            Instant updatedAtAfterCompletion = completedTaskGetResponse.getBody().getUpdatedAt();
+
+
+            TaskStatusUpdateRequest statusRequestToPending = new TaskStatusUpdateRequest(TaskStatus.PENDING);
+            ResponseEntity<TaskResponse> patchResponse = patchTaskStatusApi(taskInitiallyPending.getId(), statusRequestToPending, jwtForTestUser1);
+
+            assertThat(patchResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+            TaskResponse updatedTask = patchResponse.getBody();
+            assertThat(updatedTask).isNotNull();
+            assertThat(updatedTask.getStatus()).isEqualTo(TaskStatus.PENDING);
+            assertThat(updatedTask.getCompletedAt()).isNull(); // completedAt сбросился
+            assertThat(updatedTask.getUpdatedAt()).isNotNull().isAfterOrEqualTo(updatedAtAfterCompletion);
+        }
+
+        // TC_IT_PATCH_STATUS_03 (US9_AC2 - DTO validation: status is null)
+        @Test
+        void updateTaskStatus_whenDtoStatusIsNull_shouldReturn400() {
+            TaskResponse createdTask = createTaskApi("Task for Null Status PATCH", "Desc", jwtForTestUser1);
+            TaskStatusUpdateRequest invalidRequest = new TaskStatusUpdateRequest(null); // status is null
+            HttpEntity<TaskStatusUpdateRequest> requestEntity = createHttpEntity(invalidRequest, jwtForTestUser1);
+            String taskUrl = baseTasksUrl + "/" + createdTask.getId();
+
+            ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
+                    taskUrl, HttpMethod.PATCH, requestEntity, ProblemDetail.class);
+
+            assertValidationProblemDetail(responseEntity, "/tasks/" + createdTask.getId(), "status");
+        }
+
+        // TC_IT_PATCH_STATUS_04 (US9_AC4 - Task Not Found)
+        @Test
+        void updateTaskStatus_whenTaskNotFound_shouldReturn404() {
+            Long nonExistentTaskId = 888L;
+            TaskStatusUpdateRequest request = new TaskStatusUpdateRequest(TaskStatus.COMPLETED);
+            String taskUrl = baseTasksUrl + "/" + nonExistentTaskId;
+            HttpEntity<TaskStatusUpdateRequest> entity = createHttpEntity(request, jwtForTestUser1);
+
+            ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
+                    taskUrl, HttpMethod.PATCH, entity, ProblemDetail.class);
+
+            assertTaskNotFoundProblemDetail(responseEntity, "/tasks/" + nonExistentTaskId, nonExistentTaskId, testUser1.getId());
+        }
+
+        // TC_IT_PATCH_STATUS_05 (US9_AC4 - Task Belongs to Another User)
+        @Test
+        void updateTaskStatus_whenTaskBelongsToAnotherUser_shouldReturn404() {
+            TaskResponse anotherUserTask = createTaskApi("Another User's Task for PATCH", "Desc", jwtForTestUser2);
+            TaskStatusUpdateRequest request = new TaskStatusUpdateRequest(TaskStatus.COMPLETED);
+            String taskUrl = baseTasksUrl + "/" + anotherUserTask.getId();
+            HttpEntity<TaskStatusUpdateRequest> entity = createHttpEntity(request, jwtForTestUser1); // Пытаемся обновить от имени user1
+
+            ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
+                    taskUrl, HttpMethod.PATCH, entity, ProblemDetail.class);
+
+            assertTaskNotFoundProblemDetail(responseEntity, "/tasks/" + anotherUserTask.getId(), anotherUserTask.getId(), testUser1.getId());
+        }
+
+        // TC_IT_PATCH_STATUS_06 (US9_AC1 - No JWT)
+        @Test
+        void updateTaskStatus_whenNoJwt_shouldReturn401() {
+            TaskResponse createdTask = createTaskApi("Task for No JWT PATCH", "Desc", jwtForTestUser1);
+            TaskStatusUpdateRequest request = new TaskStatusUpdateRequest(TaskStatus.COMPLETED);
+            String taskUrl = baseTasksUrl + "/" + createdTask.getId();
+            HttpEntity<TaskStatusUpdateRequest> entity = createHttpEntity(request, null); // No JWT
+
+            ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
+                    taskUrl, HttpMethod.PATCH, entity, ProblemDetail.class);
+
+            assertGeneralUnauthorizedProblemDetail(responseEntity, "/tasks/" + createdTask.getId());
+        }
+
+        // TC_IT_PATCH_STATUS_07 (US9 - Invalid TaskId format)
+        @Test
+        void updateTaskStatus_whenTaskIdIsInvalidFormat_shouldReturn400() {
+            String invalidTaskId = "not-a-number";
+            String taskUrl = baseTasksUrl + "/" + invalidTaskId;
+            TaskStatusUpdateRequest request = new TaskStatusUpdateRequest(TaskStatus.PENDING);
+            HttpEntity<TaskStatusUpdateRequest> entity = createHttpEntity(request, jwtForTestUser1);
+
+            ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
+                    taskUrl, HttpMethod.PATCH, entity, ProblemDetail.class);
 
             assertTypeMismatchProblemDetail(responseEntity, "/tasks/" + invalidTaskId, "taskId", invalidTaskId, "Long");
         }

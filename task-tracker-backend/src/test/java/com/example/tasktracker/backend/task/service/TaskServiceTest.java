@@ -304,32 +304,44 @@ class TaskServiceTest {
         void updateTask_whenValidRequestAndTaskExists_shouldUpdateAndReturnTaskResponse() {
             // Arrange
             TaskUpdateRequest updateRequest = createValidTaskUpdateRequest("Updated Title", "Updated Desc", TaskStatus.COMPLETED);
-            Task existingTask = createTaskEntity(DEFAULT_TASK_ID, DEFAULT_TASK_TITLE, DEFAULT_TASK_DESCRIPTION, TaskStatus.PENDING, mockUserReference, FIXED_INSTANT_NOW.minusSeconds(100), FIXED_INSTANT_NOW.minusSeconds(100), null);
+
+            Instant initialCreatedAt = FIXED_INSTANT_NOW.minusSeconds(100);
+            Instant initialUpdatedAt = FIXED_INSTANT_NOW.minusSeconds(50); // Пусть updatedAt будет немного позже createdAt
+            Task existingTask = createTaskEntity(
+                    DEFAULT_TASK_ID,
+                    DEFAULT_TASK_TITLE,
+                    DEFAULT_TASK_DESCRIPTION,
+                    TaskStatus.PENDING,
+                    mockUserReference,
+                    initialCreatedAt,
+                    initialUpdatedAt,
+                    null // completedAt изначально null
+            );
 
             when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.of(existingTask));
-            // Мокаем save так, чтобы он вернул переданный ему объект (или его копию с теми же изменениями)
-            when(mockTaskRepository.save(any(Task.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
 
             // Act
             TaskResponse response = taskService.updateTaskForCurrentUserOrThrow(DEFAULT_TASK_ID, updateRequest, DEFAULT_USER_ID);
 
             // Assert
             verify(mockTaskRepository).findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID);
-            verify(mockTaskRepository).save(taskArgumentCaptor.capture());
-            Task savedTask = taskArgumentCaptor.getValue();
 
-            assertThat(savedTask.getTitle()).isEqualTo("Updated Title");
-            assertThat(savedTask.getDescription()).isEqualTo("Updated Desc");
-            assertThat(savedTask.getStatus()).isEqualTo(TaskStatus.COMPLETED);
-            assertThat(savedTask.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW); // Ручная установка
-            assertThat(savedTask.getCompletedAt()).isEqualTo(FIXED_INSTANT_NOW); // Установлено через updateCompletedAtBasedOnStatus
-            assertThat(savedTask.getCreatedAt()).isEqualTo(FIXED_INSTANT_NOW.minusSeconds(100)); // Не должно меняться
+            assertThat(existingTask.getTitle()).isEqualTo("Updated Title");
+            assertThat(existingTask.getDescription()).isEqualTo("Updated Desc");
+            assertThat(existingTask.getStatus()).isEqualTo(TaskStatus.COMPLETED);
+            assertThat(existingTask.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW); // Установлено вручную в сервисе
+            assertThat(existingTask.getCompletedAt()).isEqualTo(FIXED_INSTANT_NOW); // Установлено через updateCompletedAtBasedOnStatus
+            assertThat(existingTask.getCreatedAt()).isEqualTo(initialCreatedAt); // Не должно меняться
 
+            assertThat(response).isNotNull();
+            assertThat(response.getId()).isEqualTo(DEFAULT_TASK_ID);
             assertThat(response.getTitle()).isEqualTo("Updated Title");
+            assertThat(response.getDescription()).isEqualTo("Updated Desc");
             assertThat(response.getStatus()).isEqualTo(TaskStatus.COMPLETED);
-            assertThat(response.getCompletedAt()).isEqualTo(FIXED_INSTANT_NOW);
+            assertThat(response.getUserId()).isEqualTo(DEFAULT_USER_ID);
+            assertThat(response.getCreatedAt()).isEqualTo(initialCreatedAt);
             assertThat(response.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW);
+            assertThat(response.getCompletedAt()).isEqualTo(FIXED_INSTANT_NOW);
         }
 
         @Test

@@ -171,9 +171,9 @@ public class TaskService {
 
         taskToUpdate.setUpdatedAt(now);
 
-        Task updatedTask = taskRepository.save(taskToUpdate);
-        log.info("Task with ID: {} for user ID: {} updated successfully.", updatedTask.getId(), currentUserId);
-        return TaskResponse.fromEntity(updatedTask);
+        log.info("Task update logic completed for task ID: {} (user ID: {}). Pending transaction commit.",
+                taskToUpdate.getId(), currentUserId);
+        return TaskResponse.fromEntity(taskToUpdate);
     }
 
 

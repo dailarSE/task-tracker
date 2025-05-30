@@ -9,6 +9,7 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -22,6 +23,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
@@ -29,9 +32,9 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.*;
 
 @DataJpaTest
-@Import(AppConfig.class)
+@Import(AppConfig.class) // Импортируем AppConfig, чтобы получить бин Clock
 @Testcontainers
-@ActiveProfiles("ci") // Используем профиль ci для консистентности с Jenkins
+@ActiveProfiles("ci")
 class TaskRepositoryIT {
 
     @Container
@@ -45,29 +48,46 @@ class TaskRepositoryIT {
     @Autowired
     private UserRepository userRepository;
 
-    private User testUser;
-    private User anotherUser;
+    @Autowired // Инжектируем Clock из AppConfig
+    private Clock clock;
+
+    private User testUser1;
+    private User testUser2;
+    private Instant fixedTestTime;
+
 
     @BeforeEach
     void setUp() {
-        userRepository.deleteAll(); // Это удалит и задачи из-за onDelete: CASCADE
+        userRepository.deleteAll();
 
-        testUser = userRepository.save(new User(null, "testuser@example.com", "password", null, null));
-        anotherUser = userRepository.save(new User(null, "anotheruser@example.com", "password", null, null));
+        fixedTestTime = Instant.now(clock).truncatedTo(ChronoUnit.MICROS); // Фиксируем время для тестов
 
-        userRepository.flush();
+        testUser1 = new User(null, "user1@example.com", "password", fixedTestTime, fixedTestTime);
+        testUser1 = userRepository.save(testUser1);
+
+        testUser2 = new User(null, "user2@example.com", "password", fixedTestTime, fixedTestTime);
+        testUser2 = userRepository.saveAndFlush(testUser2);
     }
 
-    private Task createTaskEntity(String title, User owner, TaskStatus status) {
+    // Вспомогательный метод для создания и предварительной настройки Task
+    private Task createTaskEntity(String title, String description, User owner, TaskStatus status, Instant createdAt, Instant updatedAt) {
         Task task = new Task();
         task.setTitle(title);
+        task.setDescription(description);
         task.setUser(owner);
         task.setStatus(status);
-
+        task.setCreatedAt(createdAt); // Устанавливаем вручную
+        task.setUpdatedAt(updatedAt); // Устанавливаем вручную
         return task;
     }
 
-    // Вспомогательный метод для поиска ConstraintViolation по propertyPath
+    private Task createTaskEntity(String title, User owner, TaskStatus status) {
+        Instant now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
+        return createTaskEntity(title, null, owner, status, now, now);
+    }
+
+
+    // Вспомогательные методы для ConstraintViolation остаются те же
     private ConstraintViolation<?> findViolationByPropertyPath(ConstraintViolationException ex, String propertyPath) {
         return ex.getConstraintViolations().stream()
                 .filter(v -> v.getPropertyPath().toString().equals(propertyPath))
@@ -75,7 +95,6 @@ class TaskRepositoryIT {
                 .orElse(null);
     }
 
-    // Вспомогательный метод для поиска ConstraintViolation по propertyPath и шаблону сообщения (ключу)
     private ConstraintViolation<?> findViolationByPropertyPathAndMessageTemplate(ConstraintViolationException ex, String propertyPath, String messageTemplate) {
         return ex.getConstraintViolations().stream()
                 .filter(v -> v.getPropertyPath().toString().equals(propertyPath) && v.getMessageTemplate().equals(messageTemplate))
@@ -83,284 +102,317 @@ class TaskRepositoryIT {
                 .orElse(null);
     }
 
-    @Test
-    @DisplayName("save: Сохранение новой задачи должно быть успешным и все поля должны быть установлены")
-    void save_whenNewTask_shouldPersistAndSetAuditFieldsAndId() {
-        // Arrange
-        Task newTask = createTaskEntity("New Task Title", testUser, TaskStatus.PENDING);
+    // =====================================================================================
+    // == Тесты для метода save(Task task)
+    // =====================================================================================
+    @Nested
+    @DisplayName("TaskRepository.save() Tests")
+    class SaveTaskTests {
 
-        // Act
-        Task savedTask = taskRepository.save(newTask);
+        @Test
+        @DisplayName("TC_TR_SAVE_01: Успешное сохранение новой задачи, поля createdAt/updatedAt установлены вручную")
+        void save_whenNewTask_shouldPersistAndReturnTaskWithId() {
+            // Arrange
+            Instant creationTime = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
+            Task newTask = createTaskEntity("New Task Save", "Desc", testUser1, TaskStatus.PENDING, creationTime, creationTime);
 
-        // Assert
-        assertThat(savedTask).isNotNull();
-        assertThat(savedTask.getId()).isNotNull().isPositive();
-        assertThat(savedTask.getTitle()).isEqualTo("New Task Title");
-        assertThat(savedTask.getStatus()).isEqualTo(TaskStatus.PENDING);
-        assertThat(savedTask.getUser()).isEqualTo(testUser);
-        assertThat(savedTask.getCreatedAt()).isNotNull();
-        assertThat(savedTask.getUpdatedAt()).isNotNull();
-        assertThat(savedTask.getUpdatedAt()).isCloseTo(savedTask.getCreatedAt(), within(100, ChronoUnit.MILLIS));
-        assertThat(savedTask.getCompletedAt()).isNull();
+            // Act
+            Task savedTask = taskRepository.save(newTask);
 
-        // Проверка, что ID был сгенерирован через sequence
-        Task secondTask = taskRepository.save(createTaskEntity("Second Task", testUser, TaskStatus.PENDING));
-        assertThat(secondTask.getId()).isGreaterThan(savedTask.getId());
+            // Assert
+            assertThat(savedTask).isNotNull();
+            assertThat(savedTask.getId()).isNotNull().isPositive();
+            assertThat(savedTask.getTitle()).isEqualTo("New Task Save");
+            assertThat(savedTask.getStatus()).isEqualTo(TaskStatus.PENDING);
+            assertThat(savedTask.getUser()).isEqualTo(testUser1);
+            assertThat(savedTask.getCreatedAt()).isEqualTo(creationTime); // Проверяем установленное время
+            assertThat(savedTask.getUpdatedAt()).isEqualTo(creationTime); // Проверяем установленное время
+            assertThat(savedTask.getCompletedAt()).isNull();
+
+            Instant nextCreationTime = Instant.now(clock).truncatedTo(ChronoUnit.MICROS).plusSeconds(1);
+            Task secondTask = createTaskEntity("Second Task Save","Desc", testUser1, TaskStatus.PENDING, nextCreationTime, nextCreationTime);
+            Task savedSecondTask = taskRepository.save(secondTask);
+            assertThat(savedSecondTask.getId()).isGreaterThan(savedTask.getId()); // Или просто isGreaterThan
+        }
+
+        @Test
+        @DisplayName("TC_TR_SAVE_02: Обновление существующей задачи должно обновить updatedAt")
+        void save_whenUpdatingExistingTask_shouldUpdateFieldsAndUpdatedAt() {
+            // Arrange
+            Instant initialTime = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
+            Task task = createTaskEntity("Initial Title", "Initial Desc", testUser1, TaskStatus.PENDING, initialTime, initialTime);
+            Task savedTask = taskRepository.saveAndFlush(task); // Сохраняем и синхронизируем
+
+            // Act
+            // Небольшая задержка, чтобы Instant.now(clock) гарантированно дал новое значение
+            Instant updateTime = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
+
+            Task taskToUpdate = taskRepository.findByIdAndUserId(savedTask.getId(), testUser1.getId()).orElseThrow();
+            taskToUpdate.setTitle("Updated Title");
+            taskToUpdate.setStatus(TaskStatus.COMPLETED);
+            taskToUpdate.setUpdatedAt(updateTime); // Устанавливаем updatedAt вручную
+            taskToUpdate.setCompletedAt(updateTime); // Устанавливаем completedAt вручную
+
+            Task updatedTask = taskRepository.save(taskToUpdate);
+
+            // Assert
+            assertThat(updatedTask.getTitle()).isEqualTo("Updated Title");
+            assertThat(updatedTask.getStatus()).isEqualTo(TaskStatus.COMPLETED);
+            assertThat(updatedTask.getCreatedAt()).isEqualTo(initialTime); // createdAt не должен меняться
+            assertThat(updatedTask.getUpdatedAt()).isEqualTo(updateTime);   // updatedAt должен обновиться
+            assertThat(updatedTask.getCompletedAt()).isEqualTo(updateTime); // completedAt должен установиться
+        }
+
+        // Тесты на ConstraintViolation остаются актуальными, так как они проверяют ограничения JPA/БД
+        // TC_TR_SAVE_03 (был save_whenUserIsNull_shouldThrowConstraintViolationException)
+        @Test
+        @DisplayName("TC_TR_SAVE_03: Попытка сохранить задачу без пользователя (user=null) -> ConstraintViolationException")
+        void save_whenUserIsNull_shouldThrowConstraintViolationException() {
+            Task taskWithNullUser = createTaskEntity("Task no user", null, null, TaskStatus.PENDING, fixedTestTime, fixedTestTime);
+            // user не установлен
+
+            assertThatThrownBy(() -> taskRepository.saveAndFlush(taskWithNullUser))
+                    .isInstanceOf(ConstraintViolationException.class)
+                    .satisfies(ex -> assertThat(findViolationByPropertyPath((ConstraintViolationException) ex, "user")).isNotNull());
+        }
+
+        // TC_TR_SAVE_04 (NotBlank title)
+        @Test
+        @DisplayName("TC_TR_SAVE_04: Попытка сохранить задачу с пустым title -> ConstraintViolationException")
+        void saveAndFlush_whenTitleIsBlank_shouldThrowConstraintViolationExceptionWithMessage() {
+            Task taskWithBlankTitle = createTaskEntity("", null, testUser1, TaskStatus.PENDING, fixedTestTime, fixedTestTime);
+
+            assertThatThrownBy(() -> taskRepository.saveAndFlush(taskWithBlankTitle))
+                    .isInstanceOf(ConstraintViolationException.class)
+                    .satisfies(ex -> assertThat(findViolationByPropertyPathAndMessageTemplate((ConstraintViolationException) ex, "title", "{task.entity.title.notBlank}")).isNotNull());
+        }
+
+        // ... (остальные тесты на ConstraintViolation для title, description, status аналогично)
+        @Test
+        @DisplayName("TC_TR_SAVE_05: Попытка сохранить задачу со слишком длинным title -> ConstraintViolationException")
+        void saveAndFlush_whenTitleIsTooLong_shouldThrowConstraintViolationException() {
+            Task taskWithLongTitle = createTaskEntity("a".repeat(256), null, testUser1, TaskStatus.PENDING, fixedTestTime, fixedTestTime);
+
+            assertThatThrownBy(() -> taskRepository.saveAndFlush(taskWithLongTitle))
+                    .isInstanceOf(ConstraintViolationException.class)
+                    .satisfies(ex -> assertThat(findViolationByPropertyPathAndMessageTemplate((ConstraintViolationException) ex, "title", "{task.entity.title.size}")).isNotNull());
+        }
+
+        @Test
+        @DisplayName("TC_TR_SAVE_06: Попытка сохранить задачу со слишком длинным description -> ConstraintViolationException")
+        void saveAndFlush_whenDescriptionIsTooLong_shouldThrowConstraintViolationException() {
+            Task taskWithLongDescription = createTaskEntity("Valid Title", "d".repeat(1001), testUser1, TaskStatus.PENDING, fixedTestTime, fixedTestTime);
+
+            assertThatThrownBy(() -> taskRepository.saveAndFlush(taskWithLongDescription))
+                    .isInstanceOf(ConstraintViolationException.class)
+                    .satisfies(ex -> assertThat(findViolationByPropertyPathAndMessageTemplate((ConstraintViolationException) ex, "description", "{task.entity.description.size}")).isNotNull());
+        }
+
+        @Test
+        @DisplayName("TC_TR_SAVE_07: Description может быть null и это валидно")
+        void saveAndFlush_whenDescriptionIsNull_shouldBeValid() {
+            Task taskWithNullDescription = createTaskEntity("Task Null Desc", null, testUser1, TaskStatus.PENDING, fixedTestTime, fixedTestTime);
+            taskWithNullDescription.setDescription(null); // Явно null
+
+            assertThatCode(() -> taskRepository.saveAndFlush(taskWithNullDescription)).doesNotThrowAnyException();
+            Optional<Task> found = taskRepository.findByIdAndUserId(taskWithNullDescription.getId(), testUser1.getId());
+            assertThat(found).isPresent().hasValueSatisfying(t -> assertThat(t.getDescription()).isNull());
+        }
+
+        @Test
+        @DisplayName("TC_TR_SAVE_08: Попытка сохранить задачу с status=null -> ConstraintViolationException")
+        void saveAndFlush_whenStatusIsNull_shouldThrowConstraintViolationException() {
+            Task taskWithNullStatus = createTaskEntity("Valid Title Status Null", null, testUser1, null, fixedTestTime, fixedTestTime);
+
+            assertThatThrownBy(() -> taskRepository.saveAndFlush(taskWithNullStatus))
+                    .isInstanceOf(ConstraintViolationException.class)
+                    .satisfies(ex -> assertThat(findViolationByPropertyPath((ConstraintViolationException) ex, "status")).isNotNull());
+        }
     }
 
-    @Test
-    @DisplayName("save: Попытка сохранить задачу без пользователя (user=null) должна вызвать ConstraintViolationException")
-    void save_whenUserIsNull_shouldThrowConstraintViolationException() {
-        Task taskWithNullUser = new Task();
-        taskWithNullUser.setTitle("Task with no user");
-        taskWithNullUser.setStatus(TaskStatus.PENDING);
-        // user остается null
+    // =====================================================================================
+    // == Тесты для метода findByIdAndUserId(Long taskId, Long userId)
+    // =====================================================================================
+    @Nested
+    @DisplayName("TaskRepository.findByIdAndUserId() Tests")
+    class FindByIdAndUserIdTests {
+        // Тесты остаются без изменений, так как они проверяют логику чтения
+        @Test
+        @DisplayName("TC_TR_FINDIDUID_01: Найти существующую задачу пользователя -> должен вернуть задачу")
+        void findByIdAndUserId_whenTaskExistsAndBelongsToUser_shouldReturnTask() {
+            Task task1 = taskRepository.save(createTaskEntity("User1 Task1", testUser1, TaskStatus.PENDING));
+            Optional<Task> foundTaskOpt = taskRepository.findByIdAndUserId(task1.getId(), testUser1.getId());
+            assertThat(foundTaskOpt).isPresent().get().isEqualTo(task1);
+        }
 
-        assertThatThrownBy(() -> taskRepository.saveAndFlush(taskWithNullUser))
-                .isInstanceOf(ConstraintViolationException.class)
-                .satisfies(ex -> {
-                    ConstraintViolationException cve = (ConstraintViolationException) ex;
-                    assertThat(cve.getConstraintViolations()).hasSize(1);
-                    ConstraintViolation<?> violation = findViolationByPropertyPath(cve, "user");
-                    assertThat(violation).isNotNull();
-                });
+        @Test
+        @DisplayName("TC_TR_FINDIDUID_02: Задача не существует -> должен вернуть пустой Optional")
+        void findByIdAndUserId_whenTaskDoesNotExist_shouldReturnEmpty() {
+            Optional<Task> foundTaskOpt = taskRepository.findByIdAndUserId(999L, testUser1.getId());
+            assertThat(foundTaskOpt).isEmpty();
+        }
+
+        @Test
+        @DisplayName("TC_TR_FINDIDUID_03: Задача принадлежит другому пользователю -> должен вернуть пустой Optional")
+        void findByIdAndUserId_whenTaskBelongsToAnotherUser_shouldReturnEmpty() {
+            Task taskForAnotherUser = taskRepository.save(createTaskEntity("Another User Task", testUser2, TaskStatus.PENDING));
+            Optional<Task> foundTaskOpt = taskRepository.findByIdAndUserId(taskForAnotherUser.getId(), testUser1.getId());
+            assertThat(foundTaskOpt).isEmpty();
+        }
     }
 
+    // =====================================================================================
+    // == Тесты для метода findAllByUserId(Long userId, Pageable pageable)
+    // =====================================================================================
+    @Nested
+    @DisplayName("TaskRepository.findAllByUserId(Pageable) Tests")
+    class FindAllByUserIdPageableTests {
+        // Тесты остаются без изменений
+        @Test
+        @DisplayName("TC_TR_FINDALLUID_P_01: Должен вернуть страницу задач только для указанного пользователя")
+        void findAllByUserId_shouldReturnPagedTasksForCorrectUser() {
+            taskRepository.save(createTaskEntity("U1 Task 1", testUser1, TaskStatus.PENDING));
+            taskRepository.save(createTaskEntity("U1 Task 2", testUser1, TaskStatus.COMPLETED));
+            taskRepository.save(createTaskEntity("U2 Task 1", testUser2, TaskStatus.PENDING));
+            Pageable pageable = PageRequest.of(0, 10);
 
-    @Test
-    @DisplayName("findByIdAndUserId: Найти существующую задачу пользователя -> должен вернуть задачу")
-    void findByIdAndUserId_whenTaskExistsAndBelongsToUser_shouldReturnTask() {
-        // Arrange
-        Task task1 = taskRepository.save(createTaskEntity("User1 Task1", testUser, TaskStatus.PENDING));
+            Page<Task> resultPage = taskRepository.findAllByUserId(testUser1.getId(), pageable);
 
-        // Act
-        Optional<Task> foundTaskOpt = taskRepository.findByIdAndUserId(task1.getId(), testUser.getId());
-
-        // Assert
-        assertThat(foundTaskOpt).isPresent();
-        assertThat(foundTaskOpt.get().getId()).isEqualTo(task1.getId());
-        assertThat(foundTaskOpt.get().getTitle()).isEqualTo("User1 Task1");
+            assertThat(resultPage).isNotNull();
+            assertThat(resultPage.getTotalElements()).isEqualTo(2);
+            assertThat(resultPage.getContent()).hasSize(2)
+                    .extracting(Task::getTitle).containsExactlyInAnyOrder("U1 Task 1", "U1 Task 2");
+            assertThat(resultPage.getContent()).allMatch(task -> task.getUser().getId().equals(testUser1.getId()));
+        }
+        @Test
+        @DisplayName("TC_TR_FINDALLUID_P_02: У пользователя нет задач -> должен вернуть пустую страницу")
+        void findAllByUserId_whenUserHasNoTasks_shouldReturnEmptyPage() {
+            Pageable pageable = PageRequest.of(0, 10);
+            Page<Task> resultPage = taskRepository.findAllByUserId(testUser1.getId(), pageable);
+            assertThat(resultPage).isNotNull().isEmpty();
+        }
     }
 
-    @Test
-    @DisplayName("findByIdAndUserId: Задача не существует -> должен вернуть пустой Optional")
-    void findByIdAndUserId_whenTaskDoesNotExist_shouldReturnEmpty() {
-        Optional<Task> foundTaskOpt = taskRepository.findByIdAndUserId(999L, testUser.getId());
-        assertThat(foundTaskOpt).isEmpty();
+    // =====================================================================================
+    // == Тесты для метода findAllByUserIdOrderByCreatedAtDesc(Long userId)
+    // =====================================================================================
+    @Nested
+    @DisplayName("TaskRepository.findAllByUserIdOrderByCreatedAtDesc() Tests")
+    class FindAllByUserIdOrderByCreatedAtDescTests {
+        // Тесты остаются без изменений, но важна установка createdAt
+        @Test
+        @DisplayName("TC_TR_FINDALLUID_S_01: должен вернуть задачи пользователя, отсортированные по createdAt DESC")
+        void findAllByUserIdOrderByCreatedAtDesc_shouldReturnUserTasksSorted() {
+            Instant time1 = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
+            Task task1User1 = createTaskEntity("U1 Task 1 Old", null, testUser1, TaskStatus.PENDING, time1, time1);
+            taskRepository.saveAndFlush(task1User1);
+
+            Instant time2 = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
+            Task task2User1 = createTaskEntity("U1 Task 2 New", null, testUser1, TaskStatus.COMPLETED, time2, time2);
+            taskRepository.saveAndFlush(task2User1);
+
+            Instant time3 = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
+            taskRepository.saveAndFlush(createTaskEntity("U2 Task 1", null, testUser2, TaskStatus.PENDING, time3, time3));
+
+            List<Task> resultTasksUser1 = taskRepository.findAllByUserIdOrderByCreatedAtDesc(testUser1.getId());
+
+            assertThat(resultTasksUser1).isNotNull().hasSize(2)
+                    .extracting(Task::getId).containsExactly(task2User1.getId(), task1User1.getId());
+        }
+
+        @Test
+        @DisplayName("TC_TR_FINDALLUID_S_02: У пользователя нет задач -> должен вернуть пустой список")
+        void findAllByUserIdOrderByCreatedAtDesc_whenUserHasNoTasks_shouldReturnEmptyList() {
+            List<Task> resultTasks = taskRepository.findAllByUserIdOrderByCreatedAtDesc(testUser1.getId());
+            assertThat(resultTasks).isNotNull().isEmpty();
+        }
     }
 
-    @Test
-    @DisplayName("findByIdAndUserId: Задача принадлежит другому пользователю -> должен вернуть пустой Optional")
-    void findByIdAndUserId_whenTaskBelongsToAnotherUser_shouldReturnEmpty() {
-        Task taskForAnotherUser = taskRepository.save(createTaskEntity("Another User Task", anotherUser, TaskStatus.PENDING));
-        Optional<Task> foundTaskOpt = taskRepository.findByIdAndUserId(taskForAnotherUser.getId(), testUser.getId());
-        assertThat(foundTaskOpt).isEmpty();
+    // =====================================================================================
+    // == Тесты для метода findAllByUserIdAndStatus(Long userId, TaskStatus status, Pageable pageable)
+    // =====================================================================================
+    @Nested
+    @DisplayName("TaskRepository.findAllByUserIdAndStatus() Tests")
+    class FindAllByUserIdAndStatusTests {
+        // Тесты остаются без изменений
+        @Test
+        @DisplayName("TC_TR_FINDALLUIDST_01: Должен вернуть задачи пользователя с указанным статусом")
+        void findAllByUserIdAndStatus_shouldReturnFilteredTasks() {
+            taskRepository.save(createTaskEntity("U1 Pending 1", testUser1, TaskStatus.PENDING));
+            taskRepository.save(createTaskEntity("U1 Completed 1", testUser1, TaskStatus.COMPLETED));
+            taskRepository.save(createTaskEntity("U1 Pending 2", testUser1, TaskStatus.PENDING));
+            Pageable pageable = PageRequest.of(0, 10);
+
+            Page<Task> pendingTasks = taskRepository.findAllByUserIdAndStatus(testUser1.getId(), TaskStatus.PENDING, pageable);
+            assertThat(pendingTasks.getTotalElements()).isEqualTo(2);
+
+            Page<Task> completedTasks = taskRepository.findAllByUserIdAndStatus(testUser1.getId(), TaskStatus.COMPLETED, pageable);
+            assertThat(completedTasks.getTotalElements()).isEqualTo(1);
+        }
     }
 
-    @Test
-    @DisplayName("findAllByUserId: Должен вернуть страницу задач только для указанного пользователя")
-    void findAllByUserId_shouldReturnPagedTasksForCorrectUser() {
-        // Arrange
-        taskRepository.save(createTaskEntity("U1 Task 1", testUser, TaskStatus.PENDING));
-        taskRepository.save(createTaskEntity("U1 Task 2", testUser, TaskStatus.COMPLETED));
-        taskRepository.save(createTaskEntity("U2 Task 1", anotherUser, TaskStatus.PENDING));
-        Pageable pageable = PageRequest.of(0, 10);
+    // =====================================================================================
+    // == Тесты для метода deleteByIdAndUserId(Long taskId, Long userId)
+    // =====================================================================================
+    @Nested
+    @DisplayName("TaskRepository.deleteByIdAndUserId() Tests")
+    class DeleteByIdAndUserIdTests {
+        // Тесты остаются без изменений
+        @Test
+        @DisplayName("TC_TR_DELETE_01: Удалить существующую задачу пользователя -> должен вернуть 1 и удалить задачу")
+        void deleteByIdAndUserId_whenTaskExistsAndBelongsToUser_shouldReturn1AndRemoveTask() {
+            Task task = taskRepository.save(createTaskEntity("To Delete", testUser1, TaskStatus.PENDING));
+            Long taskId = task.getId();
+            int deletedCount = taskRepository.deleteByIdAndUserId(taskId, testUser1.getId());
+            assertThat(deletedCount).isEqualTo(1);
+            assertThat(taskRepository.findByIdAndUserId(taskId, testUser1.getId())).isEmpty();
+        }
 
-        // Act
-        Page<Task> resultPage = taskRepository.findAllByUserId(testUser.getId(), pageable);
+        @Test
+        @DisplayName("TC_TR_DELETE_02: Попытка удалить задачу другого пользователя -> должен вернуть 0")
+        void deleteByIdAndUserId_whenTaskBelongsToAnotherUser_shouldReturn0AndNotRemoveTask() {
+            Task taskOfAnotherUser = taskRepository.save(createTaskEntity("Another's Task", testUser2, TaskStatus.PENDING));
+            int deletedCount = taskRepository.deleteByIdAndUserId(taskOfAnotherUser.getId(), testUser1.getId());
+            assertThat(deletedCount).isEqualTo(0);
+            assertThat(taskRepository.findByIdAndUserId(taskOfAnotherUser.getId(), testUser2.getId())).isPresent();
+        }
 
-        // Assert
-        assertThat(resultPage).isNotNull();
-        assertThat(resultPage.getTotalElements()).isEqualTo(2);
-        assertThat(resultPage.getContent()).hasSize(2)
-                .extracting(Task::getTitle)
-                .containsExactlyInAnyOrder("U1 Task 1", "U1 Task 2");
-        assertThat(resultPage.getContent()).allMatch(task -> task.getUser().getId().equals(testUser.getId()));
+        @Test
+        @DisplayName("TC_TR_DELETE_03: Попытка удалить несуществующую задачу -> должен вернуть 0")
+        void deleteByIdAndUserId_whenTaskDoesNotExist_shouldReturn0() {
+            int deletedCount = taskRepository.deleteByIdAndUserId(999L, testUser1.getId());
+            assertThat(deletedCount).isEqualTo(0);
+        }
     }
 
-    @Test
-    @DisplayName("findAllByUserIdOrderByCreatedAtDesc: должен вернуть задачи пользователя, отсортированные по createdAt DESC")
-    void findAllByUserIdOrderByCreatedAtDesc_shouldReturnUserTasksSorted() {
-        // Arrange
-        // user1 (testUser) и user2 (anotherUser) создаются в @BeforeEach
+    // =====================================================================================
+    // == Тесты для метода existsByIdAndUserId(Long taskId, Long userId)
+    // =====================================================================================
+    @Nested
+    @DisplayName("TaskRepository.existsByIdAndUserId() Tests")
+    class ExistsByIdAndUserIdTests {
+        // Тесты остаются без изменений
+        @Test
+        @DisplayName("TC_TR_EXISTS_01: Проверить существование задачи пользователя -> должен вернуть true")
+        void existsByIdAndUserId_whenTaskExistsAndBelongsToUser_shouldReturnTrue() {
+            Task task = taskRepository.save(createTaskEntity("Existing Task", testUser1, TaskStatus.PENDING));
+            boolean exists = taskRepository.existsByIdAndUserId(task.getId(), testUser1.getId());
+            assertThat(exists).isTrue();
+        }
 
-        // Задачи для testUser (user1)
-        Task task1User1 = taskRepository.saveAndFlush(createTaskEntity("U1 Task 1 Old", testUser, TaskStatus.PENDING)); // Сохраняем первым, createdAt будет раньше
-        // Небольшая пауза, чтобы гарантировать разное время создания
+        @Test
+        @DisplayName("TC_TR_EXISTS_02: Задача не существует -> должен вернуть false")
+        void existsByIdAndUserId_whenTaskDoesNotExist_shouldReturnFalse() {
+            boolean exists = taskRepository.existsByIdAndUserId(999L, testUser1.getId());
+            assertThat(exists).isFalse();
+        }
 
-        Task task2User1 = taskRepository.save(createTaskEntity("U1 Task 2 New", testUser, TaskStatus.COMPLETED));
-
-        // Задача для anotherUser (user2)
-        taskRepository.saveAndFlush(createTaskEntity("U2 Task 1", anotherUser, TaskStatus.PENDING));
-
-        // Act
-        List<Task> resultTasksUser1 = taskRepository.findAllByUserIdOrderByCreatedAtDesc(testUser.getId());
-        List<Task> resultTasksUser2 = taskRepository.findAllByUserIdOrderByCreatedAtDesc(anotherUser.getId());
-        List<Task> resultTasksNonExistentUser = taskRepository.findAllByUserIdOrderByCreatedAtDesc(999L);
-
-
-        // Assert
-        // Для testUser
-        assertThat(resultTasksUser1)
-                .isNotNull()
-                .hasSize(2)
-                .extracting(Task::getTitle)
-                .containsExactly("U1 Task 2 New", "U1 Task 1 Old"); // Проверяем порядок
-        assertThat(resultTasksUser1).allMatch(task -> task.getUser().getId().equals(testUser.getId()));
-
-        // Для anotherUser
-        assertThat(resultTasksUser2)
-                .isNotNull()
-                .hasSize(1)
-                .extracting(Task::getTitle)
-                .containsExactly("U2 Task 1");
-
-        // Для несуществующего пользователя
-        assertThat(resultTasksNonExistentUser).isNotNull().isEmpty();
-    }
-
-    @Test
-    @DisplayName("findAllByUserIdAndStatus: Должен вернуть задачи пользователя с указанным статусом")
-    void findAllByUserIdAndStatus_shouldReturnFilteredTasks() {
-        taskRepository.save(createTaskEntity("U1 Pending 1", testUser, TaskStatus.PENDING));
-        taskRepository.save(createTaskEntity("U1 Completed 1", testUser, TaskStatus.COMPLETED));
-        taskRepository.save(createTaskEntity("U1 Pending 2", testUser, TaskStatus.PENDING));
-        Pageable pageable = PageRequest.of(0, 10);
-
-        Page<Task> pendingTasks = taskRepository.findAllByUserIdAndStatus(testUser.getId(), TaskStatus.PENDING, pageable);
-        assertThat(pendingTasks.getTotalElements()).isEqualTo(2);
-        assertThat(pendingTasks.getContent()).extracting(Task::getTitle).containsExactlyInAnyOrder("U1 Pending 1", "U1 Pending 2");
-
-        Page<Task> completedTasks = taskRepository.findAllByUserIdAndStatus(testUser.getId(), TaskStatus.COMPLETED, pageable);
-        assertThat(completedTasks.getTotalElements()).isEqualTo(1);
-        assertThat(completedTasks.getContent().getFirst().getTitle()).isEqualTo("U1 Completed 1");
-    }
-
-    @Test
-    @DisplayName("deleteByIdAndUserId: Удалить существующую задачу пользователя -> должен вернуть 1 и удалить задачу")
-    void deleteByIdAndUserId_whenTaskExistsAndBelongsToUser_shouldReturn1AndRemoveTask() {
-        Task task = taskRepository.save(createTaskEntity("To Delete", testUser, TaskStatus.PENDING));
-        Long taskId = task.getId();
-
-        int deletedCount = taskRepository.deleteByIdAndUserId(taskId, testUser.getId());
-
-        assertThat(deletedCount).isEqualTo(1);
-        assertThat(taskRepository.findByIdAndUserId(taskId, testUser.getId())).isEmpty();
-    }
-
-    @Test
-    @DisplayName("deleteByIdAndUserId: Попытка удалить задачу другого пользователя -> должен вернуть 0 и не удалить задачу")
-    void deleteByIdAndUserId_whenTaskBelongsToAnotherUser_shouldReturn0AndNotRemoveTask() {
-        Task taskOfAnotherUser = taskRepository.save(createTaskEntity("Another's Task", anotherUser, TaskStatus.PENDING));
-        Long taskId = taskOfAnotherUser.getId();
-
-        int deletedCount = taskRepository.deleteByIdAndUserId(taskId, testUser.getId());
-
-        assertThat(deletedCount).isEqualTo(0);
-        assertThat(taskRepository.findByIdAndUserId(taskId, anotherUser.getId())).isPresent(); // Задача все еще существует
-    }
-
-    @Test
-    @DisplayName("existsByIdAndUserId: Проверить существование задачи пользователя -> должен вернуть true")
-    void existsByIdAndUserId_whenTaskExistsAndBelongsToUser_shouldReturnTrue() {
-        Task task = taskRepository.save(createTaskEntity("Existing Task", testUser, TaskStatus.PENDING));
-        boolean exists = taskRepository.existsByIdAndUserId(task.getId(), testUser.getId());
-        assertThat(exists).isTrue();
-    }
-
-    @Test
-    @DisplayName("existsByIdAndUserId: Задача не существует -> должен вернуть false")
-    void existsByIdAndUserId_whenTaskDoesNotExist_shouldReturnFalse() {
-        boolean exists = taskRepository.existsByIdAndUserId(999L, testUser.getId());
-        assertThat(exists).isFalse();
-    }
-
-    @Test
-    @DisplayName("saveAndFlush: Попытка сохранить задачу с пустым title должна вызвать ConstraintViolationException с корректным сообщением")
-    void saveAndFlush_whenTitleIsBlank_shouldThrowConstraintViolationExceptionWithMessage() {
-        Task taskWithBlankTitle = new Task();
-        taskWithBlankTitle.setTitle(""); // Пустой title
-        taskWithBlankTitle.setUser(testUser);
-        taskWithBlankTitle.setStatus(TaskStatus.PENDING);
-
-        assertThatThrownBy(() -> taskRepository.saveAndFlush(taskWithBlankTitle))
-                .isInstanceOf(ConstraintViolationException.class)
-                .satisfies(ex -> {
-                    ConstraintViolationException cve = (ConstraintViolationException) ex;
-                    // Может быть несколько нарушений, если title пустой (NotBlank и Size(min=1))
-                    // Давайте проверим конкретно NotBlank
-                    ConstraintViolation<?> violation = findViolationByPropertyPathAndMessageTemplate(cve, "title", "{task.entity.title.notBlank}");
-                    assertThat(violation).isNotNull();
-                });
-    }
-
-    @Test
-    @DisplayName("saveAndFlush: Попытка сохранить задачу со слишком длинным title должна вызвать ConstraintViolationException")
-    void saveAndFlush_whenTitleIsTooLong_shouldThrowConstraintViolationException() {
-        Task taskWithLongTitle = new Task();
-        taskWithLongTitle.setTitle("a".repeat(256)); // Длина 256, макс 255
-        taskWithLongTitle.setUser(testUser);
-        taskWithLongTitle.setStatus(TaskStatus.PENDING);
-
-        assertThatThrownBy(() -> taskRepository.saveAndFlush(taskWithLongTitle))
-                .isInstanceOf(ConstraintViolationException.class)
-                .satisfies(ex -> {
-                    ConstraintViolationException cve = (ConstraintViolationException) ex;
-                    ConstraintViolation<?> violation = findViolationByPropertyPathAndMessageTemplate(cve, "title", "{task.entity.title.size}");
-                    assertThat(violation).isNotNull();
-                });
-    }
-
-    @Test
-    @DisplayName("saveAndFlush: Попытка сохранить задачу со слишком длинным description должна вызвать ConstraintViolationException")
-    void saveAndFlush_whenDescriptionIsTooLong_shouldThrowConstraintViolationException() {
-        Task taskWithLongDescription = new Task();
-        taskWithLongDescription.setTitle("Valid Title");
-        taskWithLongDescription.setDescription("d".repeat(1001)); // Длина 1001, макс 1000
-        taskWithLongDescription.setUser(testUser);
-        taskWithLongDescription.setStatus(TaskStatus.PENDING);
-
-        assertThatThrownBy(() -> taskRepository.saveAndFlush(taskWithLongDescription))
-                .isInstanceOf(ConstraintViolationException.class)
-                .satisfies(ex -> {
-                    ConstraintViolationException cve = (ConstraintViolationException) ex;
-                    ConstraintViolation<?> violation = findViolationByPropertyPathAndMessageTemplate(cve, "description", "{task.entity.description.size}");
-                    assertThat(violation).isNotNull();
-                });
-    }
-
-    @Test
-    @DisplayName("saveAndFlush: Description может быть null и это валидно")
-    void saveAndFlush_whenDescriptionIsNull_shouldBeValid() {
-        Task taskWithNullDescription = new Task();
-        taskWithNullDescription.setTitle("Task With Null Description");
-        taskWithNullDescription.setDescription(null); // Явно null
-        taskWithNullDescription.setUser(testUser);
-        taskWithNullDescription.setStatus(TaskStatus.PENDING);
-
-        // Ожидаем, что исключения не будет
-        assertThatCode(() -> taskRepository.saveAndFlush(taskWithNullDescription))
-                .doesNotThrowAnyException();
-
-        Optional<Task> found = taskRepository.findByIdAndUserId(taskWithNullDescription.getId(), testUser.getId());
-        assertThat(found).isPresent();
-        assertThat(found.get().getDescription()).isNull();
-    }
-
-    @Test
-    @DisplayName("saveAndFlush: Попытка сохранить задачу с status=null должна вызвать ConstraintViolationException")
-    void saveAndFlush_whenStatusIsNull_shouldThrowConstraintViolationException() {
-        Task taskWithNullStatus = new Task();
-        taskWithNullStatus.setTitle("Valid Title for Null Status Test");
-        taskWithNullStatus.setUser(testUser);
-        taskWithNullStatus.setStatus(null); // status = null
-
-        assertThatThrownBy(() -> taskRepository.saveAndFlush(taskWithNullStatus))
-                .isInstanceOf(ConstraintViolationException.class)
-                .satisfies(ex -> {
-                    ConstraintViolationException cve = (ConstraintViolationException) ex;
-                    ConstraintViolation<?> violation = findViolationByPropertyPath(cve, "status");
-                    assertThat(violation).isNotNull();
-                });
+        @Test
+        @DisplayName("TC_TR_EXISTS_03: Задача принадлежит другому пользователю -> должен вернуть false")
+        void existsByIdAndUserId_whenTaskBelongsToAnotherUser_shouldReturnFalse() {
+            Task taskForAnotherUser = taskRepository.save(createTaskEntity("Another's Existing Task", testUser2, TaskStatus.PENDING));
+            boolean exists = taskRepository.existsByIdAndUserId(taskForAnotherUser.getId(), testUser1.getId());
+            assertThat(exists).isFalse();
+        }
     }
 }

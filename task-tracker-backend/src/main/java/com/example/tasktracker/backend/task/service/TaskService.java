@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -67,7 +68,7 @@ public class TaskService {
 
         task.setStatus(TaskStatus.PENDING);
 
-        Instant now = Instant.now(clock);
+        Instant now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
         task.setCreatedAt(now);
         task.setUpdatedAt(now);
 
@@ -162,7 +163,7 @@ public class TaskService {
         taskToUpdate.setTitle(request.getTitle());
         taskToUpdate.setDescription(request.getDescription());
 
-        Instant now = Instant.now(clock);
+        Instant now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
 
         // Обрабатываем изменение статуса и completedAt
         updateCompletedAtBasedOnStatus(taskToUpdate, request.getStatus(), now);

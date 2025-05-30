@@ -4,6 +4,7 @@ import com.example.tasktracker.backend.security.common.ControllerSecurityUtils;
 import com.example.tasktracker.backend.security.details.AppUserDetails;
 import com.example.tasktracker.backend.task.dto.TaskCreateRequest;
 import com.example.tasktracker.backend.task.dto.TaskResponse;
+import com.example.tasktracker.backend.task.dto.TaskUpdateRequest;
 import com.example.tasktracker.backend.task.service.TaskService;
 import com.example.tasktracker.backend.web.ApiConstants;
 import com.example.tasktracker.backend.web.exception.GlobalExceptionHandler;
@@ -159,5 +160,42 @@ public class TaskController {
 
         log.info("Successfully retrieved task ID: {} for user ID: {}", taskId, currentUserId);
         return ResponseEntity.ok(taskResponse);
+    }
+
+    /**
+     * Обновляет существующую задачу для текущего аутентифицированного пользователя.
+     * <p>
+     * Эндпоинт: {@code PUT /api/v1/tasks/{taskId}}
+     * </p>
+     * <p>
+     * Принимает {@link TaskUpdateRequest} в теле запроса для полного обновления задачи.
+     * Поля, не указанные в запросе, могут быть сброшены в значения по умолчанию или null,
+     * если это позволяет бизнес-логика (для PUT обычно ожидается полное представление).
+     * В случае успешного обновления возвращается HTTP статус 200 OK с {@link TaskResponse},
+     * содержащим обновленные данные задачи.
+     * </p>
+     *
+     * @param taskId             ID обновляемой задачи, извлекаемый из пути URL.
+     * @param request            DTO {@link TaskUpdateRequest} с новыми данными для задачи.
+     * @param currentUserDetails Детали текущего аутентифицированного пользователя.
+     * @return {@link ResponseEntity} с {@link TaskResponse} и статусом 200 OK.
+     * @throws com.example.tasktracker.backend.task.exception.TaskNotFoundException если задача не найдена.
+     * @throws IllegalStateException если principal не может быть разрешен.
+     * @throws jakarta.validation.ValidationException если данные в {@code request} не проходят валидацию.
+     */
+    @PutMapping("/{taskId}")
+    public ResponseEntity<TaskResponse> updateTask(
+            @PathVariable Long taskId,
+            @Valid @RequestBody TaskUpdateRequest request,
+            @AuthenticationPrincipal AppUserDetails currentUserDetails) {
+
+        Long currentUserId = ControllerSecurityUtils.getCurrentUserId(currentUserDetails);
+        log.info("Processing request to update task ID: {} for user ID: {} with title: '{}', status: {}",
+                taskId, currentUserId, request.getTitle(), request.getStatus());
+
+        TaskResponse updatedTaskResponse = taskService.updateTaskForCurrentUserOrThrow(taskId, request, currentUserId);
+
+        log.info("Task ID: {} for user ID: {} updated successfully.", updatedTaskResponse.getId(), currentUserId);
+        return ResponseEntity.ok(updatedTaskResponse);
     }
 }

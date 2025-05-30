@@ -223,6 +223,41 @@ public class TaskService {
     }
 
     /**
+     * Удаляет задачу по ее ID для указанного пользователя.
+     * <p>
+     * Если задача с указанным {@code taskId} не существует или не принадлежит
+     * пользователю с {@code currentUserId}, будет выброшено исключение
+     * {@link com.example.tasktracker.backend.task.exception.TaskNotFoundException}.
+     * </p>
+     * <p>
+     * Метод является транзакционным и обеспечивает атомарное удаление.
+     * </p>
+     *
+     * @param taskId        ID задачи, которую необходимо удалить. Не должен быть {@code null}.
+     * @param currentUserId ID текущего аутентифицированного пользователя, который должен быть
+     *                      владельцем удаляемой задачи. Не должен быть {@code null}.
+     * @throws TaskNotFoundException если задача не найдена или не принадлежит пользователю.
+     * @throws NullPointerException  если {@code taskId} или {@code currentUserId} равны {@code null}
+     *                               (из-за аннотаций {@code @NonNull}).
+     */
+    @Transactional
+    public void deleteTaskForCurrentUserOrThrow(@NonNull Long taskId, @NonNull Long currentUserId) {
+        log.debug("Attempting to delete task with ID: {} for user ID: {}", taskId, currentUserId);
+
+        int deletedCount = taskRepository.deleteByIdAndUserId(taskId, currentUserId);
+
+        if (deletedCount == 0) {
+            // Задача либо не найдена, либо не принадлежит пользователю.
+            log.warn("Delete failed: Task not found or access denied for task ID: {} and user ID: {}",
+                    taskId, currentUserId);
+            throw new TaskNotFoundException(taskId, currentUserId);
+        }
+
+        log.info("Task with ID: {} for user ID: {} deleted successfully. {} row(s) affected.",
+                taskId, currentUserId, deletedCount);
+    }
+
+    /**
      * Вспомогательный приватный метод для обновления поля {@code completedAt} задачи
      * на основе изменения ее статуса.
      * <p>
@@ -257,6 +292,5 @@ public class TaskService {
         }
         // Если newStatus == oldStatus, или другие переходы (например, PENDING -> PENDING), completedAt не меняем.
     }
-
 
 }

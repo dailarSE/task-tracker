@@ -645,4 +645,61 @@ class TaskServiceTest {
                     .withMessageContaining("currentUserId"); // Проверяем имя параметра из @NonNull
         }
     }
+
+    // =====================================================================================
+    // == Тесты для метода deleteTaskForCurrentUserOrThrow(Long, Long)
+    // =====================================================================================
+    @Nested
+    @DisplayName("deleteTaskForCurrentUserOrThrow Tests")
+    class DeleteTaskForCurrentUserOrThrowTests {
+
+        @Test
+        @DisplayName("TC_CS_DELETE_01: Успешное удаление задачи (репозиторий возвращает 1)")
+        void deleteTask_whenTaskExistsAndBelongsToUser_shouldCallRepositoryDeleteAndNotThrow() {
+            // Arrange
+            when(mockTaskRepository.deleteByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(1);
+
+            // Act & Assert
+            assertThatCode(() -> taskService.deleteTaskForCurrentUserOrThrow(DEFAULT_TASK_ID, DEFAULT_USER_ID))
+                    .doesNotThrowAnyException();
+
+            verify(mockTaskRepository).deleteByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID);
+        }
+
+        @Test
+        @DisplayName("TC_CS_DELETE_02: Задача не найдена / не принадлежит (репозиторий возвращает 0) -> должен выбросить TaskNotFoundException")
+        void deleteTask_whenTaskNotFoundOrNotBelongsToUser_shouldThrowTaskNotFoundException() {
+            // Arrange
+            when(mockTaskRepository.deleteByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(0);
+
+            // Act & Assert
+            assertThatThrownBy(() -> taskService.deleteTaskForCurrentUserOrThrow(DEFAULT_TASK_ID, DEFAULT_USER_ID))
+                    .isInstanceOf(TaskNotFoundException.class)
+                    .satisfies(ex -> {
+                        TaskNotFoundException e = (TaskNotFoundException) ex;
+                        assertThat(e.getRequestedTaskId()).isEqualTo(DEFAULT_TASK_ID);
+                        assertThat(e.getCurrentUserId()).isEqualTo(DEFAULT_USER_ID);
+                    });
+
+            verify(mockTaskRepository).deleteByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID);
+        }
+
+        @Test
+        @DisplayName("TC_CS_DELETE_03: taskId равен null -> должен выбросить NullPointerException")
+        void deleteTask_whenTaskIdIsNull_shouldThrowNullPointerException() {
+            // Act & Assert
+            assertThatNullPointerException()
+                    .isThrownBy(() -> taskService.deleteTaskForCurrentUserOrThrow(null, DEFAULT_USER_ID))
+                    .withMessageContaining("taskId"); // Проверяем имя параметра из @NonNull
+        }
+
+        @Test
+        @DisplayName("TC_CS_DELETE_04: currentUserId равен null -> должен выбросить NullPointerException")
+        void deleteTask_whenCurrentUserIdIsNull_shouldThrowNullPointerException() {
+            // Act & Assert
+            assertThatNullPointerException()
+                    .isThrownBy(() -> taskService.deleteTaskForCurrentUserOrThrow(DEFAULT_TASK_ID, null))
+                    .withMessageContaining("currentUserId"); // Проверяем имя параметра из @NonNull
+        }
+    }
 }

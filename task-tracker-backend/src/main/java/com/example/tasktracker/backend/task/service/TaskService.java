@@ -2,6 +2,7 @@ package com.example.tasktracker.backend.task.service;
 
 import com.example.tasktracker.backend.task.dto.TaskCreateRequest;
 import com.example.tasktracker.backend.task.dto.TaskResponse;
+import com.example.tasktracker.backend.task.dto.TaskStatusUpdateRequest;
 import com.example.tasktracker.backend.task.dto.TaskUpdateRequest;
 import com.example.tasktracker.backend.task.entity.Task;
 import com.example.tasktracker.backend.task.entity.TaskStatus;
@@ -176,6 +177,50 @@ public class TaskService {
         return TaskResponse.fromEntity(taskToUpdate);
     }
 
+    /**
+     * Обновляет статус существующей задачи для текущего аутентифицированного пользователя.
+     * <p>
+     * Если статус задачи меняется на {@link TaskStatus#COMPLETED}, поле {@code completedAt}
+     * устанавливается в текущее время (UTC, округленное до микросекунд). Если статус меняется
+     * с {@link TaskStatus#COMPLETED} на {@link TaskStatus#PENDING}, поле {@code completedAt} сбрасывается в {@code null}.
+     * Поле {@code updatedAt} также обновляется.
+     * </p>
+     *
+     * @param taskId             ID задачи, у которой необходимо обновить статус. Не должен быть {@code null}.
+     * @param request            DTO {@link TaskStatusUpdateRequest} с новым статусом для задачи. Не должен быть {@code null}.
+     * @param currentUserId      ID текущего аутентифицированного пользователя, который должен быть владельцем задачи.
+     *                           Не должен быть {@code null}.
+     * @return {@link TaskResponse} DTO, представляющий обновленную задачу.
+     * @throws TaskNotFoundException если задача с указанным {@code taskId} не найдена для {@code currentUserId}
+     *                               или вообще не существует.
+     * @throws NullPointerException  если любой из аргументов {@code taskId}, {@code request},
+     *                               или {@code currentUserId} равен {@code null}.
+     */
+    @Transactional
+    public TaskResponse updateTaskStatusForCurrentUserOrThrow(@NonNull Long taskId,
+                                                              @NonNull TaskStatusUpdateRequest request,
+                                                              @NonNull Long currentUserId) {
+        log.debug("Attempting to update status for task ID: {} for user ID: {} to new status: {}",
+                taskId, currentUserId, request.getStatus());
+
+        Task taskToUpdate = taskRepository.findByIdAndUserId(taskId, currentUserId)
+                .orElseThrow(() -> {
+                    log.warn("Status update failed: Task not found or access denied for task ID: {} and user ID: {}",
+                            taskId, currentUserId);
+                    return new TaskNotFoundException(taskId, currentUserId);
+                });
+
+        Instant now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
+
+        // Обновляем статус и completedAt
+        updateCompletedAtBasedOnStatus(taskToUpdate, request.getStatus(), now);
+        taskToUpdate.setStatus(request.getStatus());
+        taskToUpdate.setUpdatedAt(now); // Обновляем updatedAt, так как ресурс был изменен
+
+        log.info("Task status updated for task ID: {} (user ID: {}). New status: {}. Pending transaction commit.",
+                taskToUpdate.getId(), currentUserId, taskToUpdate.getStatus());
+        return TaskResponse.fromEntity(taskToUpdate);
+    }
 
     /**
      * Вспомогательный приватный метод для обновления поля {@code completedAt} задачи
@@ -212,4 +257,6 @@ public class TaskService {
         }
         // Если newStatus == oldStatus, или другие переходы (например, PENDING -> PENDING), completedAt не меняем.
     }
+
+
 }

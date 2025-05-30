@@ -2,6 +2,7 @@ package com.example.tasktracker.backend.task.service;
 
 import com.example.tasktracker.backend.task.dto.TaskCreateRequest;
 import com.example.tasktracker.backend.task.dto.TaskResponse;
+import com.example.tasktracker.backend.task.dto.TaskStatusUpdateRequest;
 import com.example.tasktracker.backend.task.dto.TaskUpdateRequest;
 import com.example.tasktracker.backend.task.entity.Task;
 import com.example.tasktracker.backend.task.entity.TaskStatus;
@@ -491,6 +492,157 @@ class TaskServiceTest {
             assertThatNullPointerException()
                     .isThrownBy(() -> taskService.updateCompletedAtBasedOnStatus(task, TaskStatus.COMPLETED, FIXED_INSTANT_NOW))
                     .withMessage("Old status of the task cannot be null when updating completedAt.");
+        }
+    }
+
+    // =====================================================================================
+    // == Тесты для метода updateTaskStatusForCurrentUserOrThrow(Long, TaskStatusUpdateRequest, Long)
+    // =====================================================================================
+    @Nested
+    @DisplayName("updateTaskStatusForCurrentUserOrThrow Tests")
+    class UpdateTaskStatusForCurrentUserOrThrowTests {
+
+        @Test
+        @DisplayName("TC_CS_UPD_STATUS_01: Успешное обновление статуса PENDING -> COMPLETED")
+        void updateTaskStatus_whenPendingToCompleted_shouldUpdateStatusAndCompletedAt() {
+            // Arrange
+            TaskStatusUpdateRequest updateRequest = new TaskStatusUpdateRequest(TaskStatus.COMPLETED);
+            Task existingTask = createTaskEntity(
+                    DEFAULT_TASK_ID, DEFAULT_TASK_TITLE, null, TaskStatus.PENDING,
+                    mockUserReference, FIXED_INSTANT_NOW.minusSeconds(10), FIXED_INSTANT_NOW.minusSeconds(5), null
+            );
+            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.of(existingTask));
+            // Clock мокируется в @BeforeEach внешнего класса на FIXED_INSTANT_NOW
+
+            // Act
+            TaskResponse response = taskService.updateTaskStatusForCurrentUserOrThrow(DEFAULT_TASK_ID, updateRequest, DEFAULT_USER_ID);
+
+            // Assert
+            verify(mockTaskRepository).findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID);
+            // Проверяем, что сущность была изменена правильно перед маппингом (save не вызывается)
+            assertThat(existingTask.getStatus()).isEqualTo(TaskStatus.COMPLETED);
+            assertThat(existingTask.getCompletedAt()).isEqualTo(FIXED_INSTANT_NOW); // Установлено текущим временем из Clock
+            assertThat(existingTask.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW);   // Обновлено
+
+            assertThat(response.getStatus()).isEqualTo(TaskStatus.COMPLETED);
+            assertThat(response.getCompletedAt()).isEqualTo(FIXED_INSTANT_NOW);
+            assertThat(response.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW);
+        }
+
+        @Test
+        @DisplayName("TC_CS_UPD_STATUS_02: Успешное обновление статуса COMPLETED -> PENDING")
+        void updateTaskStatus_whenCompletedToPending_shouldUpdateStatusAndResetCompletedAt() {
+            // Arrange
+            TaskStatusUpdateRequest updateRequest = new TaskStatusUpdateRequest(TaskStatus.PENDING);
+            Instant previousCompletedAt = FIXED_INSTANT_NOW.minusSeconds(100);
+            Task existingTask = createTaskEntity(
+                    DEFAULT_TASK_ID, DEFAULT_TASK_TITLE, null, TaskStatus.COMPLETED,
+                    mockUserReference, FIXED_INSTANT_NOW.minusSeconds(200), previousCompletedAt, previousCompletedAt
+            );
+            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.of(existingTask));
+
+            // Act
+            TaskResponse response = taskService.updateTaskStatusForCurrentUserOrThrow(DEFAULT_TASK_ID, updateRequest, DEFAULT_USER_ID);
+
+            // Assert
+            assertThat(existingTask.getStatus()).isEqualTo(TaskStatus.PENDING);
+            assertThat(existingTask.getCompletedAt()).isNull(); // Должно быть сброшено
+            assertThat(existingTask.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW);
+
+            assertThat(response.getStatus()).isEqualTo(TaskStatus.PENDING);
+            assertThat(response.getCompletedAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("TC_CS_UPD_STATUS_03: Статус не меняется (PENDING -> PENDING)")
+        void updateTaskStatus_whenStatusDoesNotChangePending_shouldOnlyUpdateUpdatedAt() {
+            // Arrange
+            TaskStatusUpdateRequest updateRequest = new TaskStatusUpdateRequest(TaskStatus.PENDING);
+            Task existingTask = createTaskEntity(
+                    DEFAULT_TASK_ID, DEFAULT_TASK_TITLE, null, TaskStatus.PENDING,
+                    mockUserReference, FIXED_INSTANT_NOW.minusSeconds(100), FIXED_INSTANT_NOW.minusSeconds(50), null
+            );
+            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.of(existingTask));
+
+            // Act
+            TaskResponse response = taskService.updateTaskStatusForCurrentUserOrThrow(DEFAULT_TASK_ID, updateRequest, DEFAULT_USER_ID);
+
+            // Assert
+            assertThat(existingTask.getStatus()).isEqualTo(TaskStatus.PENDING);
+            assertThat(existingTask.getCompletedAt()).isNull();
+            assertThat(existingTask.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW); // updatedAt все равно обновляется
+
+            assertThat(response.getStatus()).isEqualTo(TaskStatus.PENDING);
+            assertThat(response.getCompletedAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("TC_CS_UPD_STATUS_04: Статус не меняется (COMPLETED -> COMPLETED)")
+        void updateTaskStatus_whenStatusDoesNotChangeCompleted_shouldOnlyUpdateUpdatedAt() {
+            // Arrange
+            TaskStatusUpdateRequest updateRequest = new TaskStatusUpdateRequest(TaskStatus.COMPLETED);
+            Instant previousCompletedAt = FIXED_INSTANT_NOW.minusSeconds(100);
+            Task existingTask = createTaskEntity(
+                    DEFAULT_TASK_ID, DEFAULT_TASK_TITLE, null, TaskStatus.COMPLETED,
+                    mockUserReference, FIXED_INSTANT_NOW.minusSeconds(200), previousCompletedAt, previousCompletedAt
+            );
+            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.of(existingTask));
+
+            // Act
+            TaskResponse response = taskService.updateTaskStatusForCurrentUserOrThrow(DEFAULT_TASK_ID, updateRequest, DEFAULT_USER_ID);
+
+            // Assert
+            assertThat(existingTask.getStatus()).isEqualTo(TaskStatus.COMPLETED);
+            assertThat(existingTask.getCompletedAt()).isEqualTo(previousCompletedAt); // Не должно измениться
+            assertThat(existingTask.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW); // updatedAt обновляется
+
+            assertThat(response.getStatus()).isEqualTo(TaskStatus.COMPLETED);
+            assertThat(response.getCompletedAt()).isEqualTo(previousCompletedAt);
+        }
+
+
+        @Test
+        @DisplayName("TC_CS_UPD_STATUS_05: Задача не найдена / не принадлежит пользователю -> должен выбросить TaskNotFoundException")
+        void updateTaskStatus_whenTaskNotFound_shouldThrowTaskNotFoundException() {
+            // Arrange
+            TaskStatusUpdateRequest updateRequest = new TaskStatusUpdateRequest(TaskStatus.COMPLETED);
+            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.empty());
+
+            // Act & Assert
+            assertThatThrownBy(() -> taskService.updateTaskStatusForCurrentUserOrThrow(DEFAULT_TASK_ID, updateRequest, DEFAULT_USER_ID))
+                    .isInstanceOf(TaskNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("TC_CS_UPD_STATUS_06: TaskStatusUpdateRequest null -> должен выбросить NullPointerException")
+        void updateTaskStatus_whenRequestIsNull_shouldThrowNullPointerException() {
+            assertThatNullPointerException()
+                    .isThrownBy(() -> taskService.updateTaskStatusForCurrentUserOrThrow(DEFAULT_TASK_ID, null, DEFAULT_USER_ID))
+                    .withMessageContaining("request");
+        }
+
+        @Test
+        @DisplayName("TC_CS_UPD_STATUS_07: taskId null -> должен выбросить NullPointerException")
+        void updateTaskStatus_whenTaskIdIsNull_shouldThrowNullPointerException() {
+            // Arrange
+            TaskStatusUpdateRequest validRequest = new TaskStatusUpdateRequest(TaskStatus.PENDING);
+
+            // Act & Assert
+            assertThatNullPointerException()
+                    .isThrownBy(() -> taskService.updateTaskStatusForCurrentUserOrThrow(null, validRequest, DEFAULT_USER_ID))
+                    .withMessageContaining("taskId"); // Проверяем имя параметра из @NonNull
+        }
+
+        @Test
+        @DisplayName("TC_CS_UPD_STATUS_08: currentUserId null -> должен выбросить NullPointerException")
+        void updateTaskStatus_whenCurrentUserIdIsNull_shouldThrowNullPointerException() {
+            // Arrange
+            TaskStatusUpdateRequest validRequest = new TaskStatusUpdateRequest(TaskStatus.PENDING);
+
+            // Act & Assert
+            assertThatNullPointerException()
+                    .isThrownBy(() -> taskService.updateTaskStatusForCurrentUserOrThrow(DEFAULT_TASK_ID, validRequest, null))
+                    .withMessageContaining("currentUserId"); // Проверяем имя параметра из @NonNull
         }
     }
 }

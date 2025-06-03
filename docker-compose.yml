@@ -177,6 +177,28 @@ services:
     networks:
       - task-tracker-net
 
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console
+    container_name: redpanda-console
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    networks:
+      - task-tracker-net
+    depends_on:
+      - kafka # Запускать после Kafka
+    environment:
+      KAFKA_BROKERS: "kafka:9092"
+      # Если у вас несколько брокеров, перечислите их через запятую: "kafka1:9092,kafka2:9092"
+
+      # Опционально: конфигурация для Schema Registry, если используете
+      # KAFKA_SCHEMAREGISTRY_ENABLED: "true"
+      # KAFKA_SCHEMAREGISTRY_URLS: "http://schema-registry:8081"
+
+      # Конфигурация самой консоли (можно оставить по умолчанию)
+      CONSOLE_CONFIG_FILEPATH: "" # Путь к файлу конфигурации внутри контейнера, если используется
+      CONSOLE_LOG_LEVEL: "info"
+
 volumes:
   pgdata:
   kafkadata:

@@ -1,5 +1,6 @@
 package com.example.tasktracker.backend.security.filter;
 
+import com.example.tasktracker.backend.common.MdcKeys;
 import com.example.tasktracker.backend.security.details.AppUserDetails;
 import com.example.tasktracker.backend.security.exception.BadJwtException;
 import com.example.tasktracker.backend.security.jwt.JwtAuthenticationConverter;
@@ -258,19 +259,19 @@ class JwtAuthenticationFilterTest {
         // Используем Answer для проверки MDC *внутри* вызова doFilter
         doAnswer(invocation -> {
             // В этот момент MDC должен быть установлен
-            assertThat(MDC.get(JwtAuthenticationFilter.MDC_USER_ID_KEY)) // Используйте реальное имя константы
+            assertThat(MDC.get(MdcKeys.USER_ID)) // Используйте реальное имя константы
                     .isEqualTo(expectedUserIdStr);
             return null; // doFilter у FilterChain обычно void
         }).when(mockFilterChain).doFilter(mockRequest, mockResponse);
 
         // Act
         // Очищаем MDC перед вызовом, чтобы убедиться, что именно наш фильтр его ставит и чистит
-        MDC.remove(JwtAuthenticationFilter.MDC_USER_ID_KEY);
+        MDC.remove(MdcKeys.USER_ID);
         jwtAuthenticationFilter.doFilterInternal(mockRequest, mockResponse, mockFilterChain);
 
         // Assert
         // После того, как doFilterInternal отработал, MDC должен быть очищен
-        assertThat(MDC.get(JwtAuthenticationFilter.MDC_USER_ID_KEY)).isNull();
+        assertThat(MDC.get(MdcKeys.USER_ID)).isNull();
 
         // Убедимся, что SecurityContext был установлен
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isSameAs(mockAuthWithUserDetails);
@@ -287,10 +288,10 @@ class JwtAuthenticationFilterTest {
         when(mockRequest.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer " + token);
         when(mockJwtValidator.validateAndParseToken(token)).thenReturn(invalidResult);
 
-        MDC.remove(JwtAuthenticationFilter.MDC_USER_ID_KEY); // Очищаем перед тестом
+        MDC.remove(MdcKeys.USER_ID); // Очищаем перед тестом
         jwtAuthenticationFilter.doFilterInternal(mockRequest, mockResponse, mockFilterChain);
 
-        assertThat(MDC.get(JwtAuthenticationFilter.MDC_USER_ID_KEY)).isNull();
+        assertThat(MDC.get(MdcKeys.USER_ID)).isNull();
         verify(mockAuthenticationEntryPoint).commence(any(), any(), any(BadJwtException.class));
         verify(mockFilterChain, never()).doFilter(any(), any());
     }

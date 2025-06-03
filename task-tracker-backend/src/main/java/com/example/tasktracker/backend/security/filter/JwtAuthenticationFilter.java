@@ -1,5 +1,6 @@
 package com.example.tasktracker.backend.security.filter;
 
+import com.example.tasktracker.backend.common.MdcKeys;
 import com.example.tasktracker.backend.security.details.AppUserDetails;
 import com.example.tasktracker.backend.security.exception.BadJwtException;
 import com.example.tasktracker.backend.security.jwt.JwtAuthenticationConverter;
@@ -67,7 +68,6 @@ import java.util.Optional;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
-    static final String MDC_USER_ID_KEY = "user.id";
 
     private final JwtValidator jwtValidator;
     private final JwtAuthenticationConverter jwtAuthenticationConverter;
@@ -171,13 +171,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         request.getRequestURI()
                 );
 
-                try (MDC.MDCCloseable ignored = MDC.putCloseable(MDC_USER_ID_KEY, mdcUserIdentifier)) {
+                try (MDC.MDCCloseable ignored = MDC.putCloseable(MdcKeys.USER_ID, mdcUserIdentifier)) {
                     log.trace("MDC set for {}: {} for request to [{}].",
-                            MDC_USER_ID_KEY, mdcUserIdentifier, request.getRequestURI());
+                            MdcKeys.USER_ID, mdcUserIdentifier, request.getRequestURI());
                     filterChain.doFilter(request, response); // Продолжаем цепочку фильтров
                 }
                 log.trace("MDC for {} (value: {}) cleared after request to [{}].",
-                        MDC_USER_ID_KEY, mdcUserIdentifier, request.getRequestURI());
+                        MdcKeys.USER_ID, mdcUserIdentifier, request.getRequestURI());
 
             } catch (IllegalArgumentException e) {
                 log.warn("Could not set user authentication from JWT: Claims conversion failed. Token: [{}], Error: {}",
@@ -225,9 +225,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      * @param principal объект principal из {@link Authentication}. Не должен быть null.
      * @return Строковый идентификатор пользователя (ID или email). Никогда не возвращает {@code null}.
      * @throws IllegalStateException если principal не является {@link AppUserDetails}.
-     * @throws NullPointerException если principal равен {@code null}.
+     * @throws NullPointerException  если principal равен {@code null}.
      */
-     String prepareMdcUserIdentifier(@NonNull Object principal) {
+    String prepareMdcUserIdentifier(@NonNull Object principal) {
         if (principal instanceof AppUserDetails appUserDetails) {
             if (appUserDetails.getId() != null) {
                 return appUserDetails.getId().toString();

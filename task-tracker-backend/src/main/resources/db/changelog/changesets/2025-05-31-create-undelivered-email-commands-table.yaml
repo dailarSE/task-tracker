@@ -1,0 +1,72 @@
+databaseChangeLog:
+  - changeSet:
+      id: 4
+      author: dailar401@gmail.com
+      comment: "Create undelivered_email_commands table for Kafka fallback messages"
+      changes:
+        - createTable:
+            tableName: undelivered_email_commands
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: recipient_email
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: template_id
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: template_context_json
+                  type: TEXT # Используем TEXT для JSON-строки
+                  constraints:
+                    nullable: false
+              - column:
+                  name: locale
+                  type: VARCHAR(50)
+              - column:
+                  name: user_id
+                  type: VARCHAR(255)
+              - column:
+                  name: correlation_id
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: kafka_topic
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: initial_attempt_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_attempt_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: retry_count
+                  type: INT
+                  defaultValueNumeric: 0 # Дефолт 0 для счетчика ретраев
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_error_message
+                  type: TEXT
+        # Индекс для возможного поиска по времени первой попытки (для шедулера)
+        - createIndex:
+            indexName: idx_undelivered_email_commands_initial_attempt_at
+            tableName: undelivered_email_commands
+            columns:
+              - column:
+                  name: initial_attempt_at

@@ -25,6 +25,22 @@ spring:
       WRITE_DATES_AS_TIMESTAMPS: false
     deserialization:
       FAIL_ON_UNKNOWN_PROPERTIES: true
+  kafka:
+    bootstrap-servers: kafka:9092 # Адрес Kafka-брокера из docker-compose.yml
+    admin:
+      fail-fast: true
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 2
+      properties:
+        spring.json.add.type.headers: false # Не добавлять заголовки с информацией о типе Java-класса
+        # Таймауты и надежность
+        delivery.timeout.ms: 50000 # общий таймаут на доставку сообщения, включая ретраи
+        request.timeout.ms: 15000   # 30 секунд - таймаут на один запрос к брокеру
+        max.block.ms: 30000       # 1 минута - максимальное время блокировки send()
+        enable.idempotence: false
 
 server:
   error:
@@ -72,6 +88,10 @@ otel:
       arg: "0.1"
 
 app:
+  kafka:
+    topic:
+      email-commands:
+        name: "EMAIL_SENDING_TASKS"
   security:
     jwt:
       expiration-ms: 3600000 # 1 час

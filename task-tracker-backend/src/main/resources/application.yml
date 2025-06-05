@@ -89,6 +89,8 @@ otel:
 
 app:
   kafka:
+    topic-verifier:
+      enabled: true
     topic:
       email-commands:
         name: "EMAIL_SENDING_TASKS"

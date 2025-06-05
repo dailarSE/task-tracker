@@ -15,11 +15,11 @@ server:
 
 #TODO принять решение о минимальном observability стеке на ci. например коллектор с экспортом в stdout и/или файл;
 #TODO  стриминг из коллектора на поднятный Obs stack
-otel:
-  sdk:
-    disabled: true
 
 app:
+  kafka:
+    topic-verifier:
+      enabled: false
   security:
     jwt:
       # Пример Base64 ключа (реальный ключ должен быть сгенерирован и быть длиннее для HS256)

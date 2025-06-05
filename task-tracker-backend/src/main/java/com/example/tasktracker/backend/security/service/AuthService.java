@@ -1,5 +1,7 @@
 package com.example.tasktracker.backend.security.service;
 
+import com.example.tasktracker.backend.common.MdcKeys;
+import com.example.tasktracker.backend.kafka.service.EmailNotificationOrchestratorService;
 import com.example.tasktracker.backend.security.details.AppUserDetails;
 import com.example.tasktracker.backend.security.dto.AuthResponse;
 import com.example.tasktracker.backend.security.dto.LoginRequest;
@@ -9,10 +11,13 @@ import com.example.tasktracker.backend.security.exception.UserAlreadyExistsExcep
 import com.example.tasktracker.backend.security.jwt.JwtIssuer;
 import com.example.tasktracker.backend.security.jwt.JwtProperties;
 import com.example.tasktracker.backend.user.entity.User;
+import com.example.tasktracker.backend.user.messaging.dto.EmailTriggerCommand;
 import com.example.tasktracker.backend.user.repository.UserRepository;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -22,26 +27,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Сервис для операций регистрации и аутентификации пользователей.
- * <p>
- * Инкапсулирует бизнес-логику, связанную с созданием новых пользовательских аккаунтов
- * и проверкой учетных данных существующих пользователей. Взаимодействует с компонентами
- * для работы с базой данных ({@link UserRepository}), хеширования паролей ({@link PasswordEncoder}),
- * управления аутентификацией Spring Security ({@link AuthenticationManager}) и генерации
- * JWT ({@link JwtIssuer}).
- * </p>
- * <p>
- * Для корректной обработки состояний гонки при регистрации и избежания проблем
- * с транзакциями, помеченными как "rollback-only", сервис использует самоинъекцию
- * (self-injection) через {@link Lazy} для вызова некоторых методов в новой транзакции.
- * </p>
- */
+import java.util.Locale;
+import java.util.Map;
+
+/** Сервис для операций регистрации и аутентификации пользователей. */
 @Service
 @Slf4j
 public class AuthService {
 
     private final UserRepository userRepository;
+    private final EmailNotificationOrchestratorService notificationService;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtIssuer jwtIssuer;
@@ -49,29 +44,30 @@ public class AuthService {
     private final AuthService self;
 
     /**
-     * Конструктор {@link AuthService}.
+     * Конструктор для {@link AuthService}.
      * <p>
-     * Внедряет все необходимые зависимости для выполнения операций аутентификации и регистрации.
-     * Параметр {@code self} внедряется с аннотацией {@link Lazy} для разрешения циклической
-     * зависимости, возникающей при необходимости вызова методов этого же сервиса
-     * в новой транзакционной границе (например, для {@link #existsByEmailInNewTransaction(String)}).
+     * Внедряет все необходимые зависимости. Параметр {@code self} используется
+     * для вызова методов этого же сервиса с иной транзакционной семантикой
+     * (например, {@link Propagation#REQUIRES_NEW}).
      * </p>
      *
-     * @param userRepository      Репозиторий для доступа к данным пользователей.
-     * @param passwordEncoder     Кодировщик паролей для хеширования и проверки.
+     * @param userRepository        Репозиторий пользователей.
+     * @param notificationService  Сервис для отправки сообщений в Kafka.
+     * @param passwordEncoder       Кодировщик паролей.
      * @param authenticationManager Менеджер аутентификации Spring Security.
-     * @param jwtIssuer           Сервис для генерации JWT.
-     * @param jwtProperties       Конфигурационные свойства JWT.
-     * @param self                Ленивая ссылка на экземпляр этого же сервиса для вызова
-     *                            проксируемых методов в новых транзакциях.
+     * @param jwtIssuer             Сервис для генерации JWT.
+     * @param jwtProperties         Конфигурационные свойства JWT.
+     * @param self                  Ленивая ссылка на экземпляр этого же сервиса.
      */
     public AuthService(UserRepository userRepository,
+                       EmailNotificationOrchestratorService notificationService,
                        PasswordEncoder passwordEncoder,
                        AuthenticationManager authenticationManager,
                        JwtIssuer jwtIssuer,
                        JwtProperties jwtProperties,
                        @Lazy AuthService self) {
         this.userRepository = userRepository;
+        this.notificationService = notificationService;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
         this.jwtIssuer = jwtIssuer;
@@ -80,28 +76,27 @@ public class AuthService {
     }
 
     /**
-     * Регистрирует нового пользователя в системе.
+     * Регистрирует нового пользователя в системе на основе предоставленных данных.
      * <p>
-     * В случае успеха, пользователь также автоматически аутентифицируется,
-     * и для него генерируется JWT. После успешного сохранения, идентификатор
-     * нового пользователя (userId) логируется для связи с {@code traceId} текущего запроса.
-     * Для данного запроса регистрации {@code userId} не помещается в MDC (Mapped Diagnostic Context),
-     * так как он становится известен только в середине процесса. Основная логика помещения
-     * {@code userId} в MDC реализована в {@code JwtAuthenticationFilter} для уже
-     * аутентифицированных запросов.
-     * </p>
-     * <p>
-     * Метод является транзакционным. Внутренний вызов для сохранения пользователя
-     * ({@link #persistNewUser(User)}) обрабатывает потенциальные состояния гонки
-     * при проверке уникальности email, используя вызов к {@link #existsByEmailInNewTransaction(String)}
-     * в отдельной транзакции.
+     * Процесс включает:
+     * <ol>
+     *     <li>Проверку совпадения паролей.</li>
+     *     <li>Проверку уникальности email.</li>
+     *     <li>Хеширование пароля.</li>
+     *     <li>Сохранение нового пользователя в базу данных (см. {@link #persistNewUser(User)}).</li>
+     *     <li>Установку ID пользователя в MDC для последующего логирования (см. {@link MdcKeys#USER_ID}).</li>
+     *     <li>Инициацию отправки приветственного Kafka-сообщения (см. {@link #initiateWelcomeNotification(User)}).</li>
+     *     <li>Автоматическую аутентификацию пользователя.</li>
+     *     <li>Генерацию и возврат JWT Access Token.</li>
+     * </ol>
+     * Метод является транзакционным.
      * </p>
      *
-     * @param request DTO с данными для регистрации. Не должен быть null.
-     * @return {@link AuthResponse}, содержащий JWT.
+     * @param request DTO {@link RegisterRequest} с данными для регистрации. Не должен быть null.
+     * @return {@link AuthResponse}, содержащий JWT Access Token и информацию о нем.
      * @throws UserAlreadyExistsException если пользователь с таким email уже существует.
-     * @throws PasswordMismatchException  если пароли в запросе не совпадают.
-     * @throws NullPointerException если {@code request} равен {@code null}.
+     * @throws PasswordMismatchException  если пароли в запросе на регистрацию не совпадают.
+     * @throws NullPointerException       если {@code request} равен {@code null}.
      */
     @Transactional
     public AuthResponse register(@NonNull RegisterRequest request) {
@@ -118,25 +113,69 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(request.getPassword()));
 
         User savedUser = persistNewUser(user);
+        Long savedUserId = savedUser.getId();
 
-        log.info("User registration successful for email: {}. User ID: {}", savedUser.getEmail(), savedUser.getId());
+        try (MDC.MDCCloseable ignored = MDC.putCloseable(MdcKeys.USER_ID, String.valueOf(savedUserId))) {
+            log.info("User registration successful. User ID: {} added to MDC. Email: {}", savedUserId, savedUser.getEmail());
 
-        // Авто-логин после регистрации
-        AppUserDetails userDetails = new AppUserDetails(savedUser);
-        Authentication authentication = new UsernamePasswordAuthenticationToken(
-                userDetails,
-                null, // Пароль не нужен для уже аутентифицированного principal
-                userDetails.getAuthorities()
+            initiateWelcomeNotification(savedUser);
+
+            AppUserDetails userDetails = new AppUserDetails(savedUser);
+            Authentication authentication = new UsernamePasswordAuthenticationToken(
+                    userDetails,
+                    null,
+                    userDetails.getAuthorities()
+            );
+
+            String accessToken = jwtIssuer.generateToken(authentication);
+            long expirationSeconds = jwtProperties.getExpirationMs() / 1000;
+            return new AuthResponse(accessToken, expirationSeconds);
+        }
+    }
+
+    /**
+     * Инициирует отправку приветственного уведомления в Kafka для нового пользователя.
+     * Ошибки при отправке в Kafka логируются, но не прерывают основной процесс.
+     *
+     * @param newUser Только что сохраненная сущность {@link User}.
+     */
+    void initiateWelcomeNotification(@NonNull User newUser) {
+        try {
+            EmailTriggerCommand emailCommand = createEmailTriggerCommand(newUser);
+            notificationService.scheduleInitialEmailNotification(emailCommand);
+            log.info("Welcome notification initiation for userId: {} (email: {}) sent to Kafka queue.",
+                    newUser.getId(), newUser.getEmail());
+        } catch (Exception e) {
+            // Логируем ошибку инициации отправки в Kafka, но НЕ прерываем основной процесс
+            log.error("Failed to initiate Kafka message for user registration (userId: {}). " +
+                            "Registration process will continue. Error: {}",
+                    newUser.getId(), e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Формирует команду {@link EmailTriggerCommand} для отправки приветственного email.
+     * <p>
+     * Этот метод извлекает текущую локаль из {@link LocaleContextHolder} и
+     * подготавливает контекст для шаблона приветственного письма.
+     * </p>
+     *
+     * @param newUser Сущность {@link User}, для которой формируется команда. Не должна быть {@code null}.
+     * @return Сконфигурированный объект {@link EmailTriggerCommand}.
+     * @throws NullPointerException если {@code newUser} равен {@code null}.
+     */
+    EmailTriggerCommand createEmailTriggerCommand(@NonNull User newUser) {
+        Locale currentUserLocale = LocaleContextHolder.getLocale();
+        String localeTag = currentUserLocale.toLanguageTag();
+
+        return new EmailTriggerCommand(
+                newUser.getEmail(),
+                "USER_WELCOME",
+                Map.of("userEmail", newUser.getEmail()),
+                localeTag,
+                String.valueOf(newUser.getId()), // userId
+                null // correlationId будет установлен в kafka service
         );
-
-
-        // Генерируем JWT для этого Authentication
-        String accessToken = jwtIssuer.generateToken(authentication);
-
-        // TODO: Асинхронная отправка приветственного email (когда будет EmailSender и Kafka). transactional!
-
-        long expirationSeconds = jwtProperties.getExpirationMs() / 1000;
-        return new AuthResponse(accessToken, expirationSeconds);
     }
 
     /**
@@ -195,9 +234,9 @@ public class AuthService {
      * @return Сохраненный объект {@code User}.
      * @throws UserAlreadyExistsException если при сохранении возникает конфликт уникальности email,
      *                                    подтвержденный как состояние гонки.
-     * @throws IllegalStateException если возникает неожиданная {@link DataIntegrityViolationException},
-     *                               не связанная с дублированием email.
-     * @throws NullPointerException если {@code userToPersist} равен {@code null}.
+     * @throws IllegalStateException      если возникает неожиданная {@link DataIntegrityViolationException},
+     *                                    не связанная с дублированием email.
+     * @throws NullPointerException       если {@code userToPersist} равен {@code null}.
      */
     private User persistNewUser(@NonNull User userToPersist) {
         try {

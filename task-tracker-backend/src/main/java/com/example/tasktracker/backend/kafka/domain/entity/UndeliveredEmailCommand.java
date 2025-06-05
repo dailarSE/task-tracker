@@ -4,8 +4,6 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
 
@@ -24,7 +22,6 @@ import java.time.Instant;
 @Getter
 @Setter
 @NoArgsConstructor
-@EntityListeners(AuditingEntityListener.class)
 public class UndeliveredEmailCommand {
 
     /**
@@ -70,11 +67,7 @@ public class UndeliveredEmailCommand {
     @Column(name = "kafka_topic", nullable = false)
     private String kafkaTopic;
 
-    /**
-     * Время создания этой записи (первой неудачной попытки отправить в Kafka).
-     * Заполняется автоматически через JPA Auditing.
-     */
-    @CreatedDate
+    /** Время создания этой записи (первой неудачной попытки отправить в Kafka). */
     @Column(name = "initial_attempt_at", nullable = false, updatable = false)
     private Instant initialAttemptAt;
 

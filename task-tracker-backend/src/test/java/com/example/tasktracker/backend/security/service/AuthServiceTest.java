@@ -137,7 +137,7 @@ class AuthServiceTest {
                 assertThat(capturedCommand.getTemplateId()).isEqualTo("USER_WELCOME");
                 assertThat(capturedCommand.getTemplateContext()).containsEntry("userEmail", TEST_EMAIL);
                 assertThat(capturedCommand.getLocale()).isEqualTo(expectedLocale.toLanguageTag());
-                assertThat(capturedCommand.getUserId()).isEqualTo(String.valueOf(SAVED_USER_ID));
+                assertThat(capturedCommand.getUserId()).isEqualTo(SAVED_USER_ID);
 
                 verify(mockJwtIssuer).generateToken(authenticationArgumentCaptor.capture());
                 Authentication generatedAuth = authenticationArgumentCaptor.getValue();
@@ -228,7 +228,7 @@ class AuthServiceTest {
                 assertThat(capturedCommand.getTemplateId()).isEqualTo("USER_WELCOME");
                 assertThat(capturedCommand.getTemplateContext()).isEqualTo(Map.of("userEmail", TEST_EMAIL));
                 assertThat(capturedCommand.getLocale()).isEqualTo(expectedLocale.toLanguageTag());
-                assertThat(capturedCommand.getUserId()).isEqualTo(String.valueOf(SAVED_USER_ID));
+                assertThat(capturedCommand.getUserId()).isEqualTo(SAVED_USER_ID);
                 assertThat(capturedCommand.getCorrelationId()).isNull(); // Устанавливается в KafkaProducerService
             }
         }
@@ -288,7 +288,7 @@ class AuthServiceTest {
                 assertThat(command.getTemplateId()).isEqualTo("USER_WELCOME");
                 assertThat(command.getTemplateContext()).isEqualTo(Map.of("userEmail", TEST_EMAIL));
                 assertThat(command.getLocale()).isEqualTo(expectedLocale.toLanguageTag());
-                assertThat(command.getUserId()).isEqualTo(String.valueOf(SAVED_USER_ID));
+                assertThat(command.getUserId()).isEqualTo(SAVED_USER_ID);
                 assertThat(command.getCorrelationId()).isNull();
             }
         }

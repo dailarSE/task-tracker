@@ -93,7 +93,7 @@ app:
       enabled: true
     topic:
       email-commands:
-        name: "EMAIL_SENDING_TASKS"
+        name: "task_tracker.notifications.email_commands"
   security:
     jwt:
       expiration-ms: 3600000 # 1 час

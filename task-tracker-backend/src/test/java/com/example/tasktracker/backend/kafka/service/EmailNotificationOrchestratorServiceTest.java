@@ -1,10 +1,9 @@
 package com.example.tasktracker.backend.kafka.service;
 
-import com.example.tasktracker.backend.config.AppConfig;
 import com.example.tasktracker.backend.kafka.domain.entity.UndeliveredWelcomeEmail;
 import com.example.tasktracker.backend.kafka.domain.repository.UndeliveredWelcomeEmailRepository;
+import com.example.tasktracker.backend.user.entity.User;
 import com.example.tasktracker.backend.user.messaging.dto.EmailTriggerCommand;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,13 +11,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 
@@ -26,15 +22,15 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 /**
@@ -46,74 +42,58 @@ class EmailNotificationOrchestratorServiceTest {
     @Mock
     private KafkaTemplate<String, EmailTriggerCommand> mockKafkaTemplate;
     @Mock
-    private UndeliveredWelcomeEmailRepository mockUndeliveredCommandRepository;
+    private UndeliveredWelcomeEmailRepository mockUndeliveredWelcomeEmailRepository;
     @Mock
     private Clock mockClock;
     @Mock
-    @Qualifier(AppConfig.KAFKA_ASYNC_OPERATIONS_EXECUTOR) // Такое же имя, как в AppConfig
     private Executor mockKafkaAsyncOperationsExecutor;
     @Mock
     private MeterRegistry mockMeterRegistry;
     @Mock
-    private Counter mockCriticalDeliveryFailureCounter; // Мок для нашего счетчика
-
-    // @Spy // Нельзя использовать @Spy и @InjectMocks одновременно так просто для self-инъекции
-    // Вместо этого будем инжектировать мок self и настраивать его поведение.
+    private Counter mockCriticalDeliveryFailureCounter;
     @Mock
     private EmailNotificationOrchestratorService mockSelf;
-
 
     private EmailNotificationOrchestratorService orchestratorService;
 
     @Captor
+    private ArgumentCaptor<EmailTriggerCommand> emailCommandCaptor;
+    @Captor
     private ArgumentCaptor<UndeliveredWelcomeEmail> undeliveredWelcomeEmailCaptor;
-
 
     private static final String TEST_EMAIL = "test@example.com";
     private static final Long TEST_USER_ID = 123L;
-    private static final String TEST_TEMPLATE_ID = "USER_WELCOME";
-    private static final String TEST_LOCALE = "en-US";
-    private static final String TEST_CORRELATION_ID = UUID.randomUUID().toString();
+    private static final String TEST_LOCALE_TAG = "en-US";
     private static final Instant FIXED_NOW = Instant.parse("2025-01-01T12:00:00Z");
-    private static final String TEST_TOPIC = "EMAIL_SENDING_TASKS_from_property";
+    private static final String TEST_TOPIC_NAME = "EMAIL_SENDING_TASKS_from_property";
 
+    private User testUser;
 
     @BeforeEach
     void setUp() {
-        // Настройка мока Clock
         lenient().when(mockClock.instant()).thenReturn(FIXED_NOW);
         lenient().when(mockClock.getZone()).thenReturn(ZoneId.of("UTC"));
 
-        // Настройка мока Executor'а для немедленного выполнения коллбэков в том же потоке
         lenient().doAnswer(invocation -> {
             Runnable r = invocation.getArgument(0);
             r.run();
             return null;
         }).when(mockKafkaAsyncOperationsExecutor).execute(any(Runnable.class));
 
-        // Создаем экземпляр сервиса вручную, передавая все моки, включая мок self
         orchestratorService = new EmailNotificationOrchestratorService(
                 mockKafkaTemplate,
-                mockUndeliveredCommandRepository,
+                mockUndeliveredWelcomeEmailRepository,
                 mockClock,
-                mockKafkaAsyncOperationsExecutor, // Передаем мок executor'а
-                TEST_TOPIC,
+                mockKafkaAsyncOperationsExecutor,
+                TEST_TOPIC_NAME,
                 mockMeterRegistry,
-                mockSelf // Передаем мок self
+                mockSelf
         );
-    }
 
-    private EmailTriggerCommand createTestCommand() {
-        Map<String, Object> context = new HashMap<>();
-        context.put("userEmail", TEST_EMAIL);
-        return new EmailTriggerCommand(
-                TEST_EMAIL,
-                TEST_TEMPLATE_ID,
-                context,
-                TEST_LOCALE,
-                TEST_USER_ID,
-                TEST_CORRELATION_ID // Предустановленный correlationId для простоты тестов ensureCorrelationIdIsSet
-        );
+        // Создаем тестового пользователя
+        testUser = new User();
+        testUser.setId(TEST_USER_ID);
+        testUser.setEmail(TEST_EMAIL);
     }
 
     @Nested
@@ -121,161 +101,154 @@ class EmailNotificationOrchestratorServiceTest {
     class ScheduleInitialEmailNotificationTests {
 
         @Test
-        @DisplayName("Успешная отправка в Kafka -> должен залогировать успех, не сохранять в fallback")
-        void whenKafkaSendSucceeds_shouldLogSuccessAndNotSaveToFallback() {
+        @DisplayName("Успешная отправка в Kafka -> должен вызвать send с корректной командой")
+        void whenKafkaSendSucceeds_shouldCallSendAndSucceed() {
             // Arrange
-            EmailTriggerCommand command = createTestCommand();
             CompletableFuture<SendResult<String, EmailTriggerCommand>> successfulFuture =
                     CompletableFuture.completedFuture(mock(SendResult.class));
-            when(mockKafkaTemplate.send(eq(TEST_TOPIC), eq(command.getRecipientEmail()), eq(command)))
+            when(mockKafkaTemplate.send(anyString(), anyString(), any(EmailTriggerCommand.class)))
                     .thenReturn(successfulFuture);
 
             // Act
-            orchestratorService.scheduleInitialEmailNotification(command);
+            orchestratorService.scheduleInitialEmailNotification(testUser, TEST_LOCALE_TAG);
 
             // Assert
-            verify(mockKafkaTemplate).send(TEST_TOPIC, command.getRecipientEmail(), command);
-            verifyNoInteractions(mockUndeliveredCommandRepository); // Не должно быть вызовов к fallback репозиторию
-            verifyNoInteractions(mockSelf); // self.persistNewUndeliveredCommand не должен вызываться
+            verify(mockKafkaTemplate).send(eq(TEST_TOPIC_NAME), eq(testUser.getEmail()), emailCommandCaptor.capture());
+            EmailTriggerCommand capturedCommand = emailCommandCaptor.getValue();
+
+            // Проверяем, что команда была создана правильно
+            assertThat(capturedCommand.getRecipientEmail()).isEqualTo(TEST_EMAIL);
+            assertThat(capturedCommand.getTemplateId()).isEqualTo("USER_WELCOME");
+            assertThat(capturedCommand.getUserId()).isEqualTo(TEST_USER_ID);
+            assertThat(capturedCommand.getLocale()).isEqualTo(TEST_LOCALE_TAG);
+            assertThat(capturedCommand.getCorrelationId()).isNotNull(); // Проверяем, что correlationId был сгенерирован
+
+            // Проверяем, что fallback-логика не вызывалась
+            verify(mockSelf, never()).persistNewUndeliveredWelcomeEmail(any(), any());
             verify(mockCriticalDeliveryFailureCounter, never()).increment();
         }
 
         @Test
-        @DisplayName("Ошибка отправки в Kafka, УСПЕШНОЕ сохранение в fallback -> должен вызвать persistNewUndeliveredCommand")
-        void whenKafkaSendFailsAndFallbackSaveSucceeds_shouldCallPersistAndLog() throws JsonProcessingException {
+        @DisplayName("Синхронная ошибка Kafka -> должен вызвать handleInitialSendFailure")
+        void whenKafkaSendThrowsSyncException_shouldCallHandleFailure() {
             // Arrange
-            EmailTriggerCommand command = createTestCommand();
-            RuntimeException kafkaException = new RuntimeException("Kafka send failed");
-            CompletableFuture<SendResult<String, EmailTriggerCommand>> failedFuture =
-                    CompletableFuture.failedFuture(kafkaException);
+            RuntimeException syncKafkaException = new RuntimeException("Synchronous Kafka send failed");
+            when(mockKafkaTemplate.send(anyString(), anyString(), any(EmailTriggerCommand.class)))
+                    .thenThrow(syncKafkaException);
 
-            when(mockKafkaTemplate.send(eq(TEST_TOPIC), eq(command.getRecipientEmail()), eq(command)))
-                    .thenReturn(failedFuture);
-
-            // Мокируем self.persistNewUndeliveredCommand, чтобы он ничего не делал (успешно)
-            // Это важно, так как мы тестируем логику scheduleInitialEmailNotification, а не самого persist
-            doNothing().when(mockSelf).persistNewUndeliveredCommand(
-                    any(EmailTriggerCommand.class),
-                    anyString()
-            );
+            // Используем spy, чтобы проверить вызов приватного метода
+            EmailNotificationOrchestratorService spyOrchestrator = spy(orchestratorService);
+            doNothing().when(spyOrchestrator).handleInitialSendFailure(any(), any());
 
             // Act
-            orchestratorService.scheduleInitialEmailNotification(command);
+            spyOrchestrator.scheduleInitialEmailNotification(testUser, TEST_LOCALE_TAG);
 
             // Assert
-            verify(mockKafkaTemplate).send(TEST_TOPIC, command.getRecipientEmail(), command);
-            // Проверяем, что был вызван метод сохранения в fallback через self-прокси
-            verify(mockSelf).persistNewUndeliveredCommand(eq(command), eq(kafkaException.getMessage()));
+            verify(spyOrchestrator).handleInitialSendFailure(any(EmailTriggerCommand.class), eq(syncKafkaException));
+        }
+
+        @Test
+        @DisplayName("Асинхронная ошибка Kafka -> должен вызвать handleInitialSendFailure")
+        void whenKafkaSendFailsAsync_shouldCallHandleFailure() {
+            // Arrange
+            RuntimeException asyncKafkaException = new RuntimeException("Async Kafka send failed");
+            CompletableFuture<SendResult<String, EmailTriggerCommand>> failedFuture =
+                    CompletableFuture.failedFuture(asyncKafkaException);
+            when(mockKafkaTemplate.send(anyString(), anyString(), any(EmailTriggerCommand.class)))
+                    .thenReturn(failedFuture);
+
+            EmailNotificationOrchestratorService spyOrchestrator = spy(orchestratorService);
+            doNothing().when(spyOrchestrator).handleInitialSendFailure(any(), any());
+
+            // Act
+            spyOrchestrator.scheduleInitialEmailNotification(testUser, TEST_LOCALE_TAG);
+
+            // Assert
+            verify(spyOrchestrator).handleInitialSendFailure(any(EmailTriggerCommand.class), eq(asyncKafkaException));
+        }
+    }
+
+    @Nested
+    @DisplayName("handleInitialSendFailure Tests")
+    class HandleInitialSendFailureTests {
+
+        @Test
+        @DisplayName("Сбой Kafka, Успешное сохранение в fallback -> должен вызвать persist")
+        void whenKafkaFailsAndFallbackSucceeds_shouldCallPersist() throws Exception {
+            // Arrange
+            EmailTriggerCommand command = orchestratorService.createEmailTriggerCommand(testUser, TEST_LOCALE_TAG);
+            RuntimeException deliveryException = new RuntimeException("Delivery failed");
+            doNothing().when(mockSelf).persistNewUndeliveredWelcomeEmail(any(), any());
+
+            // Act
+            orchestratorService.handleInitialSendFailure(command, deliveryException);
+
+            // Assert
+            verify(mockSelf).persistNewUndeliveredWelcomeEmail(command, deliveryException.getMessage());
             verify(mockCriticalDeliveryFailureCounter, never()).increment();
         }
+    }
 
-        @Nested
-        @DisplayName("persistNewUndeliveredCommand Tests")
-        class PersistNewUndeliveredCommandTests {
+    @Nested
+    @DisplayName("persistNewUndeliveredWelcomeEmail Tests")
+    class PersistNewUndeliveredWelcomeEmailTests {
 
-            @Test
-            @DisplayName("Корректный маппинг и сохранение в UndeliveredWelcomeEmail")
-            void shouldCorrectlyMapAndSaveToUndeliveredWelcomeEmail() {
-                // Arrange
-                // Создаем тестовую команду, как и раньше
-                EmailTriggerCommand command = createTestCommand();
-                // Для этого теста userId должен быть Long, как в сущности
-                command.setUserId(TEST_USER_ID); // Убедимся, что ID в команде корректен
-                command.setCorrelationId("test-trace-id-123"); // Устанавливаем traceId
+        @Test
+        @DisplayName("Корректный маппинг и сохранение")
+        void shouldCorrectlyMapAndSaveUndeliveredWelcomeEmail() {
+            // Arrange
+            EmailTriggerCommand command = orchestratorService.createEmailTriggerCommand(testUser, TEST_LOCALE_TAG);
+            String deliveryErrorMessage = "Kafka is on fire";
 
-                String deliveryErrorMessage = "Kafka is on fire";
+            when(mockUndeliveredWelcomeEmailRepository.save(any(UndeliveredWelcomeEmail.class)))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
 
-                // Мокируем репозиторий для новой сущности
-                when(mockUndeliveredCommandRepository.save(any(UndeliveredWelcomeEmail.class)))
-                        .thenAnswer(invocation -> invocation.getArgument(0)); // Возвращаем то, что пришло на вход
+            // Act
+            orchestratorService.persistNewUndeliveredWelcomeEmail(command, deliveryErrorMessage);
 
-                // Act
-                // Вызываем тестируемый метод
-                orchestratorService.persistNewUndeliveredCommand(command, deliveryErrorMessage);
+            // Assert
+            verify(mockUndeliveredWelcomeEmailRepository).save(undeliveredWelcomeEmailCaptor.capture());
+            UndeliveredWelcomeEmail savedEntity = undeliveredWelcomeEmailCaptor.getValue();
 
-                // Assert
-                // Захватываем аргумент, переданный в метод save()
-                verify(mockUndeliveredCommandRepository).save(undeliveredWelcomeEmailCaptor.capture());
-                UndeliveredWelcomeEmail savedEntity = undeliveredWelcomeEmailCaptor.getValue();
+            assertThat(savedEntity.getUserId()).isEqualTo(testUser.getId());
+            assertThat(savedEntity.getRecipientEmail()).isEqualTo(testUser.getEmail());
+            assertThat(savedEntity.getLocale()).isEqualTo(TEST_LOCALE_TAG);
+            assertThat(savedEntity.getLastAttemptTraceId()).isEqualTo(command.getCorrelationId());
+            assertThat(savedEntity.getDeliveryErrorMessage()).isEqualTo(deliveryErrorMessage);
 
-                // Проверяем, что все поля смаппились правильно
-                assertThat(savedEntity.getUserId()).isEqualTo(TEST_USER_ID); // Проверяем PK
-                assertThat(savedEntity.getRecipientEmail()).isEqualTo(command.getRecipientEmail());
-                assertThat(savedEntity.getLocale()).isEqualTo(command.getLocale());
-                assertThat(savedEntity.getLastAttemptTraceId()).isEqualTo(command.getCorrelationId());
-                assertThat(savedEntity.getDeliveryErrorMessage()).isEqualTo(deliveryErrorMessage);
-
-                // Проверяем временные метки, которые устанавливаются вручную из mockClock
-                Instant expectedTimestamp = FIXED_NOW.truncatedTo(ChronoUnit.MICROS);
-                assertThat(savedEntity.getInitialAttemptAt()).isEqualTo(expectedTimestamp);
-                assertThat(savedEntity.getLastAttemptAt()).isEqualTo(expectedTimestamp);
-
-                // Проверяем поля со значениями по умолчанию
-                assertThat(savedEntity.getRetryCount()).isZero();
-            }
-
-            @Test
-            @DisplayName("Null command -> NullPointerException")
-            void whenCommandIsNull_shouldThrowNPE() {
-                assertThatNullPointerException().isThrownBy(() ->
-                        orchestratorService.persistNewUndeliveredCommand(null, "error"));
-            }
-            // ... другие тесты на null для topic, deliveryErrorMessage
+            Instant expectedTimestamp = FIXED_NOW.truncatedTo(ChronoUnit.MICROS);
+            assertThat(savedEntity.getInitialAttemptAt()).isEqualTo(expectedTimestamp);
+            assertThat(savedEntity.getLastAttemptAt()).isEqualTo(expectedTimestamp);
+            assertThat(savedEntity.getRetryCount()).isZero();
         }
 
+        @Test
+        @DisplayName("Null command -> должен выбросить NullPointerException")
+        void whenCommandIsNull_shouldThrowNPE() {
+            assertThatNullPointerException().isThrownBy(() ->
+                    orchestratorService.persistNewUndeliveredWelcomeEmail(null, "error"));
+        }
+    }
 
-        @Nested
-        @DisplayName("ensureCorrelationIdIsSet Tests")
-        class EnsureCorrelationIdIsSetTests {
+    @Nested
+    @DisplayName("createEmailTriggerCommand / generateCorrelationId Tests")
+    class CreateCommandTests {
+        @Test
+        @DisplayName("Создание команды -> должен установить все поля корректно")
+        void createEmailTriggerCommand_shouldSetAllFieldsCorrectly() {
+            // Act
+            EmailTriggerCommand command = orchestratorService.createEmailTriggerCommand(testUser, TEST_LOCALE_TAG);
 
-            @Test
-            @DisplayName("CorrelationId уже установлен в команде -> не должен меняться")
-            void whenCorrelationIdIsAlreadySet_shouldNotChangeIt() {
-                EmailTriggerCommand command = new EmailTriggerCommand();
-                String existingCorrelationId = "existing-corr-id";
-                command.setCorrelationId(existingCorrelationId);
+            // Assert
+            assertThat(command.getRecipientEmail()).isEqualTo(TEST_EMAIL);
+            assertThat(command.getTemplateId()).isEqualTo("USER_WELCOME");
+            assertThat(command.getUserId()).isEqualTo(TEST_USER_ID);
+            assertThat(command.getLocale()).isEqualTo(TEST_LOCALE_TAG);
+            assertThat(command.getTemplateContext()).containsEntry("userEmail", TEST_EMAIL);
 
-                orchestratorService.ensureCorrelationIdIsSet(command);
-
-                assertThat(command.getCorrelationId()).isEqualTo(existingCorrelationId);
-            }
-
-            @Test
-            @DisplayName("CorrelationId null -> должен сгенерировать UUID (ветка с OTel TraceId не тестируется изолированно)")
-            void whenCorrelationIdIsNull_shouldGenerateUuid() {
-                // Этот тест проверяет ветку, когда OTel TraceId НЕ доступен
-                // (мы не можем надежно замокать Span.current() в юнит-тесте без mockito-inline)
-                EmailTriggerCommand command = new EmailTriggerCommand();
-                command.setCorrelationId(null);
-
-                // Act
-                orchestratorService.ensureCorrelationIdIsSet(command);
-
-                // Assert
-                assertThat(command.getCorrelationId()).isNotNull().isNotBlank();
-                // Проверяем, что это UUID-подобная строка
-                assertThatCode(() -> UUID.fromString(command.getCorrelationId())).doesNotThrowAnyException();
-            }
-
-            @ParameterizedTest
-            @ValueSource(strings = {"", " "})
-            @DisplayName("CorrelationId пустой или blank -> должен сгенерировать UUID")
-            void whenCorrelationIdIsBlank_shouldGenerateUuid(String blankCorrelationId) {
-                EmailTriggerCommand command = new EmailTriggerCommand();
-                command.setCorrelationId(blankCorrelationId);
-
-                orchestratorService.ensureCorrelationIdIsSet(command);
-
-                assertThat(command.getCorrelationId()).isNotNull().isNotBlank();
-                assertThatCode(() -> UUID.fromString(command.getCorrelationId())).doesNotThrowAnyException();
-            }
-
-            @Test
-            @DisplayName("Передача null команды -> должен выбросить NullPointerException")
-            void whenCommandIsNull_shouldThrowNPE() {
-                assertThatNullPointerException()
-                        .isThrownBy(() -> orchestratorService.ensureCorrelationIdIsSet(null));
-            }
+            // Проверяем, что generateCorrelationId сработал
+            assertThat(command.getCorrelationId()).isNotNull();
+            assertThatCode(() -> UUID.fromString(command.getCorrelationId())).doesNotThrowAnyException();
         }
     }
 }

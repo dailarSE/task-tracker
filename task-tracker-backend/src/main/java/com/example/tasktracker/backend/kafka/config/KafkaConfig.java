@@ -73,19 +73,19 @@ public class KafkaConfig {
     public KafkaAdmin kafkaAdmin(KafkaProperties kafkaProperties) {
         Map<String, Object> adminClientProps = kafkaProperties.buildAdminProperties(null);
 
-        adminClientProps.putIfAbsent(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, Integer.toString(this.kafkaAdminRequestTimeoutMs));
-        adminClientProps.putIfAbsent(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, Integer.toString(this.kafkaAdminDefaultApiTimeoutMs));
+        adminClientProps.putIfAbsent(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, Integer.toString(kafkaAdminRequestTimeoutMs));
+        adminClientProps.putIfAbsent(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, Integer.toString(kafkaAdminDefaultApiTimeoutMs));
 
         KafkaAdmin kafkaAdmin = new KafkaAdmin(adminClientProps);
         kafkaAdmin.setAutoCreate(false);
         kafkaAdmin.setFatalIfBrokerNotAvailable(true);
-        kafkaAdmin.setOperationTimeout(this.kafkaAdminOperationTimeoutSeconds);
+        kafkaAdmin.setOperationTimeout(kafkaAdminOperationTimeoutSeconds);
 
-        log.info("Configured KafkaAdmin with autoCreate=false, fatalIfBrokerNotAvailable=true, operationTimeout={}s. " +
+        log.debug("Configured KafkaAdmin with autoCreate=false, fatalIfBrokerNotAvailable=true, operationTimeout={}s. " +
                         "RequestTimeoutMs: {}ms, DefaultApiTimeoutMs: {}ms. Bootstrap servers: {}",
-                this.kafkaAdminOperationTimeoutSeconds,
-                this.kafkaAdminRequestTimeoutMs,
-                this.kafkaAdminDefaultApiTimeoutMs,
+                kafkaAdminOperationTimeoutSeconds,
+                kafkaAdminRequestTimeoutMs,
+                kafkaAdminDefaultApiTimeoutMs,
                 kafkaProperties.getBootstrapServers());
 
         return kafkaAdmin;

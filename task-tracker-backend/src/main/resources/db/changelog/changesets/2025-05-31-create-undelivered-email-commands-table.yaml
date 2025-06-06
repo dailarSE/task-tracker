@@ -25,7 +25,7 @@ databaseChangeLog:
                   constraints:
                     nullable: false
                   name: locale
-                  type: VARCHAR(255)
+                  type: VARCHAR(50)
               - column:
                   name: last_attempt_trace_id
                   type: VARCHAR(255)

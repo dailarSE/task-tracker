@@ -23,12 +23,6 @@ import java.util.Map;
  * приложения.
  * </p>
  * <p>
- * {@code KafkaTopicVerifier} инжектирует {@link KafkaAdmin} и список всех бинов
- * {@link NewTopic}, объявленных в контексте Spring. Он использует имена топиков
- * из этих {@code NewTopic} бинов для запроса их описаний у Kafka-кластера
- * через {@code KafkaAdmin.describeTopics()}.
- * </p>
- * <p>
  * Если какой-либо из ожидаемых топиков не найден в Kafka, или если происходит
  * ошибка при взаимодействии с Kafka (например, брокер недоступен),
  * верификатор логирует критическую ошибку и выбрасывает {@link IllegalStateException}.
@@ -55,6 +49,7 @@ public class KafkaTopicVerifier implements SmartInitializingSingleton {
 
     @NonNull
     private final KafkaAdmin kafkaAdmin;
+    @NonNull
     private final List<NewTopic> declaredTopics;
 
     /**
@@ -67,7 +62,7 @@ public class KafkaTopicVerifier implements SmartInitializingSingleton {
     @Override
     public void afterSingletonsInstantiated() {
         if (this.declaredTopics.isEmpty()) {
-            log.info("No NewTopic beans declared in the application context. Skipping Kafka topic verification.");
+            log.debug("No NewTopic beans declared in the application context. Skipping Kafka topic verification.");
             return;
         }
 
@@ -85,7 +80,7 @@ public class KafkaTopicVerifier implements SmartInitializingSingleton {
 
         String[] expectedTopicNamesArray = expectedTopicNamesList.toArray(new String[0]);
 
-        log.info("Verifying existence of {} declared Kafka topic(s): [{}] during application initialization...",
+        log.debug("Verifying existence of {} declared Kafka topic(s): [{}] during application initialization...",
                 expectedTopicNamesArray.length, String.join(", ", expectedTopicNamesArray));
 
         try {
@@ -100,7 +95,7 @@ public class KafkaTopicVerifier implements SmartInitializingSingleton {
                     log.error(errorMessage);
                     throw new IllegalStateException(errorMessage);
                 }
-                log.info("Successfully verified existence of Kafka topic: {}", expectedTopicName);
+                log.debug("Successfully verified existence of Kafka topic: {}", expectedTopicName);
             }
             log.info("All {} declared Kafka topics successfully verified by name: [{}].",
                     expectedTopicNamesArray.length, String.join(", ", expectedTopicNamesArray));

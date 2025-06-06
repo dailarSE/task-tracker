@@ -17,6 +17,7 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 @ToString // Для удобства логирования
+@EqualsAndHashCode(of = {"recipientEmail", "templateId", "templateContext", "locale", "userId"})
 public class EmailTriggerCommand {
 
     /**

@@ -30,7 +30,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Locale;
 import java.util.Map;
 
-/** Сервис для операций регистрации и аутентификации пользователей. */
+/**
+ * Сервис для операций регистрации и аутентификации пользователей.
+ */
 @Service
 @Slf4j
 public class AuthService {
@@ -52,7 +54,7 @@ public class AuthService {
      * </p>
      *
      * @param userRepository        Репозиторий пользователей.
-     * @param notificationService  Сервис для отправки сообщений в Kafka.
+     * @param notificationService   Сервис для отправки сообщений в Kafka.
      * @param passwordEncoder       Кодировщик паролей.
      * @param authenticationManager Менеджер аутентификации Spring Security.
      * @param jwtIssuer             Сервис для генерации JWT.
@@ -173,7 +175,7 @@ public class AuthService {
                 "USER_WELCOME",
                 Map.of("userEmail", newUser.getEmail()),
                 localeTag,
-                String.valueOf(newUser.getId()), // userId
+                newUser.getId(),
                 null // correlationId будет установлен в kafka service
         );
     }

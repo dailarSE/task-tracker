@@ -1,11 +1,10 @@
 package com.example.tasktracker.backend.kafka.service;
 
 import com.example.tasktracker.backend.config.AppConfig;
-import com.example.tasktracker.backend.kafka.domain.entity.UndeliveredEmailCommand;
-import com.example.tasktracker.backend.kafka.domain.repository.UndeliveredEmailCommandRepository;
+import com.example.tasktracker.backend.kafka.domain.entity.UndeliveredWelcomeEmail;
+import com.example.tasktracker.backend.kafka.domain.repository.UndeliveredWelcomeEmailRepository;
 import com.example.tasktracker.backend.user.messaging.dto.EmailTriggerCommand;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,9 +46,7 @@ class EmailNotificationOrchestratorServiceTest {
     @Mock
     private KafkaTemplate<String, EmailTriggerCommand> mockKafkaTemplate;
     @Mock
-    private UndeliveredEmailCommandRepository mockUndeliveredCommandRepository;
-    @Mock
-    private ObjectMapper mockObjectMapper;
+    private UndeliveredWelcomeEmailRepository mockUndeliveredCommandRepository;
     @Mock
     private Clock mockClock;
     @Mock
@@ -69,11 +66,11 @@ class EmailNotificationOrchestratorServiceTest {
     private EmailNotificationOrchestratorService orchestratorService;
 
     @Captor
-    private ArgumentCaptor<UndeliveredEmailCommand> undeliveredCommandCaptor;
+    private ArgumentCaptor<UndeliveredWelcomeEmail> undeliveredWelcomeEmailCaptor;
 
 
     private static final String TEST_EMAIL = "test@example.com";
-    private static final String TEST_USER_ID = "user-123";
+    private static final Long TEST_USER_ID = 123L;
     private static final String TEST_TEMPLATE_ID = "USER_WELCOME";
     private static final String TEST_LOCALE = "en-US";
     private static final String TEST_CORRELATION_ID = UUID.randomUUID().toString();
@@ -98,7 +95,6 @@ class EmailNotificationOrchestratorServiceTest {
         orchestratorService = new EmailNotificationOrchestratorService(
                 mockKafkaTemplate,
                 mockUndeliveredCommandRepository,
-                mockObjectMapper,
                 mockClock,
                 mockKafkaAsyncOperationsExecutor, // Передаем мок executor'а
                 TEST_TOPIC,
@@ -160,7 +156,6 @@ class EmailNotificationOrchestratorServiceTest {
             // Это важно, так как мы тестируем логику scheduleInitialEmailNotification, а не самого persist
             doNothing().when(mockSelf).persistNewUndeliveredCommand(
                     any(EmailTriggerCommand.class),
-                    anyString(),
                     anyString()
             );
 
@@ -170,7 +165,7 @@ class EmailNotificationOrchestratorServiceTest {
             // Assert
             verify(mockKafkaTemplate).send(TEST_TOPIC, command.getRecipientEmail(), command);
             // Проверяем, что был вызван метод сохранения в fallback через self-прокси
-            verify(mockSelf).persistNewUndeliveredCommand(eq(command), eq(TEST_TOPIC), eq(kafkaException.getMessage()));
+            verify(mockSelf).persistNewUndeliveredCommand(eq(command), eq(kafkaException.getMessage()));
             verify(mockCriticalDeliveryFailureCounter, never()).increment();
         }
 
@@ -179,46 +174,51 @@ class EmailNotificationOrchestratorServiceTest {
         class PersistNewUndeliveredCommandTests {
 
             @Test
-            @DisplayName("Корректный маппинг и сохранение")
-            void shouldCorrectlyMapAndSaveUndeliveredCommand() throws JsonProcessingException {
+            @DisplayName("Корректный маппинг и сохранение в UndeliveredWelcomeEmail")
+            void shouldCorrectlyMapAndSaveToUndeliveredWelcomeEmail() {
                 // Arrange
+                // Создаем тестовую команду, как и раньше
                 EmailTriggerCommand command = createTestCommand();
-                String deliveryErrorMessage = "Kafka timeout";
-                String MOCKED_JSON_CONTEXT = "{\"userEmail\":\"test@example.com\"}";
+                // Для этого теста userId должен быть Long, как в сущности
+                command.setUserId(TEST_USER_ID); // Убедимся, что ID в команде корректен
+                command.setCorrelationId("test-trace-id-123"); // Устанавливаем traceId
 
-                when(mockObjectMapper.writeValueAsString(command.getTemplateContext())).thenReturn(MOCKED_JSON_CONTEXT);
-                when(mockUndeliveredCommandRepository.save(any(UndeliveredEmailCommand.class)))
-                        .thenAnswer(invocation -> invocation.getArgument(0)); // Возвращаем сохраненную сущность
+                String deliveryErrorMessage = "Kafka is on fire";
+
+                // Мокируем репозиторий для новой сущности
+                when(mockUndeliveredCommandRepository.save(any(UndeliveredWelcomeEmail.class)))
+                        .thenAnswer(invocation -> invocation.getArgument(0)); // Возвращаем то, что пришло на вход
 
                 // Act
-                // Вызываем напрямую (не через self) для юнит-тестирования логики маппинга.
-                // Транзакционность здесь не тестируется.
-                orchestratorService.persistNewUndeliveredCommand(command, TEST_TOPIC, deliveryErrorMessage);
+                // Вызываем тестируемый метод
+                orchestratorService.persistNewUndeliveredCommand(command, deliveryErrorMessage);
 
                 // Assert
-                verify(mockObjectMapper).writeValueAsString(command.getTemplateContext());
-                verify(mockUndeliveredCommandRepository).save(undeliveredCommandCaptor.capture());
+                // Захватываем аргумент, переданный в метод save()
+                verify(mockUndeliveredCommandRepository).save(undeliveredWelcomeEmailCaptor.capture());
+                UndeliveredWelcomeEmail savedEntity = undeliveredWelcomeEmailCaptor.getValue();
 
-                UndeliveredEmailCommand savedEntity = undeliveredCommandCaptor.getValue();
+                // Проверяем, что все поля смаппились правильно
+                assertThat(savedEntity.getUserId()).isEqualTo(TEST_USER_ID); // Проверяем PK
                 assertThat(savedEntity.getRecipientEmail()).isEqualTo(command.getRecipientEmail());
-                assertThat(savedEntity.getTemplateId()).isEqualTo(command.getTemplateId());
-                assertThat(savedEntity.getTemplateContextJson()).isEqualTo(MOCKED_JSON_CONTEXT);
                 assertThat(savedEntity.getLocale()).isEqualTo(command.getLocale());
-                assertThat(savedEntity.getUserId()).isEqualTo(command.getUserId());
-                assertThat(savedEntity.getCorrelationId()).isEqualTo(command.getCorrelationId());
-                assertThat(savedEntity.getKafkaTopic()).isEqualTo(TEST_TOPIC);
-                assertThat(savedEntity.getLastAttemptAt()).isEqualTo(FIXED_NOW.truncatedTo(ChronoUnit.MICROS));
+                assertThat(savedEntity.getLastAttemptTraceId()).isEqualTo(command.getCorrelationId());
+                assertThat(savedEntity.getDeliveryErrorMessage()).isEqualTo(deliveryErrorMessage);
+
+                // Проверяем временные метки, которые устанавливаются вручную из mockClock
+                Instant expectedTimestamp = FIXED_NOW.truncatedTo(ChronoUnit.MICROS);
+                assertThat(savedEntity.getInitialAttemptAt()).isEqualTo(expectedTimestamp);
+                assertThat(savedEntity.getLastAttemptAt()).isEqualTo(expectedTimestamp);
+
+                // Проверяем поля со значениями по умолчанию
                 assertThat(savedEntity.getRetryCount()).isZero();
-                assertThat(savedEntity.getLastErrorMessage()).isEqualTo(deliveryErrorMessage);
-                // initialAttemptAt будет null, так как JPA Auditing не работает с моками без контекста Spring.
-                // Это нормально для такого юнит-теста.
             }
 
             @Test
             @DisplayName("Null command -> NullPointerException")
             void whenCommandIsNull_shouldThrowNPE() {
                 assertThatNullPointerException().isThrownBy(() ->
-                        orchestratorService.persistNewUndeliveredCommand(null, "topic", "error"));
+                        orchestratorService.persistNewUndeliveredCommand(null, "error"));
             }
             // ... другие тесты на null для topic, deliveryErrorMessage
         }

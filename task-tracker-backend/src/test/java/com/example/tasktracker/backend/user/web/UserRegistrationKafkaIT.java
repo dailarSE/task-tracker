@@ -1,7 +1,7 @@
 package com.example.tasktracker.backend.user.web;
 
-import com.example.tasktracker.backend.kafka.domain.entity.UndeliveredEmailCommand;
-import com.example.tasktracker.backend.kafka.domain.repository.UndeliveredEmailCommandRepository;
+import com.example.tasktracker.backend.kafka.domain.entity.UndeliveredWelcomeEmail;
+import com.example.tasktracker.backend.kafka.domain.repository.UndeliveredWelcomeEmailRepository;
 import com.example.tasktracker.backend.security.dto.AuthResponse;
 import com.example.tasktracker.backend.security.dto.RegisterRequest;
 import com.example.tasktracker.backend.user.entity.User;
@@ -60,7 +60,7 @@ import static org.awaitility.Awaitility.await;
 @ActiveProfiles("ci")
 @Slf4j
 class UserRegistrationKafkaIT {
-    private static final String TEST_TOPIC_NAME = "EMAIL_SENDING_TASKS"; // Будет создан через KAFKA_CREATE_TOPICS_EXTRA
+    private static final String TEST_TOPIC_NAME = "task_tracker.notifications.email_commands"; // Будет создан через KAFKA_CREATE_TOPICS_EXTRA
     private static String KAFKA_BOOTSTRAP_SERVERS_FOR_APP_VIA_TOXIPROXY; // ToxiProxy's host:mapped_port
     private static final String KAFKA_INTERNAL_NETWORK_ALIAS = "kafka";
     private static final int TOXIPROXY_INTERNAL_KAFKA_LISTEN_PORT = 8666;
@@ -137,7 +137,7 @@ class UserRegistrationKafkaIT {
     @Autowired
     private UserRepository userRepository;
     @Autowired
-    private UndeliveredEmailCommandRepository undeliveredRepository;
+    private UndeliveredWelcomeEmailRepository undeliveredRepository;
 
     private String registerUserApiUrl;
     private KafkaConsumer<String, EmailTriggerCommand> testKafkaConsumer;
@@ -316,7 +316,7 @@ class UserRegistrationKafkaIT {
                     EmailTriggerCommand command = record.value();
                     assertThat(command.getRecipientEmail()).isEqualTo(request.getEmail());
                     assertThat(command.getTemplateId()).isEqualTo("USER_WELCOME");
-                    assertThat(command.getUserId()).isEqualTo(String.valueOf(createdUser.getId()));
+                    assertThat(command.getUserId()).isEqualTo(createdUser.getId());
                     assertThat(command.getCorrelationId()).isNotNull();
                 });
     }
@@ -381,42 +381,41 @@ class UserRegistrationKafkaIT {
                 .pollDelay(Duration.ofMillis(2200))
                 .pollInterval(Duration.ofMillis(200))
                 .atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
-                    List<UndeliveredEmailCommand> fallbackCommands = undeliveredRepository.findAll();
+                    List<UndeliveredWelcomeEmail> fallbackCommands = undeliveredRepository.findAll();
                     assertThat(fallbackCommands).hasSize(1);
-                    UndeliveredEmailCommand fallbackCommand = fallbackCommands.getFirst();
+                    UndeliveredWelcomeEmail fallbackCommand = fallbackCommands.getFirst();
+
+                    // Проверяем поля в соответствии с новой сущностью UndeliveredWelcomeEmail
+                    assertThat(fallbackCommand.getUserId())
+                            .as("User ID in fallback (Primary Key)")
+                            .isEqualTo(createdUserId);
 
                     assertThat(fallbackCommand.getRecipientEmail())
                             .as("Recipient Email in fallback")
                             .isEqualTo(request.getEmail());
-                    assertThat(fallbackCommand.getUserId())
-                            .as("User ID in fallback")
-                            .isEqualTo(String.valueOf(createdUserId));
-                    assertThat(fallbackCommand.getTemplateId())
-                            .as("Template ID in fallback")
-                            .isEqualTo("USER_WELCOME");
-                    assertThat(fallbackCommand.getTemplateContextJson())
-                            .as("Template Context JSON in fallback")
-                            .contains("\"userEmail\":\"" + request.getEmail() + "\"");
+
                     assertThat(fallbackCommand.getLocale())
                             .as("Locale in fallback")
-                            .isNotNull();
-                    assertThat(fallbackCommand.getCorrelationId())
-                            .as("Correlation ID in fallback")
-                            .isNotNull().isNotBlank();
-                    assertThat(fallbackCommand.getKafkaTopic())
-                            .as("Kafka Topic in fallback")
-                            .isEqualTo(TEST_TOPIC_NAME);
+                            .isNotNull(); // Проверяем, что локаль была захвачена и сохранена
+
+                    assertThat(fallbackCommand.getLastAttemptTraceId())
+                            .as("Last Attempt Trace ID in fallback")
+                            .isNotNull().isNotBlank(); // Проверяем новое имя поля
+
                     assertThat(fallbackCommand.getInitialAttemptAt())
                             .as("Initial Attempt At in fallback")
                             .isNotNull();
+
                     assertThat(fallbackCommand.getLastAttemptAt())
                             .as("Last Attempt At in fallback")
                             .isNotNull();
+
                     assertThat(fallbackCommand.getRetryCount())
                             .as("Retry Count in fallback")
                             .isZero();
-                    assertThat(fallbackCommand.getLastErrorMessage())
-                            .as("Last Error Message in fallback")
+
+                    assertThat(fallbackCommand.getDeliveryErrorMessage())
+                            .as("Delivery Error Message in fallback")
                             .isNotNull().isNotBlank();
                 });
     }

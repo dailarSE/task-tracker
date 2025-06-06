@@ -4,6 +4,7 @@ import com.example.tasktracker.backend.common.MdcKeys;
 import com.example.tasktracker.backend.config.AppConfig;
 import com.example.tasktracker.backend.kafka.domain.entity.UndeliveredWelcomeEmail;
 import com.example.tasktracker.backend.kafka.domain.repository.UndeliveredWelcomeEmailRepository;
+import com.example.tasktracker.backend.user.entity.User;
 import com.example.tasktracker.backend.user.messaging.dto.EmailTriggerCommand;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -24,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -37,25 +39,27 @@ import java.util.concurrent.Executor;
 @Slf4j
 public class EmailNotificationOrchestratorService {
     private final KafkaTemplate<String, EmailTriggerCommand> kafkaTemplate;
-    private final UndeliveredWelcomeEmailRepository undeliveredCommandRepository;
+    private final UndeliveredWelcomeEmailRepository undeliveredWelcomeEmailRepository;
     private final Clock clock;
     private final Executor kafkaAsyncOperationsExecutor;
     private final EmailNotificationOrchestratorService self;
     private final Counter criticalDeliveryFailureCounter;
 
-
+    /**
+     * Имя Kafka-топика для отправки команд на генерацию email.
+     */
     public final String emailCommandsTopicName;
 
     public EmailNotificationOrchestratorService(
             KafkaTemplate<String, EmailTriggerCommand> kafkaTemplate,
-            UndeliveredWelcomeEmailRepository undeliveredCommandRepository,
+            UndeliveredWelcomeEmailRepository undeliveredWelcomeEmailRepository,
             Clock clock,
             @Qualifier(AppConfig.KAFKA_ASYNC_OPERATIONS_EXECUTOR) Executor kafkaAsyncOperationsExecutor,
             @Value("${app.kafka.topic.email-commands.name}") String emailCommandsTopicName,
             MeterRegistry meterRegistry,
             @Lazy EmailNotificationOrchestratorService self) {
         this.kafkaTemplate = kafkaTemplate;
-        this.undeliveredCommandRepository = undeliveredCommandRepository;
+        this.undeliveredWelcomeEmailRepository = undeliveredWelcomeEmailRepository;
         this.clock = clock;
         this.kafkaAsyncOperationsExecutor = kafkaAsyncOperationsExecutor;
         this.self = self;
@@ -70,17 +74,25 @@ public class EmailNotificationOrchestratorService {
     }
 
     /**
-     * Асинхронно инициирует отправку команды на email-уведомление в Kafka.
-     * Выполняется в потоке из пула {@link AppConfig#KAFKA_ASYNC_OPERATIONS_EXECUTOR}.
-     * Обрабатывает результат отправки асинхронно, сохраняя команду в fallback-таблицу при неудаче.
+     * Асинхронно инициирует отправку приветственного email-уведомления для нового пользователя.
+     * <p>
+     * Метод создает {@link EmailTriggerCommand}, устанавливает для него ID корреляции
+     * и запускает асинхронную отправку в Kafka. Выполняется в потоке из пула
+     * {@link AppConfig#KAFKA_ASYNC_OPERATIONS_EXECUTOR}.
+     * </p>
+     * <p>
+     * Результат отправки обрабатывается в асинхронном коллбэке, который в случае
+     * сбоя сохраняет команду в fallback-таблицу.
+     * </p>
      *
-     * @param command DTO {@link EmailTriggerCommand} с данными для отправки.
+     * @param userToNotify          Сущность {@link User}, для которой отправляется уведомление.
+     * @param notificationLocaleTag Языковой тег локали (например, "en-US") для письма.
      */
     @Async(AppConfig.KAFKA_ASYNC_OPERATIONS_EXECUTOR)
-    public void scheduleInitialEmailNotification(@NonNull EmailTriggerCommand command) {
+    public void scheduleInitialEmailNotification(@NonNull User userToNotify, String notificationLocaleTag) {
         final String userIdFromMdc = MDC.get(MdcKeys.USER_ID);
-        ensureCorrelationIdIsSet(command);
 
+        EmailTriggerCommand command = createEmailTriggerCommand(userToNotify, notificationLocaleTag);
         String key = command.getRecipientEmail();
         String correlationId = command.getCorrelationId();
 
@@ -96,7 +108,7 @@ public class EmailNotificationOrchestratorService {
                             if (exception != null) {
                                 log.error("Failed to send EmailTriggerCommand to Kafka. CorrelationId: {}, Topic: {}, Recipient: {}, Cause: {}",
                                         correlationId, emailCommandsTopicName, command.getRecipientEmail(), exception.getMessage(), exception);
-                                handleInitialSendFailure(command, correlationId, exception);
+                                handleInitialSendFailure(command, exception);
                             } else {
                                 log.info("Successfully sent EmailTriggerCommand to Kafka. CorrelationId: {}, Topic: {}, Partition: {}, Offset: {}, Recipient: {}",
                                         correlationId,
@@ -110,43 +122,61 @@ public class EmailNotificationOrchestratorService {
                     kafkaAsyncOperationsExecutor
             );
         } catch (Exception sendException) {
-            handleInitialSendFailure(command, correlationId, sendException);
+            handleInitialSendFailure(command, sendException);
         }
     }
 
     /**
-     * Метод для обработки неуспешной ПЕРВИЧНОЙ отправки команды в Kafka.
-     * Логирует ошибку и пытается сохранить команду в fallback-таблицу.
-     * Вызывается как при синхронных, так и при асинхронных ошибках отправки.
-     * Ожидается, что MDC (userId, correlationId) уже установлен вызывающим кодом.
+     * Обрабатывает сбой первоначальной отправки команды в Kafka.
+     * Логирует ошибку и инициирует сохранение команды в fallback-таблицу.
+     *
+     * @param command           Неотправленная команда.
+     * @param deliveryException Исключение, вызвавшее сбой доставки.
      */
     void handleInitialSendFailure(@NonNull EmailTriggerCommand command,
-                                  @NonNull String correlationId,
                                   @NonNull Throwable deliveryException) {
         log.error("Failed to send EmailTriggerCommand to Kafka. CorrelationId: {}, Recipient: {}, Cause: {}",
-                correlationId, command.getRecipientEmail(), deliveryException.getMessage(), deliveryException);
+                command.getCorrelationId(), command.getRecipientEmail(), deliveryException.getMessage(), deliveryException);
         try {
-            self.persistNewUndeliveredCommand(command, deliveryException.getMessage());
-            log.info("Successfully saved undelivered EmailTriggerCommand to fallback table. CorrelationId: {}", correlationId);
+            self.persistNewUndeliveredWelcomeEmail(command, deliveryException.getMessage());
+            log.info("Successfully saved undelivered EmailTriggerCommand to fallback table. CorrelationId: {}", command.getCorrelationId());
         } catch (Exception saveEx) {
             log.error("CRITICAL FAILURE: Failed to send EmailTriggerCommand to Kafka AND failed to save it to fallback table. " +
                             "CorrelationId: {}, Recipient: {}. Kafka Error: {}. DB Save Error: {}",
-                    correlationId, command.getRecipientEmail(),
+                    command.getCorrelationId(), command.getRecipientEmail(),
                     deliveryException.getMessage(), saveEx.getMessage(), saveEx);
             criticalDeliveryFailureCounter.increment();
         }
     }
 
     /**
-     * Сохраняет информацию о первоначально неотправленной команде в таблицу {@code undelivered_email_commands}.
-     * Выполняется в НОВОЙ ТРАНЗАКЦИИ.
+     * Создает DTO {@link EmailTriggerCommand} для приветственного email-уведомления.
      *
-     * @param originalCommand      Исходная команда {@link EmailTriggerCommand}.
-     * @param deliveryErrorMessage Сообщение об ошибке от Kafka или механизма отправки.
+     * @param newUser   Сущность пользователя.
+     * @param localeTag Языковой тег для локализации письма.
+     * @return Сконфигурированный объект {@link EmailTriggerCommand}.
+     */
+    EmailTriggerCommand createEmailTriggerCommand(@NonNull User newUser, String localeTag) {
+        return new EmailTriggerCommand(
+                newUser.getEmail(),
+                "USER_WELCOME",
+                Map.of("userEmail", newUser.getEmail()),
+                localeTag,
+                newUser.getId(),
+                generateCorrelationId()
+        );
+    }
+
+    /**
+     * Сохраняет информацию о неотправленном приветственном письме в БД.
+     * Выполняется в новой, независимой транзакции.
+     *
+     * @param originalCommand      Исходная команда.
+     * @param deliveryErrorMessage Сообщение об ошибке доставки.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    protected void persistNewUndeliveredCommand(@NonNull EmailTriggerCommand originalCommand,
-                                                @NonNull String deliveryErrorMessage) {
+    protected void persistNewUndeliveredWelcomeEmail(@NonNull EmailTriggerCommand originalCommand,
+                                                     @NonNull String deliveryErrorMessage) {
         log.debug("Persisting initially failed Kafka command. CorrelationId: {}, Recipient: {}",
                 originalCommand.getCorrelationId(), originalCommand.getRecipientEmail());
 
@@ -163,29 +193,26 @@ public class EmailNotificationOrchestratorService {
         undelivered.setRetryCount(0); // Первичная запись
         undelivered.setDeliveryErrorMessage(deliveryErrorMessage);
 
-        UndeliveredWelcomeEmail saved = undeliveredCommandRepository.save(undelivered);
+        UndeliveredWelcomeEmail saved = undeliveredWelcomeEmailRepository.save(undelivered);
         log.debug("Saved UndeliveredEmailCommand with ID: {} for CorrelationId: {}",
                 saved.getUserId(), saved.getLastAttemptTraceId());
     }
 
     /**
-     * Гарантирует, что у команды установлен {@code correlationId}.
-     * Если {@code command.getCorrelationId()} пуст или null, пытается установить его
-     * из текущего OpenTelemetry Trace ID. Если Trace ID невалиден, генерирует UUID.
+     * Генерирует ID корреляции, используя OTel Trace ID если он доступен,
+     * иначе генерирует новый UUID.
      *
-     * @param command Команда, для которой нужно установить {@code correlationId}.
+     * @return Строка с ID корреляции.
      */
-    void ensureCorrelationIdIsSet(@NonNull EmailTriggerCommand command) {
-        if (command.getCorrelationId() == null || command.getCorrelationId().isBlank()) {
-            String traceId = Span.current().getSpanContext().getTraceId();
-            if (Span.current().getSpanContext().isValid()) {
-                command.setCorrelationId(traceId);
-                log.trace("Set correlationId for EmailTriggerCommand from OTel TraceId: {}", traceId);
-            } else {
-                String newUuid = UUID.randomUUID().toString();
-                command.setCorrelationId(newUuid);
-                log.warn("OTel TraceId not available or invalid. Generated new UUID for correlationId: {}", newUuid);
-            }
+    String generateCorrelationId() {
+        String traceId = Span.current().getSpanContext().getTraceId();
+        if (Span.current().getSpanContext().isValid()) {
+            log.trace("Set correlationId for EmailTriggerCommand from OTel TraceId: {}", traceId);
+            return traceId;
+        } else {
+            String newUuid = UUID.randomUUID().toString();
+            log.warn("OTel TraceId not available or invalid. Generated new UUID for correlationId: {}", newUuid);
+            return newUuid;
         }
     }
 

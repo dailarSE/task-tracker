@@ -11,7 +11,6 @@ import com.example.tasktracker.backend.security.exception.UserAlreadyExistsExcep
 import com.example.tasktracker.backend.security.jwt.JwtIssuer;
 import com.example.tasktracker.backend.security.jwt.JwtProperties;
 import com.example.tasktracker.backend.user.entity.User;
-import com.example.tasktracker.backend.user.messaging.dto.EmailTriggerCommand;
 import com.example.tasktracker.backend.user.repository.UserRepository;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -26,9 +25,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.Locale;
-import java.util.Map;
 
 /**
  * Сервис для операций регистрации и аутентификации пользователей.
@@ -82,23 +78,18 @@ public class AuthService {
      * <p>
      * Процесс включает:
      * <ol>
-     *     <li>Проверку совпадения паролей.</li>
-     *     <li>Проверку уникальности email.</li>
-     *     <li>Хеширование пароля.</li>
-     *     <li>Сохранение нового пользователя в базу данных (см. {@link #persistNewUser(User)}).</li>
-     *     <li>Установку ID пользователя в MDC для последующего логирования (см. {@link MdcKeys#USER_ID}).</li>
-     *     <li>Инициацию отправки приветственного Kafka-сообщения (см. {@link #initiateWelcomeNotification(User)}).</li>
-     *     <li>Автоматическую аутентификацию пользователя.</li>
-     *     <li>Генерацию и возврат JWT Access Token.</li>
+     *     <li>Проверку совпадения паролей и уникальности email.</li>
+     *     <li>Сохранение нового пользователя в базу данных в рамках транзакции.</li>
+     *     <li>Инициацию асинхронной отправки приветственного уведомления через
+     *         {@link EmailNotificationOrchestratorService}.</li>
+     *     <li>Автоматическую аутентификацию и генерацию JWT Access Token.</li>
      * </ol>
-     * Метод является транзакционным.
      * </p>
      *
-     * @param request DTO {@link RegisterRequest} с данными для регистрации. Не должен быть null.
-     * @return {@link AuthResponse}, содержащий JWT Access Token и информацию о нем.
+     * @param request DTO {@link RegisterRequest} с данными для регистрации.
+     * @return {@link AuthResponse}, содержащий JWT Access Token.
      * @throws UserAlreadyExistsException если пользователь с таким email уже существует.
-     * @throws PasswordMismatchException  если пароли в запросе на регистрацию не совпадают.
-     * @throws NullPointerException       если {@code request} равен {@code null}.
+     * @throws PasswordMismatchException  если пароли в запросе не совпадают.
      */
     @Transactional
     public AuthResponse register(@NonNull RegisterRequest request) {
@@ -143,8 +134,8 @@ public class AuthService {
      */
     void initiateWelcomeNotification(@NonNull User newUser) {
         try {
-            EmailTriggerCommand emailCommand = createEmailTriggerCommand(newUser);
-            notificationService.scheduleInitialEmailNotification(emailCommand);
+            notificationService.scheduleInitialEmailNotification(newUser,
+                    LocaleContextHolder.getLocale().toLanguageTag());
             log.info("Welcome notification initiation for userId: {} (email: {}) sent to Kafka queue.",
                     newUser.getId(), newUser.getEmail());
         } catch (Exception e) {
@@ -153,31 +144,6 @@ public class AuthService {
                             "Registration process will continue. Error: {}",
                     newUser.getId(), e.getMessage(), e);
         }
-    }
-
-    /**
-     * Формирует команду {@link EmailTriggerCommand} для отправки приветственного email.
-     * <p>
-     * Этот метод извлекает текущую локаль из {@link LocaleContextHolder} и
-     * подготавливает контекст для шаблона приветственного письма.
-     * </p>
-     *
-     * @param newUser Сущность {@link User}, для которой формируется команда. Не должна быть {@code null}.
-     * @return Сконфигурированный объект {@link EmailTriggerCommand}.
-     * @throws NullPointerException если {@code newUser} равен {@code null}.
-     */
-    EmailTriggerCommand createEmailTriggerCommand(@NonNull User newUser) {
-        Locale currentUserLocale = LocaleContextHolder.getLocale();
-        String localeTag = currentUserLocale.toLanguageTag();
-
-        return new EmailTriggerCommand(
-                newUser.getEmail(),
-                "USER_WELCOME",
-                Map.of("userEmail", newUser.getEmail()),
-                localeTag,
-                newUser.getId(),
-                null // correlationId будет установлен в kafka service
-        );
     }
 
     /**

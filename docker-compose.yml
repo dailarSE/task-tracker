@@ -84,8 +84,8 @@ services:
       # Фактор репликации для топика смещений консьюмеров (важно для стабильности в 1-узловом кластере)
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
-      # Автоматическое создание топика EMAIL_SENDING_TASKS при старте (имя:партиции:репликации) - удобно для dev
-      KAFKA_CREATE_TOPICS_EXTRA: "EMAIL_SENDING_TASKS:1:1"
+      # Автоматическое создание топика email_commands при старте (имя:партиции:репликации) - удобно для dev
+      KAFKA_CREATE_TOPICS_EXTRA: "task_tracker.notifications.email_commands:1:1"
     # Bitnami образ сам форматирует хранилище KRaft при первом запуске, если директория пуста.
     # Не требуется сложная 'command' секция как у Confluent.
     restart: unless-stopped

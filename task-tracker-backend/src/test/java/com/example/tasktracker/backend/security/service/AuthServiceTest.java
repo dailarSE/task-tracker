@@ -175,7 +175,7 @@ class AuthServiceTest {
         void register_whenKafkaInitiationFails_shouldSucceedAndNotThrow() {
             RegisterRequest request = new RegisterRequest(TEST_EMAIL, TEST_PASSWORD, TEST_PASSWORD);
             when(mockUserRepository.existsByEmail(TEST_EMAIL)).thenReturn(false);
-            when(selfInjectedMock.existsByEmailInNewTransaction(anyString())).thenReturn(false);
+            lenient().when(selfInjectedMock.existsByEmailInNewTransaction(anyString())).thenReturn(false);
 
             doThrow(new RuntimeException("Simulated Kafka Initiation Error"))
                     .when(mockNotificationService).scheduleInitialEmailNotification(any(User.class), anyString());

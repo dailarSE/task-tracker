@@ -19,5 +19,5 @@
 
 ### L3: Компоненты Подсистемы Безопасности
 
-*   **Поток Аутентификации:** [C4 Level 3: Component Diagram (Backend - Authentication Flow)](../docs/diagrams/task-tracker-system/backend-api/c4-L3-authentication-flow.webp)
-*   **Поток Авторизации и Доступа к Данным:** [C4 Level 3: Component Diagram (Backend - Authorization Flow)](../docs/diagrams/task-tracker-system/backend-api/c4-L3-authorization-flow.webp) 
+*   **Поток Аутентификации:** ![C4 Level 3: Component Diagram (Backend - Authentication Flow)](../docs/diagrams/task-tracker-system/backend-api/c4-L3-authentication-flow.webp)
+*   **Поток Авторизации и Доступа к Данным:** ![C4 Level 3: Component Diagram (Backend - Authorization Flow)](../docs/diagrams/task-tracker-system/backend-api/c4-L3-authorization-flow.webp) 

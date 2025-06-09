@@ -39,6 +39,12 @@ otel:
     sampler:
       arg: "1.0"
 
+springdoc:
+  swagger-ui:
+    enabled: true
+  api-docs:
+    enabled: true
+
 app:
   security:
     jwt:

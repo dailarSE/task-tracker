@@ -7,8 +7,70 @@
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<h1>Welcome to Task Tracker</h1>
+<header>
+    <h1>Task Tracker</h1>
+    <!-- Контейнер для кнопок авторизации/регистрации или информации о пользователе -->
+    <div id="authContainer">
+        <button id="showRegisterModalBtn">Регистрация</button>
+        <button id="showLoginModalBtn">Авторизация</button>
+    </div>
+    <!-- Место для отображения email пользователя и кнопки Logout (появится позже) -->
+    <div id="userInfo">
+        <span id="userEmailDisplay"></span>
+        <button id="logoutBtn">Logout</button>
+    </div>
+</header>
 
+<main>
+    <!-- Основной контент приложения (списки задач и т.д.) будет здесь позже -->
+    <p>Основной контент приложения будет здесь...</p>
+</main>
+
+<!-- Модальное окно для Регистрации -->
+<div id="registerModal" class="modal">
+    <div class="modal-content">
+        <button type="button" class="close-modal-btn" id="closeRegisterModalBtn" aria-label="Close">×</button>
+        <h2>Регистрация</h2>
+        <form id="registerForm">
+            <div>
+                <label for="registerEmail">Email:</label>
+                <input type="email" id="registerEmail" name="email" required>
+            </div>
+            <div>
+                <label for="registerPassword">Пароль:</label>
+                <input type="password" id="registerPassword" name="password" required>
+            </div>
+            <div>
+                <label for="registerRepeatPassword">Повторите пароль:</label>
+                <input type="password" id="registerRepeatPassword" name="repeatPassword" required>
+            </div>
+            <button type="submit">Зарегистрироваться</button>
+            <div id="registerError" class="error-message"></div>
+        </form>
+    </div>
+</div>
+
+<!-- Модальное окно для Авторизации -->
+<div id="loginModal" class="modal">
+    <div class="modal-content">
+        <button type="button" class="close-modal-btn" id="closeLoginModalBtn" aria-label="Close">×</button>
+        <h2>Авторизация</h2>
+        <form id="loginForm">
+            <div>
+                <label for="loginEmail">Email:</label>
+                <input type="email" id="loginEmail" name="email" required>
+            </div>
+            <div>
+                <label for="loginPassword">Пароль:</label>
+                <input type="password" id="loginPassword" name="password" required>
+            </div>
+            <button type="submit">Войти</button>
+            <div id="loginError" class="error-message"></div>
+        </form>
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script> <!-- Подключаем jQuery -->
 <script src="js/script.js"></script>
 </body>
 </html>

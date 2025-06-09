@@ -1,0 +1,10 @@
+body {
+    font-family: sans-serif;
+    background-color: #f0f0f0; /* Светло-серый фон для наглядности */
+    text-align: center; /* Чтобы h1 был по центру */
+    padding-top: 50px;
+}
+
+h1 {
+    color: #333;
+}

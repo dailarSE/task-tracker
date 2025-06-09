@@ -1,0 +1,1 @@
+console.log("Frontend script.js loaded successfully!");

@@ -1,4 +1,16 @@
 services:
+  task-tracker-frontend:
+    image: nginx:1.28.0-alpine
+    container_name: task-tracker-frontend-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./task-tracker-frontend:/usr/share/nginx/html:ro
+    networks:
+      - task-tracker-net
+    restart: unless-stopped
+#    depends_on:
+#      - task-tracker-backend
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:17.4}
     

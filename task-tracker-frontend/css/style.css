@@ -1,10 +1,103 @@
+/* --- Общие стили для body, как и было --- */
 body {
     font-family: sans-serif;
-    background-color: #f0f0f0; /* Светло-серый фон для наглядности */
-    text-align: center; /* Чтобы h1 был по центру */
-    padding-top: 50px;
+    background-color: #f0f0f0;
+    margin: 0;
+    padding: 20px;
 }
 
-h1 {
-    color: #333;
+header {
+    background-color: #fff;
+    padding: 10px 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* --- Стили для модальных окон --- */
+
+/* Контейнер модального окна (полупрозрачный фон на всю страницу) */
+.modal {
+    display: none; /* Изначально скрыто (это ключевое правило) */
+    position: fixed; /* Фиксированное позиционирование относительно окна браузера */
+    z-index: 1000; /* Должно быть поверх всего остального контента */
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto; /* Прокрутка, если содержимое не влезает */
+    background-color: rgba(0, 0, 0, 0.5); /* Полупрозрачный черный фон */
+    justify-content: center; /* Центрируем содержимое по горизонтали */
+    align-items: center;     /* Центрируем содержимое по вертикали */
+}
+
+/* Содержимое модального окна (белый блок) */
+.modal-content {
+    background-color: #fefefe;
+    margin: auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%;
+    max-width: 400px; /* Максимальная ширина */
+    position: relative;
+    border-radius: 5px;
+    box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2),0 6px 20px 0 rgba(0,0,0,0.19);
+}
+
+/* Кнопка/крестик для закрытия модального окна */
+.close-modal-btn {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    /* Добавляем сброс стилей для тега <button> */
+    background: none;
+    border: none;
+    padding: 0;
+    line-height: 1; /* Чтобы крестик не "прыгал" */
+}
+
+.close-modal-btn:hover,
+.close-modal-btn:focus {
+    color: black;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+
+/* --- Стили для форм внутри модальных окон --- */
+form div {
+    margin-bottom: 15px; /* Отступ между полями формы */
+}
+
+form label {
+    display: block; /* Метка над полем ввода */
+    margin-bottom: 5px;
+}
+
+form input[type="email"],
+form input[type="password"] {
+    width: 100%; /* Поля на всю ширину формы */
+    padding: 8px;
+    box-sizing: border-box; /* Чтобы padding не влиял на общую ширину */
+}
+
+/* --- Стили для контейнера с информацией о пользователе --- */
+#userInfo {
+    display: none; /* Изначально скрыт */
+    align-items: center;
+}
+
+#userEmailDisplay {
+    margin-right: 15px;
+    font-weight: bold;
+}
+
+/* --- Стили для сообщений об ошибках --- */
+.error-message {
+    color: #d9534f; /* Красный цвет для ошибок */
+    margin-top: 10px;
+    font-size: 0.9em;
+    min-height: 1.2em; /* Резервируем место, чтобы форма не "прыгала" при появлении ошибки */
 }

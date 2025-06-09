@@ -100,8 +100,12 @@ public class SecurityConfig {
                         .requestMatchers(errorPath).permitAll()
                         // TODO: Разрешить доступ к эндпоинтам Spring Boot Actuator (если они включены и нужны публично/защищенно)
                         // .requestMatchers("/actuator/**").permitAll() // или .hasRole("ADMIN") и т.д.
-                        // TODO: Разрешить доступ к Swagger/OpenAPI UI и документации (если используется)
-                        // .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers(
+                                "/swagger-ui.html",         // Сам HTML-файл UI
+                                "/swagger-ui/**",           // Статические ресурсы UI (JS, CSS, и т.д.)
+                                "/v3/api-docs/**" // Конфигурационный файл, который запрашивает UI
+                                // Все остальные запросы (включая /v3/api-docs) требуют аутентификации
+                        ).permitAll()
 
                         .anyRequest().authenticated()
                 )

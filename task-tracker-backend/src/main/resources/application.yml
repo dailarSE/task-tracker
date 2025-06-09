@@ -87,6 +87,14 @@ otel:
     sampler:
       arg: "0.1"
 
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: false
+
+#TODO принять решение о минимальном observability стеке
+
 app:
   kafka:
     topic-verifier:

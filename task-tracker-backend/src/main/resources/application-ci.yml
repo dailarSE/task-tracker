@@ -13,6 +13,12 @@ server:
     include-exception: true
     whitelabel.enabled: true
 
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: true
+
 #TODO принять решение о минимальном observability стеке на ci. например коллектор с экспортом в stdout и/или файл;
 #TODO  стриминг из коллектора на поднятный Obs stack
 

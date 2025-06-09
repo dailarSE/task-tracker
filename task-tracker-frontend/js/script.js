@@ -5,13 +5,16 @@
  * На данном этапе реализовано:
  * 1. Управление видимостью модальных окон регистрации и авторизации.
  * 2. Обработка отправки формы регистрации.
+ * 3. Взаимодействие с Backend API для отправки данных и обработки ответов.
+ * 4. Сохранение и удаление JWT в localStorage.
+ * 5. Обновление UI в зависимости от статуса аутентификации пользователя.
  */
 
 $(document).ready(function() {
 
-    // --- Константы ---
-    const BASE_API_URL = 'http://localhost:8080/api/v1'; // Базовый URL бэкенда.
-    const JWT_STORAGE_KEY = 'jwt_token'; // Ключ для хранения токена в localStorage
+    // --- Константы и глобальные переменные ---
+    const BASE_API_URL = 'http://localhost:8080/api/v1';
+    const JWT_STORAGE_KEY = 'jwt_token';
 
     // --- Кэширование jQuery-объектов ---
     const $registerModal = $('#registerModal');
@@ -19,8 +22,39 @@ $(document).ready(function() {
     const $showRegisterModalBtn = $('#showRegisterModalBtn');
     const $showLoginModalBtn = $('#showLoginModalBtn');
     const $closeModalBtns = $('.close-modal-btn');
+
+    // Элементы, связанные с состоянием UI
+    const $authContainer = $('#authContainer'); // Контейнер с кнопками "Регистрация/Вход"
+    const $userInfo = $('#userInfo');           // Контейнер с email и кнопкой "Выход"
+    const $userEmailDisplay = $('#userEmailDisplay');
+    const $logoutBtn = $('#logoutBtn');
+
+    // Формы и их элементы для ошибок
     const $registerForm = $('#registerForm');
+    const $loginForm = $('#loginForm');
     const $registerError = $('#registerError');
+    const $loginError = $('#loginError');
+
+    // --- Функции для управления состоянием UI ---
+
+    /**
+     * Обновляет UI, чтобы отразить состояние "пользователь аутентифицирован".
+     * @param {string} email - Email пользователя для отображения.
+     */
+    function showLoggedInState(email) {
+        $userEmailDisplay.text(email);
+        $authContainer.hide();
+        $userInfo.css('display', 'flex'); // Используем flex для корректного отображения
+    }
+
+    /**
+     * Обновляет UI, чтобы отразить состояние "пользователь не аутентифицирован".
+     */
+    function showLoggedOutState() {
+        $userEmailDisplay.text('');
+        $userInfo.hide();
+        $authContainer.show();
+    }
 
     // --- Логика для управления модальными окнами ---
 
@@ -74,25 +108,92 @@ $(document).ready(function() {
                 // Закрываем модальное окно и сбрасываем форму
                 $registerModal.css('display', 'none');
                 $registerForm.trigger('reset');
-
-                // TODO: обновиmь UI, чтобы показать email пользователя и скрыть кнопки регистрации/авторизации.
+                showLoggedInState(email);
             },
-
             // 6. Обработчик ошибочного ответа
-            error: (jqXHR) => {
-                console.error("Registration failed:", jqXHR);
-                let errorMessage = 'Произошла неизвестная ошибка.';
-
-                if (jqXHR.responseJSON && jqXHR.responseJSON.detail) {
-                    errorMessage = jqXHR.responseJSON.detail;
-                } else if (jqXHR.responseJSON && jqXHR.responseJSON.title) {
-                    errorMessage = jqXHR.responseJSON.title;
-                }
-
-                $registerError.text(errorMessage);
-            }
+            error: (jqXHR) => handleApiError(jqXHR, $registerError)
         });
     });
 
-    console.log("Task Tracker frontend scripts initialized.");
+    // --- Форма АВТОРИЗАЦИИ ---
+    $loginForm.on('submit', (event) => {
+        event.preventDefault();
+        $loginError.text('');
+
+        const email = $loginForm.find('#loginEmail').val();
+        const password = $loginForm.find('#loginPassword').val();
+
+        $.ajax({
+            url: `${BASE_API_URL}/auth/login`,
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ email, password }),
+            success: (response) => {
+                alert('Вход выполнен успешно!');
+                localStorage.setItem(JWT_STORAGE_KEY, response.accessToken);
+                $loginModal.css('display', 'none');
+                $loginForm.trigger('reset');
+                showLoggedInState(email); // Вызываем функцию для смены UI
+            },
+            error: (jqXHR) => handleApiError(jqXHR, $loginError)
+        });
+    });
+
+    // --- Логика выхода (Logout) ---
+    $logoutBtn.on('click', () => {
+        localStorage.removeItem(JWT_STORAGE_KEY);
+        alert('Вы вышли из системы.');
+        showLoggedOutState(); // Вызываем функцию для смены UI
+    });
+
+// --- Вспомогательные функции ---
+
+    /**
+     * Обрабатывает ошибки от API и отображает их в указанном div.
+     * @param {jqXHR} jqXHR - Объект jQuery XHR из колбэка error.
+     * @param {jQuery} $errorElement - jQuery-объект div'а для вывода ошибки.
+     */
+    function handleApiError(jqXHR, $errorElement) {
+        console.error("API call failed:", jqXHR);
+        let errorMessage = 'Произошла неизвестная ошибка. Пожалуйста, попробуйте позже.';
+
+        if (jqXHR.responseJSON && jqXHR.responseJSON.detail) {
+            errorMessage = jqXHR.responseJSON.detail;
+        } else if (jqXHR.responseJSON && jqXHR.responseJSON.title) {
+            errorMessage = jqXHR.responseJSON.title;
+        }
+
+        $errorElement.text(errorMessage);
+    }
+
+    // --- Начальная проверка статуса аутентификации при загрузке страницы ---
+
+    function checkInitialAuthState() {
+        const token = localStorage.getItem(JWT_STORAGE_KEY);
+        //TODO call /users/me to get user info
+        if (token) {
+            try {
+                // Простое декодирование payload токена (без проверки подписи)
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                if (payload.email) {
+                    showLoggedInState(payload.email);
+                } else {
+                    localStorage.removeItem(JWT_STORAGE_KEY);
+                    showLoggedOutState();
+                }
+            } catch (e) {
+                console.error("Failed to parse JWT from localStorage. Clearing token.", e);
+                localStorage.removeItem(JWT_STORAGE_KEY);
+                showLoggedOutState();
+            }
+        } else {
+            showLoggedOutState();
+        }
+    }
+    // ---
+
+    checkInitialAuthState(); // Вызываем проверку при загрузке страницы
+
+    console.log("Task Tracker frontend initialized.");
+
 });

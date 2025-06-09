@@ -20,7 +20,7 @@ spring:
     encoding: UTF-8
     fallback-to-system-locale: false
   jackson:
-    property-naming-strategy: SNAKE_CASE
+    property-naming-strategy: LOWER_CAMEL_CASE
     serialization:
       WRITE_DATES_AS_TIMESTAMPS: false
     deserialization:

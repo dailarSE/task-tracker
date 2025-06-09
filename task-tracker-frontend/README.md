@@ -9,7 +9,7 @@
 - `/css/`: Директория для CSS-стилей.
     - `style.css`: Основной файл стилей.
 - `/js/`: Директория для JavaScript-кода.
-    - `script.js`: Основной файл JavaScript-логики.
+    - `main.js`: Основной файл JavaScript-логики.
 
 ## Запуск (через Docker Compose)
 

@@ -52,21 +52,17 @@ window.ui = {
      * Проверяет начальное состояние аутентификации при загрузке страницы.
      */
     checkInitialAuthState: function() {
-        //TODO call /users/me to get user info
         const token = localStorage.getItem('jwt_token');
         if (token) {
-            try {
-                const payload = JSON.parse(atob(token.split('.')[1]));
-                if (payload.email) {
-                    this.showLoggedInState(payload.email);
-                } else {
+            window.taskTrackerApi.getCurrentUser(token)
+                .done((user) => {
+                    this.showLoggedInState(user.email);
+                })
+                .fail(() => {
+                    console.error("Token from localStorage is invalid or expired. Clearing token.");
                     localStorage.removeItem('jwt_token');
                     this.showLoggedOutState();
-                }
-            } catch (e) {
-                localStorage.removeItem('jwt_token');
-                this.showLoggedOutState();
-            }
+                });
         } else {
             this.showLoggedOutState();
         }

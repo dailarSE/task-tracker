@@ -9,6 +9,13 @@ import com.example.tasktracker.backend.task.dto.TaskUpdateRequest;
 import com.example.tasktracker.backend.task.service.TaskService;
 import com.example.tasktracker.backend.web.ApiConstants;
 import com.example.tasktracker.backend.web.exception.GlobalExceptionHandler;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +51,7 @@ import java.util.List;
 @RequestMapping(ApiConstants.TASKS_API_BASE_URL)
 @RequiredArgsConstructor
 @Slf4j
+@Tag(name = "Tasks", description = "API для управления задачами")
 public class TaskController {
 
     private final TaskService taskService;
@@ -75,6 +83,17 @@ public class TaskController {
      * либо ответ об ошибке, сформированный {@link GlobalExceptionHandler}.
      * @throws IllegalStateException если {@code currentUserDetails} не может быть разрешен в корректный {@link AppUserDetails} с ID (выбрасывается из {@link ControllerSecurityUtils}).
      */
+    @Operation(summary = "Создание новой задачи")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201",
+                    description = "Задача успешно создана",
+                    content = @Content(mediaType = "application/json",
+                    schema = @Schema(implementation = TaskResponse.class)
+                    )
+            ),
+            @ApiResponse(responseCode = "400", ref = "#/components/responses/BadRequestValidation"),
+            @ApiResponse(responseCode = "401", ref = "#/components/responses/UnauthorizedGeneral")
+    })
     @PostMapping
     public ResponseEntity<TaskResponse> createTask(
             @Valid @RequestBody TaskCreateRequest request,
@@ -114,6 +133,18 @@ public class TaskController {
      * @return {@link ResponseEntity} со списком {@link TaskResponse} и статусом 200 OK.
      * @throws IllegalStateException если principal не может быть разрешен (от {@link ControllerSecurityUtils}).
      */
+    @Operation(summary = "Получение списка задач текущего пользователя")
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Список задач успешно получен.",
+                    content = @Content(
+                            mediaType = "application/json",
+                            array = @ArraySchema(schema = @Schema(implementation = TaskResponse.class))
+                    )
+            ),
+            @ApiResponse(responseCode = "401", ref = "#/components/responses/UnauthorizedGeneral")
+    })
     @GetMapping
     public ResponseEntity<List<TaskResponse>> getAllTasksForCurrentUser(
             @AuthenticationPrincipal AppUserDetails currentUserDetails) {
@@ -137,19 +168,31 @@ public class TaskController {
      * содержащим полную информацию о запрошенной задаче.
      * </p>
      *
-     * @param taskId ID запрашиваемой задачи, извлекаемый из пути URL.
-     *               Должен быть валидным числовым идентификатором.
+     * @param taskId             ID запрашиваемой задачи, извлекаемый из пути URL.
+     *                           Должен быть валидным числовым идентификатором.
      * @param currentUserDetails Детали текущего аутентифицированного пользователя,
      *                           внедренные Spring Security. Ожидается, что не будет {@code null}.
      * @return {@link ResponseEntity} с {@link TaskResponse} и статусом 200 OK.
      * @throws com.example.tasktracker.backend.task.exception.TaskNotFoundException если задача с указанным ID
-     *         не найдена для текущего пользователя или не существует. В этом случае будет возвращен
-     *         HTTP 404 Not Found.
-     * @throws IllegalStateException если principal текущего пользователя не может быть корректно разрешен
-     *         (например, отсутствует ID пользователя в {@code AppUserDetails}). В этом случае будет возвращен
-     *         HTTP 500 Internal Server Error.
+     *                                                                              не найдена для текущего пользователя или не существует. В этом случае будет возвращен
+     *                                                                              HTTP 404 Not Found.
+     * @throws IllegalStateException                                                если principal текущего пользователя не может быть корректно разрешен
+     *                                                                              (например, отсутствует ID пользователя в {@code AppUserDetails}). В этом случае будет возвращен
+     *                                                                              HTTP 500 Internal Server Error.
      * @see com.example.tasktracker.backend.web.exception.GlobalExceptionHandler Для деталей обработки ошибок API.
      */
+    @Operation(summary = "Получение задачи по ID")
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Задача успешно найдена.",
+                    content = @Content(mediaType = "application/json",
+                    schema = @Schema(implementation = TaskResponse.class))
+            ),
+            @ApiResponse(responseCode = "400", ref = "#/components/responses/BadRequestTypeMismatch"),
+            @ApiResponse(responseCode = "401", ref = "#/components/responses/UnauthorizedGeneral"),
+            @ApiResponse(responseCode = "404", ref = "#/components/responses/NotFoundTask")
+    })
     @GetMapping("/{taskId}")
     public ResponseEntity<TaskResponse> getTaskById(@PathVariable Long taskId,
                                                     @AuthenticationPrincipal AppUserDetails currentUserDetails) {
@@ -180,9 +223,20 @@ public class TaskController {
      * @param currentUserDetails Детали текущего аутентифицированного пользователя.
      * @return {@link ResponseEntity} с {@link TaskResponse} и статусом 200 OK.
      * @throws com.example.tasktracker.backend.task.exception.TaskNotFoundException если задача не найдена.
-     * @throws IllegalStateException если principal не может быть разрешен.
-     * @throws jakarta.validation.ValidationException если данные в {@code request} не проходят валидацию.
+     * @throws IllegalStateException                                                если principal не может быть разрешен.
+     * @throws jakarta.validation.ValidationException                               если данные в {@code request} не проходят валидацию.
      */
+    @Operation(summary = "Полное обновление задачи")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Задача успешно обновлена",
+                    content = @Content(mediaType = "application/json",
+                    schema = @Schema(implementation = TaskResponse.class))
+            ),
+            @ApiResponse(responseCode = "400", ref = "#/components/responses/BadRequestGeneral"),
+            @ApiResponse(responseCode = "401", ref = "#/components/responses/UnauthorizedGeneral"),
+            @ApiResponse(responseCode = "404", ref = "#/components/responses/NotFoundTask")
+    })
     @PutMapping("/{taskId}")
     public ResponseEntity<TaskResponse> updateTask(
             @PathVariable Long taskId,
@@ -216,9 +270,19 @@ public class TaskController {
      * @param currentUserDetails Детали текущего аутентифицированного пользователя.
      * @return {@link ResponseEntity} с {@link TaskResponse} и статусом 200 OK.
      * @throws com.example.tasktracker.backend.task.exception.TaskNotFoundException если задача не найдена.
-     * @throws IllegalStateException если principal не может быть разрешен.
-     * @throws jakarta.validation.ValidationException если данные в {@code request} не проходят валидацию.
+     * @throws IllegalStateException                                                если principal не может быть разрешен.
+     * @throws jakarta.validation.ValidationException                               если данные в {@code request} не проходят валидацию.
      */
+    @Operation(summary = "Частичное обновление статуса задачи")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200",
+                    description = "Статус задачи успешно обновлен",
+                    content = @Content(mediaType = "application/json",
+                    schema = @Schema(implementation = TaskResponse.class))),
+            @ApiResponse(responseCode = "400", ref = "#/components/responses/BadRequestGeneral"),
+            @ApiResponse(responseCode = "401", ref = "#/components/responses/UnauthorizedGeneral"),
+            @ApiResponse(responseCode = "404", ref = "#/components/responses/NotFoundTask")
+    })
     @PatchMapping("/{taskId}")
     public ResponseEntity<TaskResponse> updateTaskStatus(
             @PathVariable Long taskId,
@@ -252,14 +316,25 @@ public class TaskController {
      *                           внедренные Spring Security. Ожидается, что не будет {@code null}.
      * @return {@link ResponseEntity} со статусом 204 No Content в случае успеха.
      * @throws com.example.tasktracker.backend.task.exception.TaskNotFoundException если задача с указанным ID
-     *         не найдена для текущего пользователя или не существует. В этом случае будет возвращен
-     *         HTTP 404 Not Found.
-     * @throws org.springframework.beans.TypeMismatchException если {@code taskId} не может быть
-     *         преобразован в {@link Long}. В этом случае будет возвращен HTTP 400 Bad Request.
-     * @throws IllegalStateException если principal текущего пользователя не может быть корректно разрешен.
-     *         В этом случае будет возвращен HTTP 500 Internal Server Error.
+     *                                                                              не найдена для текущего пользователя или не существует. В этом случае будет возвращен
+     *                                                                              HTTP 404 Not Found.
+     * @throws org.springframework.beans.TypeMismatchException                      если {@code taskId} не может быть
+     *                                                                              преобразован в {@link Long}. В этом случае будет возвращен HTTP 400 Bad Request.
+     * @throws IllegalStateException                                                если principal текущего пользователя не может быть корректно разрешен.
+     *                                                                              В этом случае будет возвращен HTTP 500 Internal Server Error.
      * @see com.example.tasktracker.backend.web.exception.GlobalExceptionHandler Для деталей обработки ошибок API.
      */
+    @Operation(summary = "Удаление задачи")
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "204",
+                    description = "Задача успешно удалена.",
+                    content = @Content // Пустое тело ответа
+            ),
+            @ApiResponse(responseCode = "400", ref = "#/components/responses/BadRequestTypeMismatch"),
+            @ApiResponse(responseCode = "401", ref = "#/components/responses/UnauthorizedGeneral"),
+            @ApiResponse(responseCode = "404", ref = "#/components/responses/NotFoundTask")
+    })
     @DeleteMapping("/{taskId}")
     public ResponseEntity<Void> deleteTask(@PathVariable Long taskId,
                                            @AuthenticationPrincipal AppUserDetails currentUserDetails) {

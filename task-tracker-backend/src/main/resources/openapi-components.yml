@@ -1,0 +1,309 @@
+components:
+  schemas:
+    # ---------------------------------------------------------
+    # Общая Базовая Схема для ProblemDetail (RFC 7807)
+    # ---------------------------------------------------------
+    BaseProblemDetail:
+      type: object
+      description: "Стандартное тело ответа для HTTP ошибок, соответствующее RFC 7807."
+      properties:
+        type:
+          type: string
+          format: uri
+          description: "URI, идентифицирующий тип проблемы. Рекомендуется, чтобы он вел на человекочитаемую документацию."
+          example: "https://task-tracker.example.com/probs/about-blank"
+        title:
+          type: string
+          description: "Краткий, человекочитаемый заголовок типа проблемы. Не должен меняться для разных экземпляров одной и той же проблемы."
+          example: "Internal Server Error"
+        status:
+          type: integer
+          format: int32
+          description: "HTTP-статус код, соответствующий данной проблеме."
+          example: 500
+        detail:
+          type: string
+          description: "Человекочитаемое, специфичное для данного экземпляра проблемы, описание. Может содержать динамические данные."
+          example: "An unexpected error occurred. Please provide error reference ID: uuid-..."
+        instance:
+          type: string
+          format: uri
+          description: "URI, идентифицирующий конкретный экземпляр проблемы (обычно путь запроса)."
+          example: "/api/v1/users/register"
+
+    # ---------------------------------------------------------
+    # Полные, Расширенные Схемы для Каждого Типа Ошибки
+    # ---------------------------------------------------------
+    BadRequestValidationProblem:
+      description: "Тело ответа для ошибки валидации (HTTP 400)."
+      allOf:
+        - $ref: '#/components/schemas/BaseProblemDetail'
+        - type: object
+          properties:
+            invalidParams:
+              type: array
+              description: "Список невалидных параметров запроса."
+              items:
+                type: object
+                properties:
+                  field: { type: string, description: "Имя невалидного поля.", example: "email" }
+                  rejectedValue: { type: string, description: "Переданное невалидное значение.", example: "abc" }
+                  message: { type: string, description: "Локализованное сообщение об ошибке для поля.", example: "Email address must not be blank." }
+                required:
+                  - field
+                  - message
+
+    BadRequestTypeMismatchProblem:
+      description: "Тело ответа для ошибки несоответствия типа параметра (HTTP 400)."
+      allOf:
+        - $ref: '#/components/schemas/BaseProblemDetail'
+        - type: object
+          properties:
+            parameterName: { type: string, description: "Имя параметра с неверным типом.", example: "taskId" }
+            rejectedValue: { type: string, description: "Переданное невалидное значение.", example: "abc" }
+            expectedType: { type: string, description: "Ожидаемый тип параметра.", example: "Long" }
+
+    NotFoundTaskProblem:
+      description: "Тело ответа для ошибки 'Задача не найдена' (HTTP 404)."
+      allOf:
+        - $ref: '#/components/schemas/BaseProblemDetail'
+        - type: object
+          properties:
+            requestedTaskId: { type: integer, format: int64, description: "ID задачи, которая была запрошена.", example: 999 }
+            contextUserId: { type: integer, format: int64, description: "ID пользователя, в контексте которого искалась задача.", example: 123 }
+
+    ConflictUserExistsProblem:
+      description: "Тело ответа для ошибки 'Пользователь уже существует' (HTTP 409)."
+      allOf:
+        - $ref: '#/components/schemas/BaseProblemDetail'
+        - type: object
+          properties:
+            conflictingEmail: { type: string, format: email, description: "Email адрес, который уже занят.", example: "test@example.com" }
+
+    InternalServerErrorProblem:
+      description: "Тело ответа для непредвиденной внутренней ошибки сервера (HTTP 500)."
+      allOf:
+        - $ref: '#/components/schemas/BaseProblemDetail'
+        - type: object
+          properties:
+            errorRef: { type: string, format: uuid, description: "Уникальный идентификатор ошибки для отслеживания.", example: "a1b2c3d4-e5f6-7890-1234-567890abcdef" }
+
+  responses:
+    # ---------------------------------------------------------
+    # Определения Компонентов Ответов для Ошибок
+    # ---------------------------------------------------------
+    # ---------------------------------------------------------
+    # 400 - BAD REQUEST
+    # ---------------------------------------------------------
+    BadRequestGeneral:
+      description: "Некорректный запрос. Причина может варьироваться (ошибка валидации, неверный формат параметра, несовпадение паролей)."
+      content:
+        application/problem+json:
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/BaseProblemDetail'
+              - $ref: '#/components/schemas/BadRequestValidationProblem'
+              - $ref: '#/components/schemas/BadRequestTypeMismatchProblem'
+          examples:
+            passwordMismatchError:
+              $ref: '#/components/examples/BadRequestPasswordMismatchExample'
+            validationError:
+              $ref: '#/components/examples/BadRequestValidationExample'
+            typeMismatchError:
+              $ref: '#/components/examples/BadRequestTypeMismatchExample'
+
+    BadRequestValidation:
+      description: "Ошибка валидации данных. Один или несколько параметров запроса не прошли проверку."
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/BadRequestValidationProblem'
+          examples:
+            singleFieldValidation:
+              summary: "Пример с одной ошибкой валидации"
+              value:
+                type: "https://task-tracker.example.com/probs/validation/method-argument-not-valid"
+                title: "Invalid Request Data"
+                status: 400
+                detail: "Validation failed. Found 1 error(s)."
+                instance: "/api/v1/users/register"
+                invalidParams:
+                  - field: "email"
+                    message: "Email address must not be blank."
+            multipleFieldValidation:
+              summary: "Пример с несколькими ошибками валидации"
+              value:
+                type: "https://task-tracker.example.com/probs/validation/method-argument-not-valid"
+                title: "Invalid Request Data"
+                status: 400
+                detail: "Validation failed. Found 2 error(s)."
+                instance: "/api/v1/users/register"
+                invalidParams:
+                  - field: "password"
+                    message: "Password must not be blank."
+                  - field: "repeatPassword"
+                    message: "Password confirmation must not be blank."
+
+    BadRequestTypeMismatch:
+      description: "Ошибка формата параметра в пути URL (например, передана строка вместо числа)."
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/BadRequestTypeMismatchProblem'
+          example:
+            type: "https://task-tracker.example.com/probs/request/parameter-type-mismatch"
+            title: "Invalid Parameter Format"
+            status: 400
+            detail: "Parameter 'taskId' could not be converted to the required type 'Long' from the provided value 'abc'."
+            instance: "/api/v1/tasks/abc"
+            parameterName: "taskId"
+            rejectedValue: "abc"
+            expectedType: "Long"
+
+    BadRequestPasswordMismatch:
+      description: "Пароль и его подтверждение не совпадают при регистрации."
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/BaseProblemDetail'
+          example:
+            type: "https://task-tracker.example.com/probs/user/password-mismatch"
+            title: "Passwords Do Not Match"
+            status: 400
+            detail: "Passwords do not match. Please ensure both passwords are identical."
+            instance: "/api/v1/users/register"
+
+    # ---------------------------------------------------------
+    # 401 - UNAUTHORIZED
+    # ---------------------------------------------------------
+    UnauthorizedGeneral:
+      description: "Ошибка аутентификации. Требуется валидный, не просроченный JWT."
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+          description: "Заголовок, указывающий на ожидаемую схему аутентификации 'Bearer'."
+          example: "Bearer realm=\"task-tracker\""
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/BaseProblemDetail'
+          examples:
+            expiredToken:
+              summary: "Пример с просроченным токеном"
+              value:
+                type: "https://task-tracker.example.com/probs/jwt/expired"
+                title: "Expired Token"
+                status: 401
+                detail: "The provided authentication token has expired. Please log in again."
+                instance: "/api/v1/users/me"
+            invalidSignature:
+              summary: "Пример с невалидной подписью"
+              value:
+                type: "https://task-tracker.example.com/probs/jwt/invalid-signature"
+                title: "Invalid Token Signature"
+                status: 401
+                detail: "The provided authentication token has an invalid signature."
+                instance: "/api/v1/tasks"
+
+    UnauthorizedBadCredentials:
+      description: "Неверный email или пароль при попытке входа."
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/BaseProblemDetail'
+          example:
+            type: "https://task-tracker.example.com/probs/auth/invalid-credentials"
+            title: "Invalid Credentials"
+            status: 401
+            detail: "The email or password provided is incorrect."
+            instance: "/api/v1/auth/login"
+
+    # ---------------------------------------------------------
+    # 404 - NOT FOUND
+    # ---------------------------------------------------------
+    NotFoundTask:
+      description: "Запрошенная задача не найдена или у пользователя нет к ней доступа."
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/NotFoundTaskProblem'
+          example:
+            type: "https://task-tracker.example.com/probs/task/not-found"
+            title: "Task Not Found"
+            status: 404
+            detail: "Task with ID 999 could not be found or you do not have permission to access it."
+            instance: "/api/v1/tasks/999"
+            requestedTaskId: 999
+            contextUserId: 123
+
+    # ---------------------------------------------------------
+    # 409 - CONFLICT
+    # ---------------------------------------------------------
+    ConflictUserExists:
+      description: "Пользователь с таким email уже существует."
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ConflictUserExistsProblem'
+          example:
+            type: "https://task-tracker.example.com/probs/user/already-exists"
+            title: "User Already Exists"
+            status: 409
+            detail: "A user with email 'test@example.com' already exists."
+            instance: "/api/v1/users/register"
+            conflictingEmail: "test@example.com"
+
+    # ---------------------------------------------------------
+    # 500 - INTERNAL SERVER ERROR
+    # ---------------------------------------------------------
+    InternalServerErrorGeneral:
+      description: "Произошла непредвиденная внутренняя ошибка сервера."
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/InternalServerErrorProblem'
+          example:
+            type: "https://task-tracker.example.com/probs/internal/illegal-state"
+            title: "Internal Application State Error"
+            status: 500
+            detail: "An unexpected application state was encountered. Please contact support and provide the error reference ID: a1b2c3d4-e5f6-7890-1234-567890abcdef"
+            instance: "/api/v1/some-endpoint"
+            errorRef: "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+
+  examples:
+    # ---------------------------------------------------------
+    # Переиспользуемые Примеры для Ответов
+    # ---------------------------------------------------------
+    BadRequestValidationExample:
+      summary: "Пример ошибки валидации DTO"
+      value:
+        type: "https://task-tracker.example.com/probs/validation/method-argument-not-valid"
+        title: "Invalid Request Data"
+        status: 400
+        detail: "Validation failed. Found 1 error(s)."
+        instance: "/api/v1/users/register"
+        invalidParams:
+          - field: "email"
+            message: "Email address must not be blank."
+
+    BadRequestTypeMismatchExample:
+      summary: "Пример ошибки несоответствия типа"
+      value:
+        type: "https://task-tracker.example.com/probs/request/parameter-type-mismatch"
+        title: "Invalid Parameter Format"
+        status: 400
+        detail: "Parameter 'taskId' could not be converted to the required type 'Long' from the provided value 'abc'."
+        instance: "/api/v1/tasks/abc"
+        parameterName: "taskId"
+        rejectedValue: "abc"
+        expectedType: "Long"
+
+    BadRequestPasswordMismatchExample:
+      summary: "Пример ошибки несовпадения паролей"
+      value:
+        type: "https://task-tracker.example.com/probs/user/password-mismatch"
+        title: "Passwords Do Not Match"
+        status: 400
+        detail: "Passwords do not match. Please ensure both passwords are identical."
+        instance: "/api/v1/users/register"

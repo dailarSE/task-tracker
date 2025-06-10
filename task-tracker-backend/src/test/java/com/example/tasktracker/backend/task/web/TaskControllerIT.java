@@ -158,9 +158,6 @@ class TaskControllerIT {
         String titleSuffix = "jwt." + expectedJwtErrorType.toLowerCase();
         assertProblemDetailBase(responseEntity, HttpStatus.UNAUTHORIZED, typePath, titleSuffix, expectedInstanceSuffix);
         assertThat(responseEntity.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE)).startsWith("Bearer realm=\"task-tracker\"");
-        ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail.getProperties()).isNotNull();
-        assertThat(problemDetail.getProperties().get("error_type")).isEqualTo(expectedJwtErrorType);
     }
 
     private void assertGeneralUnauthorizedProblemDetail(ResponseEntity<ProblemDetail> responseEntity, String expectedInstanceSuffix) {
@@ -175,22 +172,22 @@ class TaskControllerIT {
                 expectedInstanceSuffix);
         ProblemDetail problemDetail = responseEntity.getBody();
         assertThat(problemDetail.getProperties()).isNotNull();
-        assertThat(problemDetail.getProperties().get("requested_task_id").toString()).isEqualTo(expectedRequestedTaskId.toString());
+        assertThat(problemDetail.getProperties().get("requestedTaskId").toString()).isEqualTo(expectedRequestedTaskId.toString());
         if (expectedContextUserId != null) {
-            assertThat(problemDetail.getProperties().get("context_user_id").toString()).isEqualTo(expectedContextUserId.toString());
+            assertThat(problemDetail.getProperties().get("contextUserId").toString()).isEqualTo(expectedContextUserId.toString());
         } else {
-            assertThat(problemDetail.getProperties()).doesNotContainKey("context_user_id");
+            assertThat(problemDetail.getProperties()).doesNotContainKey("contextUserId");
         }
     }
 
     private void assertValidationProblemDetail(ResponseEntity<ProblemDetail> responseEntity, String expectedInstanceSuffix, String expectedInvalidField) {
         assertProblemDetailBase(responseEntity, HttpStatus.BAD_REQUEST,
-                "validation/methodArgumentNotValid",
+                "validation/method-argument-not-valid",
                 "validation.methodArgumentNotValid",
                 expectedInstanceSuffix);
         ProblemDetail problemDetail = responseEntity.getBody();
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) problemDetail.getProperties().get("invalid_params");
+        List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) problemDetail.getProperties().get("invalidParams");
         assertThat(invalidParams).isNotNull();
         boolean fieldErrorFound = invalidParams.stream().anyMatch(errorMap ->
                 expectedInvalidField.equals(errorMap.get("field")) &&
@@ -199,21 +196,21 @@ class TaskControllerIT {
                         !((String) errorMap.get("message")).isEmpty()
         );
         assertThat(fieldErrorFound)
-                .as("Expected validation error for field '%s' was not found or message was empty in invalid_params: %s",
+                .as("Expected validation error for field '%s' was not found or message was empty in invalidParams: %s",
                         expectedInvalidField, invalidParams)
                 .isTrue();
     }
 
     private void assertTypeMismatchProblemDetail(ResponseEntity<ProblemDetail> responseEntity, String expectedInstanceSuffix, String expectedParamName, String expectedParamValue, String expectedParamType) {
         assertProblemDetailBase(responseEntity, HttpStatus.BAD_REQUEST,
-                "request/parameter/typeMismatch",
+                "request/parameter-type-mismatch",
                 "request.parameter.typeMismatch",
                 expectedInstanceSuffix);
         ProblemDetail problemDetail = responseEntity.getBody();
         assertThat(problemDetail.getProperties()).isNotNull();
-        assertThat(problemDetail.getProperties().get("parameter_name")).isEqualTo(expectedParamName);
-        assertThat(problemDetail.getProperties().get("parameter_value")).isEqualTo(expectedParamValue);
-        assertThat(problemDetail.getProperties().get("expected_type")).isEqualTo(expectedParamType);
+        assertThat(problemDetail.getProperties().get("field")).isEqualTo(expectedParamName);
+        assertThat(problemDetail.getProperties().get("rejectedValue")).isEqualTo(expectedParamValue);
+        assertThat(problemDetail.getProperties().get("expectedType")).isEqualTo(expectedParamType);
     }
 
 
@@ -288,7 +285,7 @@ class TaskControllerIT {
 
             // Проверяем общий тип, т.к. конкретный суффикс может зависеть от парсера
             assertProblemDetailBase(responseEntity, HttpStatus.BAD_REQUEST,
-                    "request/body/conversionError", // или request.body.notReadable в зависимости от парсера
+                    "request/body-conversion-error", // или request.body.notReadable в зависимости от парсера
                     "request.body.conversionError", // ключ для title
                     ApiConstants.TASKS_API_BASE_URL);
         }
@@ -573,7 +570,7 @@ class TaskControllerIT {
                     taskUrl, HttpMethod.PUT, requestEntity, ProblemDetail.class);
 
             assertProblemDetailBase(responseEntity, HttpStatus.BAD_REQUEST,
-                    "request/body/conversionError",
+                    "request/body-conversion-error",
                     "request.body.conversionError",
                     "/tasks/" + createdTask.getId());
         }
@@ -691,7 +688,8 @@ class TaskControllerIT {
         void updateTaskStatus_whenCompletedToPending_shouldReturn200AndResetCompletedAt() {
             TaskResponse taskInitiallyPending = createTaskApi("Task COMPLETED for PATCH", "Desc", jwtForTestUser1);
             // Сначала делаем COMPLETED через PUT (или PATCH, если бы он был первым)
-            TaskUpdateRequest makeCompletedRequest = new TaskUpdateRequest(taskInitiallyPending.getTitle(), taskInitiallyPending.getDescription(), TaskStatus.COMPLETED);
+            TaskUpdateRequest makeCompletedRequest = new TaskUpdateRequest(taskInitiallyPending.getTitle(),
+                    taskInitiallyPending.getDescription(), TaskStatus.COMPLETED);
             updateTaskApi(taskInitiallyPending.getId(), makeCompletedRequest, jwtForTestUser1); // Используем PUT для перевода в COMPLETED
 
             ResponseEntity<TaskResponse> completedTaskGetResponse = getTaskApi(taskInitiallyPending.getId(), jwtForTestUser1);
@@ -750,7 +748,8 @@ class TaskControllerIT {
             ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
                     taskUrl, HttpMethod.PATCH, entity, ProblemDetail.class);
 
-            assertTaskNotFoundProblemDetail(responseEntity, "/tasks/" + anotherUserTask.getId(), anotherUserTask.getId(), testUser1.getId());
+            assertTaskNotFoundProblemDetail(responseEntity, "/tasks/" + anotherUserTask.getId(),
+                    anotherUserTask.getId(), testUser1.getId());
         }
 
         // TC_IT_PATCH_STATUS_06 (US9_AC1 - No JWT)
@@ -874,7 +873,8 @@ class TaskControllerIT {
                     taskUrl, HttpMethod.DELETE, requestEntity, ProblemDetail.class);
 
             // Assert
-            assertTypeMismatchProblemDetail(responseEntity, "/tasks/" + invalidTaskId, "taskId", invalidTaskId, "Long");
+            assertTypeMismatchProblemDetail(responseEntity, "/tasks/" + invalidTaskId, "taskId",
+                    invalidTaskId, "Long");
         }
 
         // TC_IT_DELETE_05 (US8_AC1)

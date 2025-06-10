@@ -81,7 +81,7 @@ public class UserAlreadyExistsException extends ErrorResponseException {
         this.email = email;
 
         getBody().setType(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + PROBLEM_TYPE_URI_PATH));
-        getBody().setProperty("conflicting_email", email);
+        getBody().setProperty("conflictingEmail", email);
     }
 
     /**
@@ -108,6 +108,17 @@ public class UserAlreadyExistsException extends ErrorResponseException {
     @Override
     public String getDetailMessageCode() {
         return "problemDetail." + PROBLEM_TYPE_SUFFIX + ".detail";
+    }
+
+    /**
+     * Возвращает аргументы для форматирования сообщения из поля "detail".
+     * В данном случае, это email пользователя, вызвавший конфликт.
+     *
+     * @return Массив объектов, содержащий email пользователя.
+     */
+    @Override
+    public Object[] getDetailMessageArguments() {
+        return new Object[]{this.email};
     }
 
     /**

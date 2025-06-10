@@ -124,9 +124,6 @@ class UserControllerIT {
                 expectedTitle,
                 expectedInstanceSuffix);
         assertThat(responseEntity.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE)).startsWith("Bearer realm=\"task-tracker\"");
-        ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail.getProperties()).isNotNull();
-        assertThat(problemDetail.getProperties().get("error_type")).isEqualTo(expectedJwtErrorType);
     }
 
     private void assertGeneralUnauthorizedProblemDetail(ResponseEntity<ProblemDetail> responseEntity, String expectedInstanceSuffix) {
@@ -145,13 +142,13 @@ class UserControllerIT {
 
         String expectedProblemTitle = messageSource.getMessage("problemDetail.validation.methodArgumentNotValid.title", null, TEST_LOCALE);
         assertProblemDetailBase(responseEntity, HttpStatus.BAD_REQUEST,
-                "validation/methodArgumentNotValid",
+                "validation/method-argument-not-valid",
                 expectedProblemTitle,
                 expectedInstanceSuffix);
 
         ProblemDetail problemDetail = responseEntity.getBody();
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) problemDetail.getProperties().get("invalid_params");
+        List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) problemDetail.getProperties().get("invalidParams");
         assertThat(invalidParams).isNotNull();
 
         boolean fieldErrorFound = invalidParams.stream().anyMatch(errorMap ->
@@ -244,7 +241,7 @@ class UserControllerIT {
                 expectedTitle,
                 ApiConstants.USERS_API_BASE_URL + "/register");
         ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail.getProperties()).containsEntry("conflicting_email", existingEmail);
+        assertThat(problemDetail.getProperties()).containsEntry("conflictingEmail", existingEmail);
         assertThat(userRepository.count()).isEqualTo(1);
     }
 

@@ -3,6 +3,7 @@ package com.example.tasktracker.backend.web.exception;
 import com.example.tasktracker.backend.security.exception.BadJwtException;
 import com.example.tasktracker.backend.security.jwt.JwtValidator;
 import com.example.tasktracker.backend.web.ApiConstants;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -13,7 +14,6 @@ import org.springframework.context.NoSuchMessageException;
 import org.springframework.http.*;
 import org.springframework.http.converter.HttpMessageConversionException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.lang.Nullable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.AuthenticationException;
@@ -71,15 +71,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      * Обрабатывает {@link BadJwtException}, указывающее на проблемы с валидацией JWT.
      * Возвращает {@link ProblemDetail} для ответа HTTP 401 Unauthorized.
      * <p>
-     * В поле {@code properties} объекта {@code ProblemDetail} добавляются:
-     * <ul>
-     *     <li>{@code error_type}: Тип ошибки JWT из {@link BadJwtException#getErrorType()}.</li>
-     *     <li>{@code jwt_error_details}: Оригинальное сообщение из {@link BadJwtException#getMessage()}, если оно присутствует.</li>
-     * </ul>
      * Поля {@code title} и {@code detail} извлекаются из {@link MessageSource} по ключам,
      * сформированным на основе {@code "jwt." + ex.getErrorType().name().toLowerCase()}.
-     * Ожидается, что соответствующие ключи для {@code detail} в {@code messages.properties}
-     * будут статическими (без плейсхолдеров, так как динамическая информация передается через {@code properties}).
      * </p>
      *
      * @param ex      Исключение {@link BadJwtException}.
@@ -94,19 +87,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 ex.getErrorType(), ex.getMessage(), tokenSnippet, ex.getCause(), ex);
 
         String typeSuffix = "jwt." + ex.getErrorType().name().toLowerCase();
+        String title = messageSource.getMessage("problemDetail." + typeSuffix + ".title", null, request.getLocale());
+        String detail = messageSource.getMessage("problemDetail." + typeSuffix + ".detail", null, request.getLocale());
 
-        Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("error_type", ex.getErrorType().name());
-        if (ex.getMessage() != null) {
-            properties.put("jwt_error_details", ex.getMessage());
-        }
+        ProblemDetail problemDetail = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
+        problemDetail.setTitle(title);
+        problemDetail.setDetail(detail);
+        problemDetail.setType(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + typeSuffix.replace('.', '/')));
 
-        ProblemDetail problemDetail = buildProblemDetail(
-                HttpStatus.UNAUTHORIZED,
-                typeSuffix,
-                request.getLocale(),
-                properties
-        );
         setInstanceUriIfAbsent(problemDetail, request);
         return problemDetail;
     }
@@ -115,11 +103,6 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      * Обрабатывает общие {@link AuthenticationException}, которые не были перехвачены
      * более специфичными обработчиками (например, {@link BadJwtException} или {@link BadCredentialsException}).
      * Возвращает {@link ProblemDetail} для ответа HTTP 401 Unauthorized.
-     * <p>
-     * Если {@link AuthenticationException#getMessage()} не пусто, оно добавляется в поле
-     * {@code properties.auth_error_details} объекта {@code ProblemDetail}.
-     * Поля {@code title} и {@code detail} извлекаются из {@link MessageSource} по ключу {@code "unauthorized"}.
-     * </p>
      *
      * @param ex      Исключение {@link AuthenticationException}.
      * @param request Текущий веб-запрос.
@@ -129,12 +112,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(AuthenticationException.class)
     public ProblemDetail handleAuthenticationException(AuthenticationException ex, WebRequest request) {
         log.warn("Authentication failure (general): {}", ex.getMessage(), ex);
-        ProblemDetail problemDetail = buildProblemDetail(
-                HttpStatus.UNAUTHORIZED,
-                "unauthorized",
-                request.getLocale(),
-                ex.getMessage() == null ? null : Map.of("auth_error_details", ex.getMessage())
-        );
+
+        String typeSuffix = "unauthorized";
+        String title = messageSource.getMessage("problemDetail." + typeSuffix + ".title", null, request.getLocale());
+        String detail = messageSource.getMessage("problemDetail." + typeSuffix + ".detail", null, request.getLocale());
+
+        ProblemDetail problemDetail = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
+        problemDetail.setTitle(title);
+        problemDetail.setDetail(detail);
+        problemDetail.setType(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "unauthorized"));
+
         setInstanceUriIfAbsent(problemDetail, request);
         return problemDetail;
     }
@@ -143,11 +130,6 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      * Обрабатывает {@link AccessDeniedException}, возникающее при попытке доступа
      * аутентифицированного пользователя к ресурсу, на который у него нет прав.
      * Возвращает {@link ProblemDetail} для ответа HTTP 403 Forbidden.
-     * <p>
-     * Если {@link AccessDeniedException#getMessage()} не пусто, оно добавляется в поле
-     * {@code properties.access_denied_reason} объекта {@code ProblemDetail}.
-     * Поля {@code title} и {@code detail} извлекаются из {@link MessageSource} по ключу {@code "forbidden"}.
-     * </p>
      *
      * @param ex      Исключение {@link AccessDeniedException}.
      * @param request Текущий веб-запрос.
@@ -166,14 +148,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 userName, requestUri, ex.getMessage(), ex);
 
         // TODO: (Backlog - Low Priority) Реализовать логику выбора между 403 и 404 (ADR-0019). Пока всегда 403.
-        HttpStatus status = HttpStatus.FORBIDDEN;
 
-        ProblemDetail problemDetail = buildProblemDetail(
-                status,
-                "forbidden",
-                request.getLocale(),
-                ex.getMessage() == null ? null : Map.of("access_denied_reason", ex.getMessage())
-        );
+        String typeSuffix = "forbidden";
+        String title = messageSource.getMessage("problemDetail." + typeSuffix + ".title", null, request.getLocale());
+        String detail = messageSource.getMessage("problemDetail." + typeSuffix + ".detail", null, request.getLocale());
+
+        ProblemDetail problemDetail = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
+        problemDetail.setTitle(title);
+        problemDetail.setDetail(detail);
+        problemDetail.setType(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "forbidden"));
+
         setInstanceUriIfAbsent(problemDetail, request);
         return problemDetail;
     }
@@ -183,11 +167,6 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      * (например, через эндпоинт {@code /api/v1/auth/login}).
      * Возвращает {@link ProblemDetail} для ответа HTTP 401 Unauthorized.
      * Устанавливает заголовок {@code WWW-Authenticate: Bearer realm="task-tracker"}.
-     * <p>
-     * Если {@link BadCredentialsException#getMessage()} не пусто, оно добавляется в поле
-     * {@code properties.login_error_details} объекта {@code ProblemDetail}.
-     * Поля {@code title} и {@code detail} извлекаются из {@link MessageSource} по ключу {@code "auth.invalidCredentials"}.
-     * </p>
      *
      * @param ex      Исключение {@link BadCredentialsException}.
      * @param request Текущий веб-запрос.
@@ -205,12 +184,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             }
         }
 
-        ProblemDetail problemDetail = buildProblemDetail(
-                HttpStatus.UNAUTHORIZED,
-                "auth.invalidCredentials",
-                request.getLocale(),
-                ex.getMessage() == null ? null : Map.of("login_error_details", ex.getMessage())
-        );
+        String typeSuffix = "auth.invalidCredentials";
+        String title = messageSource.getMessage("problemDetail." + typeSuffix + ".title", null, request.getLocale());
+        String detail = messageSource.getMessage("problemDetail." + typeSuffix + ".detail", null, request.getLocale());
+
+        ProblemDetail problemDetail = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
+        problemDetail.setTitle(title);
+        problemDetail.setDetail(detail);
+        problemDetail.setType(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "auth/invalid-credentials"));
+
         setInstanceUriIfAbsent(problemDetail, request);
         return problemDetail;
     }
@@ -223,7 +205,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      * <p>
      * В поле {@code properties} объекта {@code ProblemDetail} добавляется:
      * <ul>
-     *     <li>{@code invalid_params}: Список объектов, каждый из которых содержит {@code field} (имя поля)
+     *     <li>{@code invalidParams}: Список объектов, каждый из которых содержит {@code field} (имя поля)
      *         и {@code message} (сообщение об ошибке валидации для этого поля).</li>
      * </ul>
      * Поля {@code title} и {@code detail} извлекаются из {@link MessageSource} по ключу {@code "validation.constraintViolation"}.
@@ -244,12 +226,17 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 ))
                 .toList();
 
-        ProblemDetail problemDetail = buildProblemDetail(
-                HttpStatus.BAD_REQUEST,
-                "validation.constraintViolation",
-                request.getLocale(),
-                Map.of("invalid_params", errors)
-        );
+        String typeSuffix = "validation.constraintViolation";
+        String title = messageSource.getMessage(
+                "problemDetail." + typeSuffix + ".title", null, request.getLocale());
+        String detail = messageSource.getMessage(
+                "problemDetail." + typeSuffix + ".detail", new Object[]{ex.getConstraintViolations().size()}, request.getLocale());
+
+        ProblemDetail problemDetail = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+        problemDetail.setTitle(title);
+        problemDetail.setDetail(detail);
+        problemDetail.setType(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "validation/constraint-violation"));
+        problemDetail.setProperty("invalidParams", errors);
         setInstanceUriIfAbsent(problemDetail, request);
         return problemDetail;
     }
@@ -262,8 +249,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      * <p>
      * В поле {@code properties} объекта {@code ProblemDetail} добавляется:
      * <ul>
-     *     <li>{@code invalid_params}: Список объектов, каждый из которых содержит {@code field} (имя поля),
-     *         {@code rejected_value} (отклоненное значение) и {@code message} (сообщение об ошибке валидации).</li>
+     *     <li>{@code invalidParams}: Список объектов, каждый из которых содержит {@code field} (имя поля),
+     *         {@code rejectedValue} (отклоненное значение) и {@code message} (сообщение об ошибке валидации).</li>
      * </ul>
      * Поля {@code title} и {@code detail} извлекаются из {@link MessageSource} по ключу {@code "validation.methodArgumentNotValid"}.
      * </p>
@@ -283,26 +270,44 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             @NonNull WebRequest request) {
         log.warn("Method argument not valid due to validation errors. Number of errors: {}", ex.getErrorCount(), ex);
 
-        List<Map<String, Object>> errors = ex.getBindingResult().getFieldErrors().stream()
-                .map(fieldError -> Map.<String, Object>of(
-                        "field", fieldError.getField(),
-                        "rejected_value", Optional.ofNullable(fieldError.getRejectedValue()).map(Object::toString).orElse("null"),
-                        "message", fieldError.getDefaultMessage() != null ? fieldError.getDefaultMessage() : "" // Это уже локализованное сообщение из ResourceBundle
+        // 1. Собираем ошибки полей
+        List<Map<String, Object>> fieldErrors = ex.getBindingResult().getFieldErrors().stream()
+                .map(error -> Map.<String, Object>of(
+                        "field", error.getField(),
+                        "rejectedValue", Optional.ofNullable(error.getRejectedValue()).map(Object::toString).orElse("null"),
+                        "message", error.getDefaultMessage() != null ? error.getDefaultMessage() : ""
                 ))
                 .toList();
-        // Также можно обработать ex.getBindingResult().getGlobalErrors() если они есть
+
+        // 2. Собираем глобальные ошибки
+        List<Map<String, Object>> globalErrors = ex.getBindingResult().getGlobalErrors().stream()
+                .map(error -> Map.<String, Object>of(
+                        // Для глобальной ошибки нет поля, используем имя объекта или специальный маркер
+                        "global", error.getObjectName(),
+                        "rejectedValue", "N/A", // Нет конкретного значения
+                        "message", error.getDefaultMessage() != null ? error.getDefaultMessage() : ""
+                ))
+                .toList();
+
+        // 3. Объединяем их в один список
+        List<Map<String, Object>> allErrors = new ArrayList<>();
+        allErrors.addAll(fieldErrors);
+        allErrors.addAll(globalErrors);
 
         String typeSuffix = "validation.methodArgumentNotValid";
+        String title = messageSource.getMessage(
+                "problemDetail." + typeSuffix + ".title", null, request.getLocale());
+        String detail = messageSource.getMessage(
+                "problemDetail." + typeSuffix + ".detail", new Object[]{ex.getErrorCount()}, request.getLocale());
 
-        ProblemDetail problemDetail = buildProblemDetail(
-                (HttpStatus) status,
-                typeSuffix,
-                request.getLocale(),
-                Map.of("invalid_params", errors) // Используем "invalid_params" как в RFC 7807 примере для ошибок валидации
-        );
+        ProblemDetail problemDetail = ProblemDetail.forStatus(status);
+        problemDetail.setTitle(title);
+        problemDetail.setDetail(detail);
+        problemDetail.setType(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "validation/method-argument-not-valid"));
+        problemDetail.setProperty("invalidParams", allErrors);
         setInstanceUriIfAbsent(problemDetail, request);
 
-        return new ResponseEntity<>(problemDetail, headers, HttpStatus.BAD_REQUEST);
+        return new ResponseEntity<>(problemDetail, headers, status);
     }
 
     /**
@@ -323,17 +328,29 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         if (request instanceof ServletWebRequest servletWebRequest) {
             requestUriPath = servletWebRequest.getRequest().getRequestURI();
         }
-        log.warn("HTTP message conversion error: Request to [{}], Details: {}",
+
+        String userFriendlyCause = "Invalid request format."; // Сообщение по умолчанию
+        Throwable rootCause = ex.getMostSpecificCause();
+        if (rootCause instanceof JsonProcessingException jsonProcessingException) {
+            userFriendlyCause = jsonProcessingException.getOriginalMessage();
+        }
+        // другие парсеры (например XML)
+
+        log.warn("HTTP message conversion error: Request to [{}], Root Cause: {}, Original Exception: {}",
                 requestUriPath,
+                rootCause.getClass().getName(),
                 ex.getMessage());
 
-        ProblemDetail problemDetail = buildProblemDetail(
-                HttpStatus.BAD_REQUEST,
-                "request.body.conversionError",
-                request.getLocale(),
-                Map.of("error_summary", "The request body could not be processed due to a conversion or " +
-                        "formatting error.")
-        );
+        String typeSuffix = "request.body.conversionError";
+        String title = messageSource.getMessage(
+                "problemDetail." + typeSuffix + ".title", null, request.getLocale());
+        String detail = messageSource.getMessage(
+                "problemDetail." + typeSuffix + ".detail", new Object[]{userFriendlyCause}, request.getLocale());
+
+        ProblemDetail problemDetail = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+        problemDetail.setTitle(title);
+        problemDetail.setDetail(detail);
+        problemDetail.setType(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "request/body-conversion-error"));
         setInstanceUriIfAbsent(problemDetail, request);
         return problemDetail;
     }
@@ -406,20 +423,28 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 parameterName, value, requiredType, ex.getMessage());
 
         Map<String, Object> properties = new LinkedHashMap<>();
-        properties.put("parameter_name", parameterName);
-        properties.put("parameter_value", value != null ? value.toString() : "null");
-        properties.put("expected_type", requiredType);
+        properties.put("field", parameterName);
+        properties.put("rejectedValue", value != null ? value.toString() : "null");
+        properties.put("expectedType", requiredType);
 
-        ProblemDetail body = buildProblemDetail(
-                (HttpStatus) status,
-                "request.parameter.typeMismatch",
-                request.getLocale(),
-                properties
-        );
-        setInstanceUriIfAbsent(body, request); // Устанавливаем instance URI
+        String typeSuffix = "request.parameter.typeMismatch";
+        String title = messageSource.getMessage(
+                "problemDetail." + typeSuffix + ".title", null, request.getLocale());
+        String detail = messageSource.getMessage(
+                "problemDetail." + typeSuffix + ".detail",
+                new Object[]{parameterName,
+                        value != null ? value.toString() : "null",
+                        requiredType},
+                request.getLocale());
 
-        // Используем handleExceptionInternal для консистентности с другими обработчиками ResponseEntityExceptionHandler
-        return handleExceptionInternal(ex, body, headers, status, request);
+        ProblemDetail problemDetail = ProblemDetail.forStatus(status);
+        problemDetail.setTitle(title);
+        problemDetail.setDetail(detail);
+        problemDetail.setType(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "request/parameter-type-mismatch"));
+        problemDetail.setProperties(properties);
+        setInstanceUriIfAbsent(problemDetail, request);
+
+        return handleExceptionInternal(ex, problemDetail, headers, status, request);
     }
 
     // --- Обработчик для отсутствующих ключей локализации ---
@@ -429,14 +454,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      * если ключ для локализованного сообщения не найден. Это указывает на критическую проблему
      * конфигурации приложения и должно приводить к ошибке сервера HTTP 500.
      * <p>
-     * В поле {@code properties} объекта {@code ProblemDetail} добавляется:
+     * В поле {@code properties} объекта {@code ProblemDetail} добавляются:
      * <ul>
-     *     <li>{@code missing_resource_info}: Оригинальное сообщение из {@link NoSuchMessageException},
-     *         обычно содержащее имя отсутствующего ключа.</li>
+     *     <li>{@code errorRef}: Уникальный идентификатор для отслеживания ошибки.</li>
+     *     <li>{@code missingResourceInfo}: Оригинальное сообщение из {@link NoSuchMessageException},
+     *         содержащее имя отсутствующего ключа.</li>
      * </ul>
-     * Поля {@code title} и {@code detail} для этого ответа извлекаются из {@link MessageSource}
-     * по ключу {@code "internal.missingMessageResource"}. Если и эти ключи отсутствуют,
-     * используются жестко закодированные фолбэки.
+     * Поля {@code title} и {@code detail} для этого ответа извлекаются из {@link MessageSource}.
+     * Поле {@code detail} включает в себя {@code errorRef}. Если и эти ключи отсутствуют,
+     * используются жестко закодированные фолбэки, также включающие {@code errorRef}.
      * </p>
      *
      * @param ex      Исключение {@link NoSuchMessageException}.
@@ -445,45 +471,55 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      */
     @ExceptionHandler(NoSuchMessageException.class)
     public ProblemDetail handleNoSuchMessageException(NoSuchMessageException ex, WebRequest request) {
+        // 1. Генерируем уникальный ID ошибки в самом начале
         String errorRef = UUID.randomUUID().toString();
+        String originalMissingKeyInfo = ex.getMessage();
+
+        // 2. Логируем полную информацию для себя
         log.error("CRITICAL CONFIGURATION ERROR (Ref: {}): Required message resource not found. " +
                         "Locale: {}. Original exception message: '{}'. Request: {}",
-                errorRef, request.getLocale(), ex.getMessage(), request.getDescription(false), ex);
- 
-        String initialTypeSuffix = "internal.missingMessageResource";
-        URI typeUri = URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + initialTypeSuffix.replaceAll("\\.", "/"));
+                errorRef, request.getLocale(), originalMissingKeyInfo, request.getDescription(false), ex);
+
+        // 3. Готовим переменные для ответа
+        String typeSuffix = "internal.missingMessageResource";
+        URI typeUri = URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + typeSuffix.replaceAll("\\.", "/"));
         String title;
         String detail;
 
+        // 4. Готовим `properties` для ответа
         Map<String, Object> properties = new LinkedHashMap<>();
-        if (ex.getMessage() != null) {
-            properties.put("missing_resource_info", ex.getMessage()); // Оригинальная ошибка
+        properties.put("errorRef", errorRef);
+        if (originalMissingKeyInfo != null) {
+            properties.put("missingResourceInfo", originalMissingKeyInfo);
         }
-        properties.put("error_ref", errorRef);
+
+        // 5. Пытаемся получить сообщения, обрабатывая "аварийный" случай
         try {
-            // Попытка получить стандартные сообщения для этой ошибки
-            title = messageSource.getMessage("problemDetail." + initialTypeSuffix + ".title", null, request.getLocale());
-            detail = messageSource.getMessage("problemDetail." + initialTypeSuffix + ".detail",
-                    null, request.getLocale()); // передаем ex.getMessage() как аргумент
+            title = messageSource.getMessage("problemDetail." + typeSuffix + ".title", null, request.getLocale());
+            detail = messageSource.getMessage(
+                    "problemDetail." + typeSuffix + ".detail", new Object[]{errorRef}, request.getLocale());
         } catch (NoSuchMessageException localizationEmergency) {
-            log.error("ULTRA-CRITICAL: Message resources for localization error handler itself are missing! Key: {}",
-                    localizationEmergency.getMessage(), localizationEmergency);
+            // Аварийный случай: даже сообщения для этой ошибки отсутствуют
+            log.error("ULTRA-CRITICAL (Ref: {}): Message resources for localization error handler itself are missing! Key: {}",
+                    errorRef, localizationEmergency.getMessage(), localizationEmergency);
+
             typeUri = URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "internal/localization-emergency");
             title = "Internal Server Error"; // Абсолютный фолбэк
-            detail = "A critical internal configuration error occurred regarding localization. Please contact support. " +
-                    "Details: " + ex.getMessage(); // Включаем исходную проблему
+            detail = "A critical internal configuration error occurred regarding localization. " +
+                    "Please contact support and provide the error reference ID: " + errorRef;
+
             if (localizationEmergency.getMessage() != null) {
-                properties.put("secondary_missing_resource_info", localizationEmergency.getMessage()); // Ошибка загрузки сообщения об ошибке
+                properties.put("secondaryMissingResourceInfo", localizationEmergency.getMessage());
             }
         }
 
+        // 6. Собираем финальный ProblemDetail
         ProblemDetail problemDetail = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
         problemDetail.setType(typeUri);
         problemDetail.setTitle(title);
         problemDetail.setDetail(detail);
-        if (!properties.isEmpty()) {
-            properties.forEach(problemDetail::setProperty);
-        }
+        problemDetail.setProperties(properties);
+
         setInstanceUriIfAbsent(problemDetail, request);
         return problemDetail;
     }
@@ -495,7 +531,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      * <p>
      * В поле {@code properties} объекта {@code ProblemDetail} добавляется:
      * <ul>
-     *     <li>{@code error_ref}: Уникальный идентификатор ошибки для отслеживания.</li>
+     *     <li>{@code errorRef}: Уникальный идентификатор ошибки для отслеживания.</li>
      * </ul>
      * Клиенту сообщается об общей внутренней ошибке и предоставляется этот ID.
      * Детали самого {@link IllegalStateException} не передаются клиенту, но логируются на сервере.
@@ -509,64 +545,48 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      */
     @ExceptionHandler(IllegalStateException.class)
     public ProblemDetail handleIllegalStateException(IllegalStateException ex, WebRequest request) {
-        String errorRef = UUID.randomUUID().toString();
-
-        log.error("Illegal state encountered (Ref: {}): {}", errorRef, ex.getMessage(), ex);
-        ProblemDetail problemDetail = buildProblemDetail(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "internal.illegalState", // Новый тип проблемы
-                request.getLocale(),
-                Map.of("error_ref", errorRef)
-        );
-        setInstanceUriIfAbsent(problemDetail, request);
-        return problemDetail;
+        return handleInternalServerError(ex, request, "internal.illegalState", null);
     }
 
-
     /**
-     * Вспомогательный метод для создания и базовой настройки {@link ProblemDetail}.
-     * <p>
-     * Извлекает {@code title} и {@code detail} из {@link MessageSource} по ключам,
-     * сформированным на основе {@code typeSuffix}. Предполагается, что ключи для {@code detail}
-     * в {@code messages.properties}, используемые этим методом, **не требуют аргументов**.
-     * Динамическая информация должна передаваться через {@code additionalProperties}.
-     * </p>
-     * <p>
-     * Если ключ для {@code title} или {@code detail} не найден в {@link MessageSource},
-     * будет выброшено {@link NoSuchMessageException}, которая должна быть обработана
-     * {@link #handleNoSuchMessageException(NoSuchMessageException, WebRequest)}.
-     * </p>
+     * Централизованно обрабатывает непредвиденные исключения, приводящие к HTTP 500.
+     * Генерирует уникальный errorRef, логирует его вместе с полным исключением
+     * и возвращает клиенту стандартизированный ProblemDetail.
      *
-     * @param status               HTTP-статус для {@link ProblemDetail}. Не должен быть null.
-     * @param typeSuffix           Суффикс для формирования URI типа проблемы ({@link ProblemDetail#setType(URI)})
-     *                             и ключей для {@link MessageSource}. Не должен быть null.
-     * @param locale               Локаль для получения сообщений. Не должна быть null.
-     * @param additionalProperties Карта с дополнительными, не стандартными свойствами для
-     *                             {@link ProblemDetail} (может быть {@code null}).
-     * @return Сконфигурированный объект {@link ProblemDetail}.
-     * @throws NoSuchMessageException если ключ для {@code title} или {@code detail} не найден.
+     * @param ex             Исключение, вызвавшее ошибку.
+     * @param request        Текущий веб-запрос.
+     * @param typeSuffix     Суффикс для ключей MessageSource и URI типа проблемы.
+     * @param additionalProps Дополнительные properties (кроме errorRef).
+     * @return Сконфигурированный ProblemDetail.
      */
-     ProblemDetail buildProblemDetail(@NonNull HttpStatus status,
-                                             @NonNull String typeSuffix,
-                                             @NonNull Locale locale,
-                                             @Nullable Map<String, Object> additionalProperties) {
+    private ProblemDetail handleInternalServerError(Exception ex, WebRequest request,
+                                                    String typeSuffix, Map<String, Object> additionalProps) {
+        String errorRef = UUID.randomUUID().toString();
+        log.error("Internal Server Error (Ref: {}): {}", errorRef, ex.getMessage(), ex);
 
-        String titleKey = "problemDetail." + typeSuffix + ".title";
-        String detailKey = "problemDetail." + typeSuffix + ".detail";
-        URI typeUri = URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + typeSuffix.replaceAll("\\.", "/"));
+        // Формируем `properties` для ответа, всегда включая errorRef
+        Map<String, Object> properties = new LinkedHashMap<>();
+        if (additionalProps != null) {
+            properties.putAll(additionalProps);
+        }
+        properties.put("errorRef", errorRef);
 
+        // Получаем title и detail из MessageSource
+        String title = messageSource.getMessage(
+                "problemDetail." + typeSuffix + ".title", null, request.getLocale());
 
-        String title = messageSource.getMessage(titleKey, null, locale);
-        String detail = messageSource.getMessage(detailKey, null, locale);
+        // Передаем errorRef как аргумент для detail
+        String detail = messageSource.getMessage(
+                "problemDetail." + typeSuffix + ".detail", new Object[]{errorRef}, request.getLocale());
 
-        ProblemDetail problemDetail = ProblemDetail.forStatus(status.value());
-        problemDetail.setType(typeUri);
+        // Создаем ProblemDetail
+        ProblemDetail problemDetail = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
         problemDetail.setTitle(title);
         problemDetail.setDetail(detail);
+        problemDetail.setType(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + typeSuffix.replace('.', '/')));
+        problemDetail.setProperties(properties);
 
-        if (additionalProperties != null) {
-            additionalProperties.forEach(problemDetail::setProperty);
-        }
+        setInstanceUriIfAbsent(problemDetail, request);
         return problemDetail;
     }
 

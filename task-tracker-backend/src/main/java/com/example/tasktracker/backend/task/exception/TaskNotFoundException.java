@@ -50,10 +50,10 @@ public class TaskNotFoundException extends ErrorResponseException {
 
         getBody().setType(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + PROBLEM_TYPE_URI_PATH));
 
-        getBody().setProperty("requested_task_id", requestedTaskId);
+        getBody().setProperty("requestedTaskId", requestedTaskId);
 
         if (currentUserId != null) {
-            getBody().setProperty("context_user_id", currentUserId);
+            getBody().setProperty("contextUserId", currentUserId);
         }
     }
 
@@ -66,10 +66,10 @@ public class TaskNotFoundException extends ErrorResponseException {
     public String getDetailMessageCode() {
         return "problemDetail." + PROBLEM_TYPE_SUFFIX + ".detail";
     }
-
+    
     @Override
     public Object[] getDetailMessageArguments() {
-        return null;
+        return new Object[]{this.requestedTaskId};
     }
 
     @Override

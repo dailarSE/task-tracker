@@ -4,6 +4,13 @@ import com.example.tasktracker.backend.security.dto.AuthResponse;
 import com.example.tasktracker.backend.security.dto.LoginRequest;
 import com.example.tasktracker.backend.security.service.AuthService;
 import com.example.tasktracker.backend.web.exception.GlobalExceptionHandler;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +41,7 @@ import static com.example.tasktracker.backend.web.ApiConstants.X_ACCESS_TOKEN_HE
 @RestController
 @RequiredArgsConstructor
 @Slf4j
+@Tag(name = "Authentication", description = "API для аутентификации пользователей")
 public class AuthController {
 
     private final AuthService authService;
@@ -58,6 +66,20 @@ public class AuthController {
      * @return {@link ResponseEntity} с {@link AuthResponse} в теле и статусом 200 OK,
      *         либо ответ об ошибке, сформированный {@link GlobalExceptionHandler}.
      */
+    @Operation(
+            summary = "Аутентификация пользователя (логин)",
+            description = "Принимает email и пароль, возвращает JWT Access Token в случае успеха."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Аутентификация прошла успешно",
+                    headers = @Header(name = X_ACCESS_TOKEN_HEADER, description = "JWT Access Token"),
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = AuthResponse.class))),
+            @ApiResponse(responseCode = "400", ref = "#/components/responses/BadRequestValidation"),
+            @ApiResponse(responseCode = "401", ref = "#/components/responses/UnauthorizedBadCredentials")
+    })
+
     @PostMapping(LOGIN_ENDPOINT)
     public ResponseEntity<AuthResponse> loginUser(@Valid @RequestBody LoginRequest loginRequest) {
         log.info("Processing login request for email: {}", loginRequest.getEmail());

@@ -28,7 +28,7 @@ public class RegisterRequest {
     private String email;
 
     /**
-     * Пароль пользователя. Должен соответствовать требованиям к минимальной длине.
+     * Пароль пользователя. Должен соответствовать требованиям к максимальной длине.
      */
     @NotBlank(message = "{user.validation.password.notBlank}")
     @Size(max = 255, message = "{user.validation.password.size}")

@@ -7,6 +7,14 @@ import com.example.tasktracker.backend.security.dto.RegisterRequest;
 import com.example.tasktracker.backend.security.service.AuthService;
 import com.example.tasktracker.backend.user.dto.UserResponse;
 import com.example.tasktracker.backend.web.exception.GlobalExceptionHandler;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,7 +27,8 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
 
-import static com.example.tasktracker.backend.web.ApiConstants.*;
+import static com.example.tasktracker.backend.web.ApiConstants.USERS_API_BASE_URL;
+import static com.example.tasktracker.backend.web.ApiConstants.X_ACCESS_TOKEN_HEADER;
 
 /**
  * REST-контроллер для операций, связанных с пользователями.
@@ -47,6 +56,7 @@ import static com.example.tasktracker.backend.web.ApiConstants.*;
 @RequestMapping(USERS_API_BASE_URL)
 @RequiredArgsConstructor
 @Slf4j
+@Tag(name = "Users", description = "API для управления пользователями и их профилями")
 public class UserController {
 
     private final AuthService authService;
@@ -73,6 +83,19 @@ public class UserController {
      * @return {@link ResponseEntity} с {@link AuthResponse} в теле и статусом 201 Created,
      * либо ответ об ошибке, сформированный {@link GlobalExceptionHandler}.
      */
+    @Operation(summary = "Регистрация нового пользователя")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201",
+                    description = "Пользователь успешно создан и аутентифицирован",
+                    headers = {
+                            @Header(name = X_ACCESS_TOKEN_HEADER, description = "JWT Access Token"),
+                            @Header(name = HttpHeaders.LOCATION, description = "URI для получения информации о текущем пользователе")
+                    },
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthResponse.class))),
+            @ApiResponse(responseCode = "400", ref = "#/components/responses/BadRequestGeneral"),
+            @ApiResponse(responseCode = "409", ref = "#/components/responses/ConflictUserExists")
+    })
+    @SecurityRequirements() // Публичный эндпоинт
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> registerUser(@Valid @RequestBody RegisterRequest registerRequest) {
         log.info("Processing user registration request for email: {}", registerRequest.getEmail());
@@ -109,11 +132,16 @@ public class UserController {
      * </p>
      *
      * @param currentUserPrincipal Данные текущего аутентифицированного пользователя (реализация {@link AppUserDetails}),
-     *                    внедренные Spring Security. Ожидается, что этот параметр будет не-null
-     *                    для защищенного эндпоинта.
+     *                             внедренные Spring Security. Ожидается, что этот параметр будет не-null
+     *                             для защищенного эндпоинта.
      * @return {@link ResponseEntity} с {@link UserResponse} в теле, содержащим ID и email пользователя, и статусом 200 OK.
      * @throws IllegalStateException если {@code currentUserPrincipal} не может быть разрешен в корректный {@link AppUserDetails} с ID (выбрасывается из {@link ControllerSecurityUtils}).
      */
+    @Operation(summary = "Получение данных текущего пользователя")
+    @ApiResponse(responseCode = "200", description = "Данные пользователя успешно получены",
+            content = @Content(mediaType = "application/json",
+                    schema = @Schema(implementation = UserResponse.class)))
+    @ApiResponse(responseCode = "401", ref = "#/components/responses/UnauthorizedGeneral")
     @GetMapping("/me")
     public ResponseEntity<UserResponse> getCurrentUser(@AuthenticationPrincipal AppUserDetails currentUserPrincipal) {
         AppUserDetails userDetails = ControllerSecurityUtils.getAuthenticatedUserDetails(currentUserPrincipal);

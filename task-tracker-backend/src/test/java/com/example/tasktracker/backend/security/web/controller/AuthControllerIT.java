@@ -145,20 +145,19 @@ class AuthControllerIT {
         assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         ProblemDetail problemDetail = responseEntity.getBody();
         assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI +
-                "validation.methodArgumentNotValid".replaceAll("\\.", "/")));
+        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "validation/method-argument-not-valid"));
         assertThat(problemDetail.getTitle()).isEqualTo(expectedProblemTitle);
         assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
 
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) problemDetail.getProperties().get("invalid_params");
+        List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) problemDetail.getProperties().get("invalidParams");
         assertThat(invalidParams).isNotNull();
         boolean fieldErrorFound = invalidParams.stream().anyMatch(errorMap ->
                 expectedInvalidField.equals(errorMap.get("field")) &&
                         expectedValidationMessage.equals(errorMap.get("message"))
         );
         assertThat(fieldErrorFound)
-                .as("Expected validation error for field '%s' with message '%s' was not found in invalid_params: %s",
+                .as("Expected validation error for field '%s' with message '%s' was not found in invalidParams: %s",
                         expectedInvalidField, expectedValidationMessage, invalidParams)
                 .isTrue();
     }
@@ -185,8 +184,7 @@ class AuthControllerIT {
 
         ProblemDetail problemDetail = responseEntity.getBody();
         assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI +
-                "auth.invalidCredentials".replaceAll("\\.", "/"))); // Ожидаем специфичный тип
+        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "auth/invalid-credentials")); // Ожидаем специфичный тип
         assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
         assertThat(problemDetail.getDetail()).isEqualTo(expectedDetail);
         assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
@@ -216,8 +214,7 @@ class AuthControllerIT {
 
         ProblemDetail problemDetail = responseEntity.getBody();
         assertThat(problemDetail).isNotNull();
-        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI +
-                "auth.invalidCredentials".replaceAll("\\.", "/")));
+        assertThat(problemDetail.getType()).isEqualTo(URI.create(PROBLEM_TYPE_BASE_URI + "auth/invalid-credentials"));
         assertThat(problemDetail.getTitle()).isEqualTo(expectedTitle);
         assertThat(problemDetail.getDetail()).isEqualTo(expectedDetail);
         assertThat(problemDetail.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());

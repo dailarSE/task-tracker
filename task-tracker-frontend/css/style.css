@@ -35,7 +35,6 @@ header {
 /* Содержимое модального окна (белый блок) */
 .modal-content {
     background-color: #fefefe;
-    margin: auto;
     padding: 20px;
     border: 1px solid #888;
     width: 80%;
@@ -111,7 +110,7 @@ input.is-invalid {
 
 /* Стили для Toast-уведомлений */
 .toast {
-    display: none; /* Изначально скрыт */
+    visibility: hidden; /* Изначально полностью скрыт и не кликабелен */
     position: fixed;
     bottom: 20px;
     left: 50%;
@@ -122,7 +121,7 @@ input.is-invalid {
     border-radius: 5px;
     z-index: 1050; /* Выше модальных окон */
     opacity: 0;
-    transition: opacity 0.5s ease-in-out; /* Плавное появление и исчезновение */
+    transition: opacity 0.3s, visibility 0.3s; /* Анимируем оба свойства */
 }
 
 /* Модификаторы цвета для toast */
@@ -132,7 +131,7 @@ input.is-invalid {
 
 /* Класс для отображения toast */
 .toast.show {
-    display: block;
+    visibility: visible; /* Делаем видимым */
     opacity: 1;
 }
 
@@ -145,12 +144,4 @@ input.is-invalid {
 #userEmailDisplay {
     margin-right: 15px;
     font-weight: bold;
-}
-
-/* --- Стили для сообщений об ошибках --- */
-.error-message {
-    color: #d9534f; /* Красный цвет для ошибок */
-    margin-top: 10px;
-    font-size: 0.9em;
-    min-height: 1.2em; /* Резервируем место, чтобы форма не "прыгала" при появлении ошибки */
 }

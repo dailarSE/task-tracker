@@ -28,11 +28,7 @@ import java.io.InputStream;
                 version = "1.0.0",
                 description = "RESTful API для сервиса Task Tracker"
         ),
-        servers = {
-                @Server(
-                        description = "Development Server"
-                )
-        },
+        servers = {@Server(description = "Development Server")},
         security = @SecurityRequirement(name = "bearerAuth")
 )
 @SecurityScheme(
@@ -43,101 +39,75 @@ import java.io.InputStream;
 )
 public class OpenApiConfig {
 
-        /**
-         * Создает кастомайзер, который загружает компоненты OpenAPI
-         * из внешнего YAML-файла и объединяет их с автоматически сгенерированной
-         * спецификацией.
-         *
-         * @return бин OpenApiCustomizer.
-         */
-        @Bean
-        public OpenApiCustomizer externalComponentsCustomizer() {
-                return openApi -> {
-                        try {
-                                Components externalComponents = loadComponentsFromYaml("classpath:/openapi-components.yml");
-                                if (externalComponents != null) {
-                                        Components existingComponents = openApi.getComponents();
-                                        if (existingComponents == null) {
-                                                openApi.setComponents(externalComponents);
-                                        } else {
-                                                mergeComponents(existingComponents, externalComponents);
-                                        }
-                                        log.info("Successfully merged components from openapi-components.yml");
-                                }
-                        } catch (IOException e) {
-                                log.error("Failed to load or parse external OpenAPI components file.", e);
-                                throw new RuntimeException("Failed to initialize OpenAPI documentation from external file", e);
-                        }
-                };
+    private static final String EXTERNAL_COMPONENTS_PATH = "classpath:/openapi-components.yml";
+
+    /**
+     * Создает кастомайзер, который загружает компоненты OpenAPI
+     * из внешнего YAML-файла и объединяет их с автоматически сгенерированной
+     * спецификацией.
+     *
+     * @return бин OpenApiCustomizer.
+     */
+    @Bean
+    public OpenApiCustomizer externalComponentsCustomizer() {
+        return openApi -> {
+            Components externalComponents = loadComponentsFromYaml();
+            Components existingComponents = openApi.getComponents();
+            if (existingComponents == null) {
+                openApi.setComponents(externalComponents);
+            } else {
+                mergeComponents(existingComponents, externalComponents);
+            }
+
+            log.info("Successfully merged components from " + EXTERNAL_COMPONENTS_PATH);
+        };
+    }
+
+    private Components loadComponentsFromYaml() {
+        final ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
+        Resource resource = new PathMatchingResourcePatternResolver().getResource(EXTERNAL_COMPONENTS_PATH);
+
+        if (!resource.exists()) {
+            log.error("CRITICAL: OpenAPI components file not found at path: {}. Application startup will be aborted.",
+                    EXTERNAL_COMPONENTS_PATH);
+            throw new IllegalStateException("Required OpenAPI components file not found: " + EXTERNAL_COMPONENTS_PATH);
         }
 
-        private Components loadComponentsFromYaml(String resourcePath) throws IOException {
-                final ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
-                Resource resource = new PathMatchingResourcePatternResolver().getResource(resourcePath);
-
-                if (!resource.exists()) {
-                        log.warn("OpenAPI components file not found at path: {}. Skipping merge.", resourcePath);
-                        return null;
-                }
-
-                try (InputStream inputStream = resource.getInputStream()) {
-                        OpenAPI parsedOpenApi = yamlMapper.readValue(inputStream, OpenAPI.class);
-                        return parsedOpenApi != null ? parsedOpenApi.getComponents() : null;
-                }
+        try (InputStream inputStream = resource.getInputStream()) {
+            OpenAPI parsedOpenApi = yamlMapper.readValue(inputStream, OpenAPI.class);
+            if (parsedOpenApi == null || parsedOpenApi.getComponents() == null) {
+                log.error("CRITICAL: OpenAPI components file is empty or does not contain a 'components' section: {}. " +
+                        "Startup aborted.", EXTERNAL_COMPONENTS_PATH);
+                throw new IllegalStateException("OpenAPI components file is empty or invalid: " + EXTERNAL_COMPONENTS_PATH);
+            }
+            return parsedOpenApi.getComponents();
+        } catch (IOException e) {
+            log.error("CRITICAL: Failed to load or parse external OpenAPI components file: {}. Startup aborted.",
+                    EXTERNAL_COMPONENTS_PATH, e);
+            throw new IllegalStateException("Failed to read or parse OpenAPI components file: " +
+                    EXTERNAL_COMPONENTS_PATH, e);
         }
+    }
 
-        /**
-         * Вспомогательный метод для полного слияния компонентов.
-         * Добавляет все типы компонентов из `source` в `target`.
-         * Если компонент с таким же именем уже существует, он будет заменен.
-         *
-         * @param target Целевые компоненты (из основной спецификации).
-         * @param source Исходные компоненты (из файла).
-         */
-        private void mergeComponents(Components target, Components source) {
-                if (source.getSchemas() != null) {
-                        if (target.getSchemas() == null) target.setSchemas(source.getSchemas());
-                        else target.getSchemas().putAll(source.getSchemas());
-                }
-                if (source.getResponses() != null) {
-                        if (target.getResponses() == null) target.setResponses(source.getResponses());
-                        else target.getResponses().putAll(source.getResponses());
-                }
-                if (source.getParameters() != null) {
-                        if (target.getParameters() == null) target.setParameters(source.getParameters());
-                        else target.getParameters().putAll(source.getParameters());
-                }
-                if (source.getExamples() != null) {
-                        if (target.getExamples() == null) target.setExamples(source.getExamples());
-                        else target.getExamples().putAll(source.getExamples());
-                }
-                if (source.getRequestBodies() != null) {
-                        if (target.getRequestBodies() == null) target.setRequestBodies(source.getRequestBodies());
-                        else target.getRequestBodies().putAll(source.getRequestBodies());
-                }
-                if (source.getHeaders() != null) {
-                        if (target.getHeaders() == null) target.setHeaders(source.getHeaders());
-                        else target.getHeaders().putAll(source.getHeaders());
-                }
-                if (source.getSecuritySchemes() != null) {
-                        if (target.getSecuritySchemes() == null) target.setSecuritySchemes(source.getSecuritySchemes());
-                        else target.getSecuritySchemes().putAll(source.getSecuritySchemes());
-                }
-                if (source.getLinks() != null) {
-                        if (target.getLinks() == null) target.setLinks(source.getLinks());
-                        else target.getLinks().putAll(source.getLinks());
-                }
-                if (source.getCallbacks() != null) {
-                        if (target.getCallbacks() == null) target.setCallbacks(source.getCallbacks());
-                        else target.getCallbacks().putAll(source.getCallbacks());
-                }
-                if (source.getExtensions() != null) {
-                        if (target.getExtensions() == null) target.setExtensions(source.getExtensions());
-                        else target.getExtensions().putAll(source.getExtensions());
-                }
-                if (source.getPathItems() != null) {
-                        if (target.getPathItems() == null) target.setPathItems(source.getPathItems());
-                        else target.getPathItems().putAll(source.getPathItems());
-                }
-        }
+    /**
+     * Вспомогательный метод для полного слияния компонентов.
+     * Добавляет все типы компонентов из `source` в `target`.
+     * Если компонент с таким же именем уже существует, он будет заменен.
+     *
+     * @param target Целевые компоненты (из основной спецификации).
+     * @param source Исходные компоненты (из файла).
+     */
+    private void mergeComponents(Components target, Components source) {
+        if (source.getSchemas() != null) source.getSchemas().forEach(target::addSchemas);
+        if (source.getResponses() != null) source.getResponses().forEach(target::addResponses);
+        if (source.getParameters() != null) source.getParameters().forEach(target::addParameters);
+        if (source.getExamples() != null) source.getExamples().forEach(target::addExamples);
+        if (source.getRequestBodies() != null) source.getRequestBodies().forEach(target::addRequestBodies);
+        if (source.getHeaders() != null) source.getHeaders().forEach(target::addHeaders);
+        if (source.getSecuritySchemes() != null) source.getSecuritySchemes().forEach(target::addSecuritySchemes);
+        if (source.getLinks() != null) source.getLinks().forEach(target::addLinks);
+        if (source.getCallbacks() != null) source.getCallbacks().forEach(target::addCallbacks);
+        if (source.getExtensions() != null) source.getExtensions().forEach(target::addExtension);
+        if (source.getPathItems() != null) source.getPathItems().forEach(target::addPathItem);
+    }
 }

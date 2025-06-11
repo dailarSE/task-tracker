@@ -96,21 +96,32 @@ components:
     # 400 - BAD REQUEST
     # ---------------------------------------------------------
     BadRequestGeneral:
-      description: "Некорректный запрос. Причина может варьироваться (ошибка валидации, неверный формат параметра, несовпадение паролей)."
+      description: "Некорректный запрос. Причина может варьироваться (ошибка валидации, неверный формат параметра)."
       content:
         application/problem+json:
           schema:
             oneOf:
-              - $ref: '#/components/schemas/BaseProblemDetail'
               - $ref: '#/components/schemas/BadRequestValidationProblem'
               - $ref: '#/components/schemas/BadRequestTypeMismatchProblem'
           examples:
-            passwordMismatchError:
-              $ref: '#/components/examples/BadRequestPasswordMismatchExample'
             validationError:
               $ref: '#/components/examples/BadRequestValidationExample'
             typeMismatchError:
               $ref: '#/components/examples/BadRequestTypeMismatchExample'
+
+    BadRequestRegistration:
+      description: "Некорректный запрос на регистрацию. Возможные причины: ошибка валидации полей или несовпадение паролей."
+      content:
+        application/problem+json:
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/BadRequestValidationProblem'
+              - $ref: '#/components/schemas/BaseProblemDetail'
+          examples:
+            validationError:
+              $ref: '#/components/examples/BadRequestValidationExample'
+            passwordMismatchError:
+              $ref: '#/components/examples/BadRequestPasswordMismatchExample'
 
     BadRequestValidation:
       description: "Ошибка валидации данных. Один или несколько параметров запроса не прошли проверку."
@@ -172,6 +183,19 @@ components:
             status: 400
             detail: "Passwords do not match. Please ensure both passwords are identical."
             instance: "/api/v1/users/register"
+
+    BadRequestMalformed:
+      description: "Запрос не может быть обработан из-за синтаксической ошибки (например, невалидный JSON)."
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/BaseProblemDetail'
+          example:
+            type: "https://task-tracker.example.com/probs/request/body-conversion-error"
+            title: "Request Data Conversion Error"
+            status: 400
+            detail: "Failed to process request body. Reason: Malformed JSON"
+            instance: "/api/v1/some-endpoint"
 
     # ---------------------------------------------------------
     # 401 - UNAUTHORIZED

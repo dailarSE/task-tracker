@@ -92,7 +92,7 @@ public class UserController {
                             @Header(name = HttpHeaders.LOCATION, description = "URI для получения информации о текущем пользователе")
                     },
                     content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthResponse.class))),
-            @ApiResponse(responseCode = "400", ref = "#/components/responses/BadRequestGeneral"),
+            @ApiResponse(responseCode = "400", ref = "#/components/responses/BadRequestRegistration"),
             @ApiResponse(responseCode = "409", ref = "#/components/responses/ConflictUserExists")
     })
     @SecurityRequirements() // Публичный эндпоинт

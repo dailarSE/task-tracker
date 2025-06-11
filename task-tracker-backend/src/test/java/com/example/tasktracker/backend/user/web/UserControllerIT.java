@@ -2,16 +2,14 @@ package com.example.tasktracker.backend.user.web;
 
 import com.example.tasktracker.backend.security.dto.AuthResponse;
 import com.example.tasktracker.backend.security.dto.RegisterRequest;
+import com.example.tasktracker.backend.security.exception.UserAlreadyExistsException;
 import com.example.tasktracker.backend.security.jwt.JwtProperties;
 import com.example.tasktracker.backend.test.util.TestJwtUtil;
 import com.example.tasktracker.backend.user.dto.UserResponse;
 import com.example.tasktracker.backend.user.entity.User;
 import com.example.tasktracker.backend.user.repository.UserRepository;
 import com.example.tasktracker.backend.web.ApiConstants;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -237,11 +235,12 @@ class UserControllerIT {
                 registerUrl, requestEntity, ProblemDetail.class);
 
         assertProblemDetailBase(responseEntity, HttpStatus.CONFLICT,
-                "user/already-exists",
+                UserAlreadyExistsException.PROBLEM_TYPE_URI_PATH,
                 expectedTitle,
                 ApiConstants.USERS_API_BASE_URL + "/register");
         ProblemDetail problemDetail = responseEntity.getBody();
-        assertThat(problemDetail.getProperties()).containsEntry("conflictingEmail", existingEmail);
+        Assertions.assertNotNull(problemDetail);
+        assertThat(problemDetail.getProperties()).containsEntry(UserAlreadyExistsException.CONFLICTING_EMAIL_PROPERTY, existingEmail);
         assertThat(userRepository.count()).isEqualTo(1);
     }
 

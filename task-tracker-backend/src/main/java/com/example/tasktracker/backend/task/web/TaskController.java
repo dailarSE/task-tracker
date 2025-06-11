@@ -10,6 +10,7 @@ import com.example.tasktracker.backend.task.service.TaskService;
 import com.example.tasktracker.backend.web.ApiConstants;
 import com.example.tasktracker.backend.web.exception.GlobalExceptionHandler;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.headers.Header;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -87,6 +88,7 @@ public class TaskController {
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201",
                     description = "Задача успешно создана",
+                    headers = @Header(name = "Location", description = "URI созданного ресурса задачи"),
                     content = @Content(mediaType = "application/json",
                     schema = @Schema(implementation = TaskResponse.class)
                     )

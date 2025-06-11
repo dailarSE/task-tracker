@@ -1,6 +1,7 @@
 package com.example.tasktracker.backend.security.exception;
 
 import com.example.tasktracker.backend.web.ApiConstants;
+import com.example.tasktracker.backend.web.exception.GlobalExceptionHandler;
 import lombok.Getter;
 import org.springframework.context.MessageSource;
 import org.springframework.http.HttpStatus;
@@ -12,32 +13,30 @@ import java.net.URI;
 import java.util.Locale;
 
 /**
- * Исключение, выбрасываемое при попытке регистрации пользователя
- * с email, который уже существует в системе.
+ * Исключение, выбрасываемое при попытке регистрации пользователя с email,
+ * который уже существует в системе.
  * <p>
- * Это исключение реализует {@link ErrorResponse} через наследование
- * от {@link ErrorResponseException}, что позволяет ему напрямую предоставлять информацию
- * для формирования стандартизированного ответа об ошибке в формате RFC 9457 Problem Details.
- * </p>
+ * Это исключение реализует {@link ErrorResponse}, что позволяет Spring MVC
+ * автоматически формировать стандартизированный ответ RFC 9457 Problem Details.
  * <p>
- * HTTP-статус: 409 Conflict.
- * </p>
- * <p>
- * Коды для локализации через {@link org.springframework.context.MessageSource}:
- * <ul>
- *     <li>Type URI суффикс: {@value #PROBLEM_TYPE_SUFFIX} (конкатенируется с {@link ApiConstants#PROBLEM_TYPE_BASE_URI})</li>
- *     <li>Title Message Code: "{@value #PROBLEM_TYPE_SUFFIX}.title"</li>
- *     <li>Detail Message Code: "{@value #PROBLEM_TYPE_SUFFIX}.detail" (ожидает один аргумент: email)</li>
- * </ul>
- * </p>
+ * Оно устанавливает HTTP-статус 409 Conflict и предоставляет
+ * локализуемые сообщения для полей 'title' и 'detail' ответа.
+ * Кроме того, в 'properties' ответа добавляется машиночитаемое поле
+ * {@value #CONFLICTING_EMAIL_PROPERTY}, содержащее email, вызвавший конфликт.
  *
  * @see ErrorResponseException
- * @see com.example.tasktracker.backend.web.exception.GlobalExceptionHandler
+ * @see GlobalExceptionHandler
  */
 @Getter
 public class UserAlreadyExistsException extends ErrorResponseException {
 
     private static final HttpStatus STATUS = HttpStatus.CONFLICT;
+
+    /**
+     * Ключ для поля в 'properties' объекта ProblemDetail, содержащего email, вызвавший конфликт.
+     * Значение: {@value}.
+     */
+    public static final String CONFLICTING_EMAIL_PROPERTY = "conflictingEmail";
 
     /**
      * Суффикс для формирования URI типа проблемы ({@code ProblemDetail.type}) и
@@ -48,14 +47,12 @@ public class UserAlreadyExistsException extends ErrorResponseException {
 
     /**
      * Сегмент пути для URI типа проблемы, добавляемый к {@link ApiConstants#PROBLEM_TYPE_BASE_URI}.
-     * Использует слэши или дефисы для читаемости URI.
      * Значение: "{@value}".
      */
     public static final String PROBLEM_TYPE_URI_PATH = "user/already-exists";
 
     /**
      * Email адрес пользователя, который уже существует и вызвал это исключение.
-     * Используется как аргумент для форматирования сообщения детализации.
      */
     private final String email;
 
@@ -70,8 +67,6 @@ public class UserAlreadyExistsException extends ErrorResponseException {
 
     /**
      * Конструктор, создающий исключение для указанного email и с указанием причины.
-     * Сообщение для детализации будет извлечено из {@link org.springframework.context.MessageSource}
-     * с использованием кода, возвращаемого {@link #getDetailMessageCode()} и {@link #getTitleMessageCode()}.
      *
      * @param email Email адрес, который уже существует в системе.
      * @param cause Исходная причина исключения (может быть {@code null}).
@@ -81,7 +76,7 @@ public class UserAlreadyExistsException extends ErrorResponseException {
         this.email = email;
 
         getBody().setType(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + PROBLEM_TYPE_URI_PATH));
-        getBody().setProperty("conflictingEmail", email);
+        getBody().setProperty(CONFLICTING_EMAIL_PROPERTY, email);
     }
 
     /**

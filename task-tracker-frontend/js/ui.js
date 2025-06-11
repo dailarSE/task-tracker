@@ -4,12 +4,15 @@
  * Модуль для управления UI-компонентами.
  */
 window.ui = {
-    // Кэшируем элементы UI
+    // --- Кэшированные элементы UI ---
     $registerModal: $('#registerModal'),
     $loginModal: $('#loginModal'),
     $authContainer: $('#authContainer'),
     $userInfo: $('#userInfo'),
     $userEmailDisplay: $('#userEmailDisplay'),
+    $toast: $('#toastNotification'),
+    $toastMessage: $('#toastMessage'),
+    toastTimer: null, // Таймер для скрытия toast'а
 
     /**
      * Обновляет UI, чтобы отразить состояние "пользователь аутентифицирован".
@@ -30,22 +33,52 @@ window.ui = {
         this.$authContainer.show();
     },
 
-    /**
-     * Обрабатывает ошибки от API и отображает их в указанном div.
-     * @param {jqXHR} jqXHR - Объект jQuery XHR из колбэка error.
-     * @param {jQuery} $errorElement - jQuery-объект div'а для вывода ошибки.
-     */
-    handleApiError: function(jqXHR, $errorElement) {
-        console.error("API call failed:", jqXHR);
-        let errorMessage = 'Произошла неизвестная ошибка. Пожалуйста, попробуйте позже.';
+    /** Очищает все сообщения и подсветку ошибок внутри формы. */
+    clearFormErrors: function($form) {
+        $form.find('.is-invalid').removeClass('is-invalid');
+        $form.find('.field-error-message').text('');
+        $form.find('.general-error-message').text('');
+    },
 
-        if (jqXHR.responseJSON && jqXHR.responseJSON.detail) {
-            errorMessage = jqXHR.responseJSON.detail;
-        } else if (jqXHR.responseJSON && jqXHR.responseJSON.title) {
-            errorMessage = jqXHR.responseJSON.title;
+    /** Показывает общую ошибку для формы. */
+    showGeneralError: function($form, message) {
+        $form.find('.general-error-message').html(message); // .html() чтобы можно было вставить ссылку
+    },
+
+    /** Подсвечивает поля с ошибками валидации. */
+    applyValidationErrors: function($form, invalidParams) {
+        if (!invalidParams || !Array.isArray(invalidParams)) return;
+
+        invalidParams.forEach(error => {
+            const $field = $form.find(`[data-field-name="${error.field}"]`);
+            if ($field.length) {
+                $field.addClass('is-invalid');
+                $field.siblings('.field-error-message').text(error.message);
+            }
+        });
+    },
+
+    /**
+     * Показывает всплывающее toast-уведомление.
+     * @param {string} message - Сообщение для отображения.
+     * @param {string} type - Тип уведомления ('success', 'error', 'warning'), определяет цвет.
+     */
+    showToastNotification: function(message, type = 'error') {
+        // Очищаем предыдущий таймер, если он был
+        if (this.toastTimer) {
+            clearTimeout(this.toastTimer);
         }
 
-        $errorElement.text(errorMessage);
+        this.$toastMessage.text(message);
+        // Устанавливаем класс для цвета
+        this.$toast.removeClass('success error warning').addClass(type);
+        // Показываем toast
+        this.$toast.addClass('show');
+
+        // Устанавливаем таймер на скрытие через 5 секунд
+        this.toastTimer = setTimeout(() => {
+            this.$toast.removeClass('show');
+        }, 5000);
     },
 
     /**
@@ -58,10 +91,27 @@ window.ui = {
                 .done((user) => {
                     this.showLoggedInState(user.email);
                 })
-                .fail(() => {
+                .fail((jqXHR) => {
                     console.error("Token from localStorage is invalid or expired. Clearing token.");
                     localStorage.removeItem('jwt_token');
                     this.showLoggedOutState();
+
+                    const problem = jqXHR.responseJSON;
+                    let toastMessage = 'An error occurred with your session. Please log in again.';
+                    let toastType = 'error';
+
+                    if (problem && problem.detail) {
+                        toastMessage = problem.detail;
+                    } else if (problem && problem.title) {
+                        toastMessage = problem.title;
+                    }
+
+                    if (problem && problem.type && problem.type.includes('/jwt/expired')) {
+                        toastMessage = 'Your session has expired. Please log in again.';
+                        toastType = 'warning';
+                    }
+
+                    this.showToastNotification(toastMessage, toastType);
                 });
         } else {
             this.showLoggedOutState();

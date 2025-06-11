@@ -1,72 +1,111 @@
-// js/auth.js
 
 /**
  * Модуль для управления логикой аутентификации.
+ * Инициализирует обработчики для форм регистрации и логина.
+ * Этот модуль является "умным" слоем, который принимает решения
+ * на основе ответов API и вызывает "глупые" UI-хелперы.
  */
 function setupAuthHandlers() {
     const JWT_STORAGE_KEY = 'jwt_token';
 
-    // Кэшируем элементы, с которыми работаем
     const $registerForm = $('#registerForm');
     const $loginForm = $('#loginForm');
-    const $registerError = $('#registerError');
-    const $loginError = $('#loginError');
     const $logoutBtn = $('#logoutBtn');
 
-    // -- Форма РЕГИСТРАЦИИ --
+    // ===================================================================
+    // Обработчик для формы РЕГИСТРАЦИИ
+    // ===================================================================
     $registerForm.on('submit', (event) => {
         event.preventDefault();
-        $registerError.text('');
+        window.ui.clearFormErrors($registerForm);
 
         const email = $registerForm.find('#registerEmail').val();
         const password = $registerForm.find('#registerPassword').val();
         const repeatPassword = $registerForm.find('#registerRepeatPassword').val();
 
-        if (password !== repeatPassword) {
-            $registerError.text('Пароли не совпадают.');
-            return;
-        }
-
-        // Вызываем функцию из api.js
         window.taskTrackerApi.registerUser({ email, password, repeatPassword })
             .done((response) => {
-                alert('Регистрация прошла успешно! Вы автоматически вошли в систему.');
+                console.log('Registration successful:', response);
+                window.ui.showToastNotification('Registration successful!', 'success');
                 localStorage.setItem(JWT_STORAGE_KEY, response.accessToken);
-                $('#registerModal').css('display', 'none');
+                window.ui.$registerModal.css('display', 'none');
                 $registerForm.trigger('reset');
                 window.ui.showLoggedInState(email);
             })
             .fail((jqXHR) => {
-                window.ui.handleApiError(jqXHR, $registerError);
+                const problem = jqXHR.responseJSON;
+                if (!problem) {
+                    window.ui.showGeneralError($registerForm, 'An unknown network error occurred.');
+                    return;
+                }
+
+                if (jqXHR.status === 409 && problem.conflictingEmail) {
+                    const loginLink = $('<a href="#">log in</a>').on('click', (e) => {
+                        e.preventDefault();
+                        window.ui.$registerModal.css('display', 'none');
+                        window.ui.clearFormErrors($registerForm);
+                        window.ui.clearFormErrors($loginForm);
+                        window.ui.$loginModal.css('display', 'flex');
+                        $('#loginEmail').val(problem.conflictingEmail).focus();
+                    });
+
+                    const message = $("<span>A user with this email already exists. Try to </span>").append(loginLink).append(".");
+                    window.ui.showGeneralError($registerForm, message);
+                    return; // Завершаем, так как это уникальный сценарий
+                }
+
+                const errorMessage = problem.detail || problem.title || 'An error occurred during registration.';
+                window.ui.showGeneralError($registerForm, errorMessage);
+
+                // Если есть детали по полям - дополнительно их подсвечиваем.
+                if (problem.invalidParams) {
+                    window.ui.applyValidationErrors($registerForm, problem.invalidParams);
+                }
             });
     });
 
-    // -- Форма АВТОРИЗАЦИИ --
+    // ===================================================================
+    // Обработчик для формы АВТОРИЗАЦИИ
+    // ===================================================================
     $loginForm.on('submit', (event) => {
         event.preventDefault();
-        $loginError.text('');
+        window.ui.clearFormErrors($loginForm);
 
         const email = $loginForm.find('#loginEmail').val();
         const password = $loginForm.find('#loginPassword').val();
 
-        // Вызываем функцию из api.js
         window.taskTrackerApi.loginUser({ email, password })
             .done((response) => {
-                alert('Вход выполнен успешно!');
+                console.log('Login successful:', response);
+                window.ui.showToastNotification('Login successful!', 'success');
                 localStorage.setItem(JWT_STORAGE_KEY, response.accessToken);
-                $('#loginModal').css('display', 'none');
+                window.ui.$loginModal.css('display', 'none');
                 $loginForm.trigger('reset');
-                window.ui.showLoggedInState(email); // Вызываем функцию из ui.js
+                window.ui.showLoggedInState(email);
             })
             .fail((jqXHR) => {
-                window.ui.handleApiError(jqXHR, $loginError); // Вызываем хелпер из ui.js
+                const problem = jqXHR.responseJSON;
+                if (!problem) {
+                    window.ui.showGeneralError($loginForm, 'An unknown network error occurred.');
+                    return;
+                }
+
+                const errorMessage = problem.detail || problem.title || 'An error occurred during login.';
+                window.ui.showGeneralError($loginForm, errorMessage);
+
+                // Если есть детали по полям - дополнительно их подсвечиваем.
+                if (problem.invalidParams) {
+                    window.ui.applyValidationErrors($loginForm, problem.invalidParams);
+                }
             });
     });
 
-    // -- Логика выхода (Logout) --
+    // ===================================================================
+    // Обработчик для кнопки ВЫХОДА (Logout)
+    // ===================================================================
     $logoutBtn.on('click', () => {
         localStorage.removeItem(JWT_STORAGE_KEY);
-        alert('Вы вышли из системы.');
-        window.ui.showLoggedOutState(); // Вызываем функцию из ui.js
+        window.ui.showToastNotification('You have been logged out.', 'success');
+        window.ui.showLoggedOutState();
     });
 }

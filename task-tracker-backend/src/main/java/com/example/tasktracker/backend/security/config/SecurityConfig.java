@@ -104,8 +104,7 @@ public class SecurityConfig {
                                 "/swagger-ui.html",         // Сам HTML-файл UI
                                 "/swagger-ui/**",           // Статические ресурсы UI (JS, CSS, и т.д.)
                                 "/v3/api-docs/**" // Конфигурационный файл, который запрашивает UI
-                                // Все остальные запросы (включая /v3/api-docs) требуют аутентификации
-                        ).permitAll()
+                        ).permitAll() // В продакшн-среде swagger отключен, поэтому можно разрешить доступ
 
                         .anyRequest().authenticated()
                 )

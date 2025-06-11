@@ -29,23 +29,31 @@
 <!-- Модальное окно для Регистрации -->
 <div id="registerModal" class="modal">
     <div class="modal-content">
-        <button type="button" class="close-modal-btn" id="closeRegisterModalBtn" aria-label="Close">×</button>
+        <button type="button" class="close-modal-btn" aria-label="Close">×</button>
         <h2>Регистрация</h2>
-        <form id="registerForm">
+        <form id="registerForm" novalidate> <!-- Добавил novalidate, чтобы отключить встроенную валидацию браузера -->
             <div>
                 <label for="registerEmail">Email:</label>
-                <input type="email" id="registerEmail" name="email" required>
+                <!-- Добавлен data-field-name="email" -->
+                <input type="email" id="registerEmail" data-field-name="email" name="email" required>
+                <!-- Добавлен контейнер для ошибки поля -->
+                <div class="field-error-message"></div>
             </div>
             <div>
                 <label for="registerPassword">Пароль:</label>
-                <input type="password" id="registerPassword" name="password" required>
+                <!-- Добавлен data-field-name="password" -->
+                <input type="password" id="registerPassword" data-field-name="password" name="password" required>
+                <div class="field-error-message"></div>
             </div>
             <div>
                 <label for="registerRepeatPassword">Повторите пароль:</label>
-                <input type="password" id="registerRepeatPassword" name="repeatPassword" required>
+                <!-- Добавлен data-field-name="repeatPassword" -->
+                <input type="password" id="registerRepeatPassword" data-field-name="repeatPassword" name="repeatPassword" required>
+                <div class="field-error-message"></div>
             </div>
             <button type="submit">Зарегистрироваться</button>
-            <div id="registerError" class="error-message"></div>
+            <!-- Общий блок ошибок для формы -->
+            <div id="registerGeneralError" class="general-error-message error-message"></div>
         </form>
     </div>
 </div>
@@ -53,21 +61,31 @@
 <!-- Модальное окно для Авторизации -->
 <div id="loginModal" class="modal">
     <div class="modal-content">
-        <button type="button" class="close-modal-btn" id="closeLoginModalBtn" aria-label="Close">×</button>
+        <button type="button" class="close-modal-btn" aria-label="Close">×</button>
         <h2>Авторизация</h2>
-        <form id="loginForm">
+        <form id="loginForm" novalidate>
             <div>
                 <label for="loginEmail">Email:</label>
-                <input type="email" id="loginEmail" name="email" required>
+                <!-- Добавлен data-field-name="email" -->
+                <input type="email" id="loginEmail" data-field-name="email" name="email" required>
+                <div class="field-error-message"></div>
             </div>
             <div>
                 <label for="loginPassword">Пароль:</label>
-                <input type="password" id="loginPassword" name="password" required>
+                <!-- Добавлен data-field-name="password" -->
+                <input type="password" id="loginPassword" data-field-name="password" name="password" required>
+                <div class="field-error-message"></div>
             </div>
             <button type="submit">Войти</button>
-            <div id="loginError" class="error-message"></div>
+            <!-- Общий блок ошибок для формы -->
+            <div id="loginGeneralError" class="general-error-message error-message"></div>
         </form>
     </div>
+</div>
+
+<!-- Контейнер для Toast-уведомлений -->
+<div id="toastNotification" class="toast">
+    <span id="toastMessage"></span>
 </div>
 
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script> <!-- Подключаем jQuery -->

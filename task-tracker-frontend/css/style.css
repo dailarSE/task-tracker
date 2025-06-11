@@ -81,6 +81,59 @@ form input[type="password"] {
     width: 100%; /* Поля на всю ширину формы */
     padding: 8px;
     box-sizing: border-box; /* Чтобы padding не влиял на общую ширину */
+    border: 1px solid #ccc; /* Добавил базовый бордер */
+    border-radius: 4px;     /* Скруглил углы */
+}
+
+/* ========= Новые стили для валидации и уведомлений ========= */
+
+/* Стиль для поля с ошибкой валидации */
+input.is-invalid {
+    border-color: #d9534f; /* Красный бордер */
+    box-shadow: 0 0 0 0.2rem rgba(217, 83, 79, 0.25); /* Легкая тень при ошибке */
+}
+
+/* Стиль для сообщения об ошибке под конкретным полем */
+.field-error-message {
+    color: #d9534f;
+    font-size: 0.875em; /* Чуть меньше основного текста */
+    min-height: 1.2em;  /* Резервируем место, чтобы форма не "прыгала" */
+    margin-top: 5px;
+}
+
+/* Стиль для общего сообщения об ошибке в форме */
+.general-error-message {
+    color: #d9534f;
+    margin-top: 10px;
+    font-weight: bold;
+    min-height: 1.2em;
+}
+
+/* Стили для Toast-уведомлений */
+.toast {
+    display: none; /* Изначально скрыт */
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%); /* Центрирование по горизонтали */
+    background-color: #333;
+    color: #fff;
+    padding: 15px 25px;
+    border-radius: 5px;
+    z-index: 1050; /* Выше модальных окон */
+    opacity: 0;
+    transition: opacity 0.5s ease-in-out; /* Плавное появление и исчезновение */
+}
+
+/* Модификаторы цвета для toast */
+.toast.success { background-color: #28a745; }
+.toast.error { background-color: #dc3545; }
+.toast.warning { background-color: #ffc107; color: #333; }
+
+/* Класс для отображения toast */
+.toast.show {
+    display: block;
+    opacity: 1;
 }
 
 /* --- Стили для контейнера с информацией о пользователе --- */

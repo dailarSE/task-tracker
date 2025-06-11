@@ -5,6 +5,8 @@
  * - Закрытие по клику на фон (с защитой от "протягивания" мышки).
  */
 function initializeModalHandlers() {
+    const $modals = $('.modal');
+
     // Открытие окон
     $('#showRegisterModalBtn').on('click', () => window.ui.$registerModal.css('display', 'flex'));
     $('#showLoginModalBtn').on('click', () => window.ui.$loginModal.css('display', 'flex'));
@@ -16,13 +18,13 @@ function initializeModalHandlers() {
 
     // Логика закрытия по клику на фон
     let mousedownOnBackdrop = false;
-    $('.modal').on('mousedown', function(event) {
+    $modals.on('mousedown', function(event) {
         if (event.target === this) {
             mousedownOnBackdrop = true;
         }
     });
 
-    $('.modal').on('mouseup', function(event) {
+    $modals.on('mouseup', function(event) {
         if (mousedownOnBackdrop && event.target === this) {
             $(this).css('display', 'none');
         }

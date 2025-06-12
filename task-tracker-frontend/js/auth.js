@@ -119,7 +119,7 @@ function setupAuthHandlers() {
                 }
             })
             .always(() => {
-                window.ui.unlockForm($registerForm); // <-- РАЗБЛОКИРУЕМ В ЛЮБОМ СЛУЧАЕ
+                window.ui.unlockForm($loginForm);
             });
     });
 

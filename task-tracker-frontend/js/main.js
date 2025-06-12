@@ -51,6 +51,8 @@ function loadAndDisplayTasks() {
     window.taskTrackerApi.getTasks(token)
         .done((tasks) => {
             window.tasksUi.renderTaskLists(tasks);
+            window.tasksUi.sortTaskList(window.tasksUi.$undoneTasksList);
+            window.tasksUi.sortTaskList(window.tasksUi.$doneTasksList);
         })
         .fail((jqXHR) => {
             console.error("Failed to load tasks:", jqXHR.responseJSON);

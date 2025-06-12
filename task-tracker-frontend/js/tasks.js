@@ -37,13 +37,10 @@ function setupTaskHandlers() {
 
                 const $list = window.tasksUi.$undoneTasksList;
 
-                if ($list.children('.placeholder-item').length > 0) {
-                    $list.empty();
-                }
-
                 // Теперь добавляем новый элемент в (возможно) уже очищенный список.
                 const taskHtml = window.tasksUi.renderTask(newTask);
                 $list.prepend(taskHtml);
+                window.tasksUi.sortTaskList($list);
             })
             .fail((jqXHR) => {
                 const problem = jqXHR.responseJSON;
@@ -59,6 +56,47 @@ function setupTaskHandlers() {
             })
             .always(() => {
                 window.ui.unlockForm($createTaskForm);
+            });
+    });
+
+    // --- Обработчик для ИЗМЕНЕНИЯ СТАТУСА ЗАДАЧИ (через делегирование) ---
+    $('#tasksContainer').on('change', '.task-checkbox', function (event) {
+        const $checkbox = $(this);
+        const $listItem = $checkbox.closest('li');
+
+        // 1. Проверяем, не выполняется ли уже операция.
+        if ($listItem.attr('data-processing')) {
+            event.preventDefault();
+            return;
+        }
+        $listItem.attr('data-processing', true);
+
+        const taskId = $listItem.data('taskId');
+
+        // 1. Определяем новый статус
+        const newStatus = $checkbox.is(':checked') ? 'COMPLETED' : 'PENDING';
+
+        // 2. Блокируем чекбокс, чтобы предотвратить двойные клики
+        $checkbox.prop('disabled', true);
+
+        window.taskTrackerApi.updateTaskStatus(taskId, newStatus)
+            .done((updatedTask) => {
+                console.log('Task status updated successfully:', updatedTask);
+                window.tasksUi.moveTaskElement(taskId, updatedTask.status);
+            })
+            .fail((jqXHR) => {
+                console.error('Failed to update task status:', jqXHR.responseJSON);
+
+                $checkbox.prop('checked', !$checkbox.is(':checked'));
+
+                const problem = jqXHR.responseJSON;
+                const message = problem?.detail || 'Could not update task status.';
+                window.ui.showToastNotification(message, 'error');
+            })
+            .always(() => {
+                // 4. В любом случае разблокируем чекбокс
+                $checkbox.prop('disabled', false);
+                $listItem.removeAttr('data-processing');
             });
     });
 }

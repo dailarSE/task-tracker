@@ -37,6 +37,8 @@ window.taskTrackerApi = {
      * @returns {Promise} jQuery Promise.
      */
     _request: function(ajaxOptions) {
+        const MOCK_DELAY = 300;
+
         const token = localStorage.getItem('jwt_token');
         if (token) {
             ajaxOptions.headers = {
@@ -50,7 +52,9 @@ window.taskTrackerApi = {
         $.ajax(ajaxOptions)
             .done((data, textStatus, jqXHR) => {
                 // Если все хорошо, "пробрасываем" успех в наш новый промис
-                deferred.resolve(data, textStatus, jqXHR);
+                setTimeout(() => {
+                    deferred.resolve(data, textStatus, jqXHR);
+                }, MOCK_DELAY);
             })
             .fail((jqXHR) => {
                 if (jqXHR.status === 401) {

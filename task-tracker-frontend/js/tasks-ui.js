@@ -44,21 +44,62 @@ window.tasksUi = {
         this.$undoneTasksList.empty();
         this.$doneTasksList.empty();
 
-        if (!tasks || tasks.length === 0) {
-            // Отображаем сообщение, если задач нет
-            this.$undoneTasksList.html('<li class="placeholder-item">У вас пока нет невыполненных задач.</li>');
-            this.$doneTasksList.html('<li class="placeholder-item">Здесь будут появляться выполненные задачи.</li>');
-            return;
+        if (tasks) {
+            tasks.forEach(task => {
+                const taskHtml = this.renderTask(task);
+                if (task.status === 'COMPLETED') {
+                    this.$doneTasksList.append(taskHtml);
+                } else {
+                    this.$undoneTasksList.append(taskHtml);
+                }
+            });
         }
+    },
 
-        tasks.forEach(task => {
-            const taskHtml = this.renderTask(task);
-            if (task.status === 'COMPLETED') {
-                this.$doneTasksList.append(taskHtml);
+    /**
+     * Динамически перемещает элемент задачи и сортирует списки ПОСЛЕ анимации.
+     * @param {number} taskId - ID задачи для перемещения.
+     * @param {string} newStatus - Новый статус ('PENDING' или 'COMPLETED').
+     */
+    moveTaskElement: function(taskId, newStatus) {
+        const $taskItem = $(`li[data-task-id="${taskId}"]`);
+        if ($taskItem.length === 0) return;
+
+        const isCompleted = newStatus === 'COMPLETED';
+        const $targetList = isCompleted ? this.$doneTasksList : this.$undoneTasksList;
+        const self = this;
+
+        $taskItem.fadeOut(200, function() {
+            const $movedItem = $(this);
+            $movedItem.hide();
+
+            $targetList.prepend($movedItem);
+
+            self.sortTaskList($targetList);
+
+            if (isCompleted) {
+                $movedItem.addClass('done');
             } else {
-                this.$undoneTasksList.append(taskHtml);
+                $movedItem.removeClass('done');
             }
+            $movedItem.fadeIn(200);
         });
+    },
+
+    /**
+     * Сортирует задачи внутри указанного jQuery-элемента списка.
+     * Сортировка происходит по ID задачи (data-task-id) в порядке убывания (новые вверху).
+     * @param {jQuery} $list - jQuery-объект <ul> для сортировки.
+     */
+    sortTaskList: function($list) {
+        const items = $list.children('li:not(.placeholder-item)');
+        const itemsArray = items.get();
+        itemsArray.sort(function(a, b) {
+            const idA = parseInt(a.getAttribute('data-task-id'), 10);
+            const idB = parseInt(b.getAttribute('data-task-id'), 10);
+            return idB - idA; // Сортировка по убыванию ID
+        });
+        $list.append(itemsArray);
     },
 
     clearCreateTaskForm: function () {

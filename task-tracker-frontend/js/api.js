@@ -9,6 +9,66 @@ window.taskTrackerApi = {
     BASE_URL: 'http://localhost:8080/api/v1',
 
     /**
+     * Централизованный обработчик 401 ошибок. Вызывается автоматически при любом 401 ответе.
+     * @param {object} jqXHR - Объект jqXHR из fail-колбэка jQuery.
+     */
+    _handle401Error: function(jqXHR) {
+        // Если токена уже нет (другой запрос уже разлогинил), ничего не делаем, чтобы избежать "гонки".
+        if (!localStorage.getItem('jwt_token')) return;
+        console.error("Intercepted 401 Unauthorized. Logging out.", jqXHR.responseJSON);
+
+        const problem = jqXHR.responseJSON;
+        const defaultMessage = 'Your session is invalid. Please log in again.';
+        let toastMessage = problem?.detail || problem?.title || defaultMessage;
+        let toastType = 'error';
+
+        if (problem?.type?.includes('/jwt/expired')) {
+            toastMessage = 'Your session has expired. Please log in again.';
+            toastType = 'warning';
+        }
+
+        window.auth.handleLogout();
+        window.ui.showToastNotification(toastMessage, toastType);
+    },
+
+    /**
+     * Приватная функция-обертка для всех защищенных запросов.
+     * @param {object} ajaxOptions - Стандартные опции для $.ajax.
+     * @returns {Promise} jQuery Promise.
+     */
+    _request: function(ajaxOptions) {
+        const token = localStorage.getItem('jwt_token');
+        if (token) {
+            ajaxOptions.headers = {
+                ...ajaxOptions.headers, 'Authorization': 'Bearer ' + token
+            };
+        }
+
+        const deferred = $.Deferred();
+
+        // Делаем оригинальный AJAX-запрос
+        $.ajax(ajaxOptions)
+            .done((data, textStatus, jqXHR) => {
+                // Если все хорошо, "пробрасываем" успех в наш новый промис
+                deferred.resolve(data, textStatus, jqXHR);
+            })
+            .fail((jqXHR) => {
+                if (jqXHR.status === 401) {
+                    // Обрабатываем 401 здесь и ТОЛЬКО здесь.
+                    this._handle401Error(jqXHR);
+                } else {
+                    // Для всех остальных ошибок "пробрасываем" их в наш новый промис.
+                    deferred.reject(jqXHR);
+                }
+            });
+
+        // Возвращаем наш кастомный промис, а не оригинальный от $.ajax
+        return deferred.promise();
+    },
+
+    // --- Публичные методы API ---
+
+    /**
      * Отправляет запрос на регистрацию пользователя.
      * @param {object} registrationData - Данные для регистрации { email, password, repeatPassword }.
      * @returns {Promise} jQuery Promise.
@@ -35,51 +95,41 @@ window.taskTrackerApi = {
             data: JSON.stringify(loginData)
         });
     },
+
+    // --- Защищенные методы ---
+    // используют _request
     /**
      * Запрашивает данные текущего аутентифицированного пользователя.
-     * Требует наличия валидного JWT в заголовках.
-     * @param {string} token - JWT токен.
      * @returns {Promise} jQuery Promise.
      */
-    getCurrentUser: function (token) {
-        return $.ajax({
+    getCurrentUser: function () {
+        return this._request({
             url: `${this.BASE_URL}/users/me`,
-            method: 'GET',
-            headers: {
-                'Authorization': 'Bearer ' + token
-            }
+            method: 'GET'
         });
     },
 
     /**
      * Запрашивает список всех задач для текущего пользователя.
-     * @param {string} token - JWT токен.
      * @returns {Promise} jQuery Promise, который в случае успеха вернет массив объектов задач.
      */
-    getTasks: function(token) {
-        return $.ajax({
+    getTasks: function() {
+        return this._request({
             url: `${this.BASE_URL}/tasks`,
-            method: 'GET',
-            headers: {
-                'Authorization': 'Bearer ' + token
-            }
+            method: 'GET'
         });
     },
 
     /**
      * Создает новую задачу.
      * @param {object} taskData - Данные для создания задачи. Ожидается объект вида {title: "..."}.
-     * @param {string} token - JWT токен.
      * @returns {Promise} jQuery Promise, который в случае успеха вернет созданный объект задачи.
      */
-    createTask: function(taskData, token) {
-        return $.ajax({
+    createTask: function(taskData) {
+        return this._request({
             url: `${this.BASE_URL}/tasks`,
             method: 'POST',
             contentType: 'application/json',
-            headers: {
-                'Authorization': 'Bearer ' + token
-            },
             data: JSON.stringify(taskData)
         });
     }

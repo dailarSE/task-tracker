@@ -18,43 +18,68 @@ window.ui = {
      * Обновляет UI, чтобы отразить состояние "пользователь аутентифицирован".
      * @param {string} email - Email пользователя для отображения.
      */
-    showLoggedInState: function(email) {
+    showLoggedInState: function (email) {
         this.$userEmailDisplay.text(email);
         this.$authContainer.hide();
         this.$userInfo.css('display', 'flex');
+        window.tasksUi.show();
     },
 
     /**
      * Обновляет UI, чтобы отразить состояние "пользователь не аутентифицирован".
      */
-    showLoggedOutState: function() {
+    showLoggedOutState: function () {
         this.$userEmailDisplay.text('');
         this.$userInfo.hide();
         this.$authContainer.show();
+        window.tasksUi.hide();
+    },
+
+    /**
+     * Сбрасывает ВЕСЬ UI в начальное, "незалогиненное" состояние.
+     * Скрывает все, что должно быть скрыто, показывает то, что должно быть видно.
+     * Очищает все формы и сообщения об ошибках.
+     */
+    resetAllUIStateToLoggedOut: function() {
+        // 1. Показываем/скрываем основные блоки
+        this.showLoggedOutState();
+
+        // 2. Очищаем все модальные формы
+        this.clearFormErrors(this.$registerModal);
+        this.$registerModal.find('form').trigger('reset'); // Сбрасываем значения полей
+
+        this.clearFormErrors(this.$loginModal);
+        this.$loginModal.find('form').trigger('reset');
+
+        // 3. Очищаем все формы на основной странице
+        window.tasksUi.clearCreateTaskForm(); // Делегируем очистку формы задач
     },
 
     /** Очищает все сообщения и подсветку ошибок внутри формы. */
-    clearFormErrors: function($form) {
+    clearFormErrors: function ($form) {
         $form.find('.is-invalid').removeClass('is-invalid');
         $form.find('.field-error-message').text('');
         $form.find('.general-error-message').text('');
     },
 
     /** Показывает общую ошибку для формы. */
-    showGeneralError: function($form, message) {
+    showGeneralError: function ($form, message) {
         $form.find('.general-error-message').html(message); // .html() чтобы можно было вставить ссылку
     },
 
     /** Подсвечивает поля с ошибками валидации. */
-    applyValidationErrors: function($form, invalidParams) {
+    applyValidationErrors: function ($form, invalidParams) {
         if (!invalidParams || !Array.isArray(invalidParams)) return;
 
         invalidParams.forEach(error => {
-            const $field = $form.find(`[data-field-name="${error.field}"]`);
-            if ($field.length) {
-                $field.addClass('is-invalid');
-                $field.siblings('.field-error-message').text(error.message);
-            }
+            const fieldName = error.field;
+
+            const $field = $form.find(`input[data-field-name="${fieldName}"]`);
+            const $errorContainer = $form.find(`.field-error-message[data-field-name="${fieldName}"]`);
+
+            if ($field.length) $field.addClass('is-invalid');
+            if ($errorContainer.length) $errorContainer.text(error.message);
+
         });
     },
 
@@ -63,7 +88,7 @@ window.ui = {
      * @param {string} message - Сообщение для отображения.
      * @param {string} type - Тип уведомления ('success', 'error', 'warning'), определяет цвет.
      */
-    showToastNotification: function(message, type = 'error') {
+    showToastNotification: function (message, type = 'error') {
         // Очищаем предыдущий таймер, если он был
         if (this.toastTimer) {
             clearTimeout(this.toastTimer);
@@ -84,34 +109,13 @@ window.ui = {
     /**
      * Проверяет начальное состояние аутентификации при загрузке страницы.
      */
-    checkInitialAuthState: function() {
+    checkInitialAuthState: function () {
         const token = localStorage.getItem('jwt_token');
         if (token) {
-            window.taskTrackerApi.getCurrentUser(token)
+            window.taskTrackerApi.getCurrentUser()
                 .done((user) => {
                     this.showLoggedInState(user.email);
-                })
-                .fail((jqXHR) => {
-                    console.error("Token from localStorage is invalid or expired. Clearing token.");
-                    localStorage.removeItem('jwt_token');
-                    this.showLoggedOutState();
-
-                    const problem = jqXHR.responseJSON;
-                    let toastMessage = 'An error occurred with your session. Please log in again.';
-                    let toastType = 'error';
-
-                    if (problem && problem.detail) {
-                        toastMessage = problem.detail;
-                    } else if (problem && problem.title) {
-                        toastMessage = problem.title;
-                    }
-
-                    if (problem && problem.type && problem.type.includes('/jwt/expired')) {
-                        toastMessage = 'Your session has expired. Please log in again.';
-                        toastType = 'warning';
-                    }
-
-                    this.showToastNotification(toastMessage, toastType);
+                    loadAndDisplayTasks();
                 });
         } else {
             this.showLoggedOutState();

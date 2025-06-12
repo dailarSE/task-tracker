@@ -27,8 +27,11 @@
             <h3>Новая задача</h3>
             <form id="createTaskForm" novalidate>
                 <div class="form-group">
-                    <input type="text" id="newTaskTitle" name="title" placeholder="Что нужно сделать?"
-                           aria-label="Заголовок новой задачи" required>
+                    <div class="input-with-error">
+                        <input type="text" id="newTaskTitle" name="title" placeholder="Что нужно сделать?"
+                               aria-label="Заголовок новой задачи" data-field-name="title" required>
+                        <div data-field-name="title" class="field-error-message"></div>
+                    </div>
                     <button type="submit">Добавить</button>
                 </div>
                 <!-- Место для ошибок валидации формы создания -->
@@ -62,22 +65,25 @@
         <form id="registerForm" novalidate> <!-- Добавил novalidate, чтобы отключить встроенную валидацию браузера -->
             <div>
                 <label for="registerEmail">Email:</label>
-                <!-- Добавлен data-field-name="email" -->
-                <input type="email" id="registerEmail" data-field-name="email" name="email" required>
-                <!-- Добавлен контейнер для ошибки поля -->
-                <div class="field-error-message"></div>
+                <div class="input-with-error">
+                    <input type="email" id="registerEmail" data-field-name="email" name="email" required>
+                    <div data-field-name="email" class="field-error-message"></div>
+                </div>
             </div>
             <div>
                 <label for="registerPassword">Пароль:</label>
-                <!-- Добавлен data-field-name="password" -->
-                <input type="password" id="registerPassword" data-field-name="password" name="password" required>
-                <div class="field-error-message"></div>
+                <div class="input-with-error">
+                    <input type="password" id="registerPassword" data-field-name="password" name="password" required>
+                    <div data-field-name="password" class="field-error-message"></div>
+                </div>
             </div>
             <div>
                 <label for="registerRepeatPassword">Повторите пароль:</label>
-                <!-- Добавлен data-field-name="repeatPassword" -->
-                <input type="password" id="registerRepeatPassword" data-field-name="repeatPassword" name="repeatPassword" required>
-                <div class="field-error-message"></div>
+                <div class="input-with-error">
+                    <input type="password" id="registerRepeatPassword" data-field-name="repeatPassword"
+                           name="repeatPassword" required>
+                    <div data-field-name="repeatPassword" class="field-error-message"></div>
+                </div>
             </div>
             <button type="submit">Зарегистрироваться</button>
             <!-- Общий блок ошибок для формы -->
@@ -94,15 +100,17 @@
         <form id="loginForm" novalidate>
             <div>
                 <label for="loginEmail">Email:</label>
-                <!-- Добавлен data-field-name="email" -->
-                <input type="email" id="loginEmail" data-field-name="email" name="email" required>
-                <div class="field-error-message"></div>
+                <div class="input-with-error">
+                    <input type="email" id="loginEmail" data-field-name="email" name="email" required>
+                    <div data-field-name="email" class="field-error-message"></div>
+                </div>
             </div>
             <div>
                 <label for="loginPassword">Пароль:</label>
-                <!-- Добавлен data-field-name="password" -->
-                <input type="password" id="loginPassword" data-field-name="password" name="password" required>
-                <div class="field-error-message"></div>
+                <div class="input-with-error">
+                    <input type="password" id="loginPassword" data-field-name="password" name="password" required>
+                    <div data-field-name="password" class="field-error-message"></div>
+                </div>
             </div>
             <button type="submit">Войти</button>
             <!-- Общий блок ошибок для формы -->
@@ -121,6 +129,7 @@
 <script src="js/ui.js"></script>
 <script src="js/tasks-ui.js"></script>
 <script src="js/auth.js"></script>
+<script src="js/tasks.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

@@ -9,6 +9,9 @@ window.tasksUi = {
     $undoneTasksList: $('#undoneTasksList'),
     $doneTasksList: $('#doneTasksList'),
 
+    show: function() { this.$tasksContainer.show(); },
+    hide: function() { this.$tasksContainer.hide(); },
+
     /**
      * Создает HTML-разметку для одной задачи.
      * @param {object} task - Объект задачи, полученный от API.
@@ -47,5 +50,10 @@ window.tasksUi = {
                 this.$undoneTasksList.append(taskHtml);
             }
         });
+    },
+
+    clearCreateTaskForm: function() {
+        window.ui.clearFormErrors(this.$createTaskForm);
+        this.$newTaskTitleInput.val('');
     }
 };

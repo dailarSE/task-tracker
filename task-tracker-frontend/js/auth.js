@@ -1,4 +1,3 @@
-
 /**
  * Модуль для управления логикой аутентификации.
  * Инициализирует обработчики для форм регистрации и логина.
@@ -12,6 +11,20 @@ function setupAuthHandlers() {
     const $loginForm = $('#loginForm');
     const $logoutBtn = $('#logoutBtn');
 
+    /**
+     * Централизованная функция для выполнения логаута.
+     * idempotent: многократный вызов не меняет результат после первого успешного выполнения.
+     */
+    function handleLogout() {
+        const token = localStorage.getItem(JWT_STORAGE_KEY);
+        if (!token) return;
+        localStorage.removeItem(JWT_STORAGE_KEY);
+        window.ui.resetAllUIStateToLoggedOut();
+
+    }
+
+    window.auth = {handleLogout: handleLogout};
+
     // ===================================================================
     // Обработчик для формы РЕГИСТРАЦИИ
     // ===================================================================
@@ -23,7 +36,7 @@ function setupAuthHandlers() {
         const password = $registerForm.find('#registerPassword').val();
         const repeatPassword = $registerForm.find('#registerRepeatPassword').val();
 
-        window.taskTrackerApi.registerUser({ email, password, repeatPassword })
+        window.taskTrackerApi.registerUser({email, password, repeatPassword})
             .done((response) => {
                 console.log('Registration successful:', response);
                 window.ui.showToastNotification('Registration successful!', 'success');
@@ -31,6 +44,7 @@ function setupAuthHandlers() {
                 window.ui.$registerModal.css('display', 'none');
                 $registerForm.trigger('reset');
                 window.ui.showLoggedInState(email);
+                loadAndDisplayTasks();
             })
             .fail((jqXHR) => {
                 const problem = jqXHR.responseJSON;
@@ -74,7 +88,7 @@ function setupAuthHandlers() {
         const email = $loginForm.find('#loginEmail').val();
         const password = $loginForm.find('#loginPassword').val();
 
-        window.taskTrackerApi.loginUser({ email, password })
+        window.taskTrackerApi.loginUser({email, password})
             .done((response) => {
                 console.log('Login successful:', response);
                 window.ui.showToastNotification('Login successful!', 'success');
@@ -82,6 +96,7 @@ function setupAuthHandlers() {
                 window.ui.$loginModal.css('display', 'none');
                 $loginForm.trigger('reset');
                 window.ui.showLoggedInState(email);
+                loadAndDisplayTasks();
             })
             .fail((jqXHR) => {
                 const problem = jqXHR.responseJSON;
@@ -104,8 +119,6 @@ function setupAuthHandlers() {
     // Обработчик для кнопки ВЫХОДА (Logout)
     // ===================================================================
     $logoutBtn.on('click', () => {
-        localStorage.removeItem(JWT_STORAGE_KEY);
-        window.ui.showToastNotification('You have been logged out.', 'success');
-        window.ui.showLoggedOutState();
+        handleLogout();
     });
 }

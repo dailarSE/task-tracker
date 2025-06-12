@@ -8,8 +8,14 @@ function initializeModalHandlers() {
     const $modals = $('.modal');
 
     // Открытие окон
-    $('#showRegisterModalBtn').on('click', () => window.ui.$registerModal.css('display', 'flex'));
-    $('#showLoginModalBtn').on('click', () => window.ui.$loginModal.css('display', 'flex'));
+    $('#showRegisterModalBtn').on('click', () => {
+        window.ui.clearFormErrors(window.ui.$registerModal); // Очищаем перед показом
+        window.ui.$registerModal.css('display', 'flex');
+    });
+    $('#showLoginModalBtn').on('click', () => {
+        window.ui.clearFormErrors(window.ui.$loginModal); // Очищаем перед показом
+        window.ui.$loginModal.css('display', 'flex');
+    });
 
     // Закрытие по "крестику"
     $('.close-modal-btn').on('click', function() {
@@ -31,6 +37,29 @@ function initializeModalHandlers() {
         mousedownOnBackdrop = false;
     });
 }
+
+/**
+ * Загружает и отображает задачи для аутентифицированного пользователя.
+ */
+function loadAndDisplayTasks() {
+    const token = localStorage.getItem('jwt_token');
+    if (!token) {
+        console.error("loadAndDisplayTasks called without a token.");
+        return;
+    }
+
+    window.taskTrackerApi.getTasks(token)
+        .done((tasks) => {
+            window.tasksUi.renderTaskLists(tasks);
+        })
+        .fail((jqXHR) => {
+            console.error("Failed to load tasks:", jqXHR.responseJSON);
+            const problem = jqXHR.responseJSON;
+            const message = problem?.detail || 'Could not load tasks. Please try refreshing the page.';
+            window.ui.showToastNotification(message, 'error');
+        });
+}
+
 /**
  * Точка входа в приложение. Инициализирует все обработчики и модули.
  */
@@ -41,7 +70,10 @@ $(document).ready(function() {
     // 2. Инициализация обработчиков логики аутентификации
     setupAuthHandlers();
 
-    // 3. Проверка начального состояния аутентификации и обновление UI
+    // 3. Инициализация обработчиков логики задач
+    setupTaskHandlers()
+
+    // 4. Проверка начального состояния аутентификации и обновление UI
     window.ui.checkInitialAuthState();
 
     console.log("Task Tracker frontend initialized.");

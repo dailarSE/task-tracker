@@ -9,28 +9,37 @@ window.tasksUi = {
     $undoneTasksList: $('#undoneTasksList'),
     $doneTasksList: $('#doneTasksList'),
 
-    show: function() { this.$tasksContainer.show(); },
-    hide: function() { this.$tasksContainer.hide(); },
+    show: function () {
+        this.$tasksContainer.show();
+    },
+    hide: function () {
+        this.$tasksContainer.hide();
+    },
 
     /**
      * Создает HTML-разметку для одной задачи.
      * @param {object} task - Объект задачи, полученный от API.
      * @returns {string} HTML-строка для <li> элемента.
      */
-    renderTask: function(task) {
-        // Добавляем класс 'done' для стилизации выполненных задач
-        const doneClass = task.status === 'COMPLETED' ? 'class="done"' : '';
-        // Используем data-атрибуты для хранения ID и других данных
-        // И экранируем title, чтобы предотвратить XSS
+    renderTask: function (task) {
+        const isDone = task.status === 'COMPLETED';
+        const checkedAttr = isDone ? 'checked' : '';
+        const doneClass = isDone ? 'class="done"' : '';
         const escapedTitle = $('<div/>').text(task.title).html();
-        return `<li data-task-id="${task.id}" ${doneClass}>${escapedTitle}</li>`;
+
+        return `<li data-task-id="${task.id}" ${doneClass}>
+                    <label>
+                        <input type="checkbox" class="task-checkbox" ${checkedAttr}>
+                        <span>${escapedTitle}</span>
+                    </label>
+                </li>`;
     },
 
     /**
      * Очищает и заполняет списки задач на странице.
      * @param {Array<object>} tasks - Массив объектов задач.
      */
-    renderTaskLists: function(tasks) {
+    renderTaskLists: function (tasks) {
         // Очищаем оба списка перед рендерингом
         this.$undoneTasksList.empty();
         this.$doneTasksList.empty();
@@ -52,7 +61,7 @@ window.tasksUi = {
         });
     },
 
-    clearCreateTaskForm: function() {
+    clearCreateTaskForm: function () {
         window.ui.clearFormErrors(this.$createTaskForm);
         this.$newTaskTitleInput.val('');
     }

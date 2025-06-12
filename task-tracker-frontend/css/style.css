@@ -177,15 +177,27 @@ input.is-invalid {
 .task-list ul {
     list-style-type: none;
     padding: 0;
+    margin: 0;
 }
 
 .task-list li {
-    padding: 8px 12px;
     border-bottom: 1px solid #eee;
 }
 
 .task-list li:last-child {
     border-bottom: none;
+}
+
+.task-list li label {
+    display: block;  /* Делаем label блочным элементом, чтобы он занял всю ширину */
+    padding: 8px 12px; /* Переносим padding с <li> сюда */
+    cursor: pointer;   /* Меняем курсор на "руку" при наведении, показывая интерактивность */
+    transition: background-color 0.2s; /* Добавляем плавный переход для hover-эффекта */
+}
+
+/* Добавляем эффект при наведении на всю строку */
+.task-list li label:hover {
+    background-color: #f9f9f9; /* Легкий фон при наведении */
 }
 
 li.done {

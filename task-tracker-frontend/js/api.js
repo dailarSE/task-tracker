@@ -132,5 +132,20 @@ window.taskTrackerApi = {
             contentType: 'application/json',
             data: JSON.stringify(taskData)
         });
+    },
+
+    /**
+     * Обновляет статус существующей задачи.
+     * @param {number} taskId - ID задачи для обновления.
+     * @param {string} newStatus - Новый статус ('PENDING' или 'COMPLETED').
+     * @returns {Promise} jQuery Promise, который в случае успеха вернет обновленный объект задачи.
+     */
+    updateTaskStatus: function(taskId, newStatus) {
+        return this._request({
+            url: `${this.BASE_URL}/tasks/${taskId}`,
+            method: 'PATCH',
+            contentType: 'application/json',
+            data: JSON.stringify({ status: newStatus })
+        });
     }
 };

@@ -145,3 +145,8 @@ input.is-invalid {
     margin-right: 15px;
     font-weight: bold;
 }
+
+#tasksContainer {
+    display: none; /* Изначально скрыт */
+    margin-top: 20px;
+}

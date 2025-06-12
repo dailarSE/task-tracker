@@ -22,8 +22,36 @@
 </header>
 
 <main>
-    <!-- Основной контент приложения (списки задач и т.д.) будет здесь позже -->
-    <p>Основной контент приложения будет здесь...</p>
+    <div id="tasksContainer">
+        <div class="task-creation-container">
+            <h3>Новая задача</h3>
+            <form id="createTaskForm" novalidate>
+                <div class="form-group">
+                    <input type="text" id="newTaskTitle" name="title" placeholder="Что нужно сделать?"
+                           aria-label="Заголовок новой задачи" required>
+                    <button type="submit">Добавить</button>
+                </div>
+                <!-- Место для ошибок валидации формы создания -->
+                <div class="general-error-message"></div>
+            </form>
+        </div>
+
+        <div class="task-lists-container">
+            <div class="task-list">
+                <h3>Невыполненные задачи</h3>
+                <ul id="undoneTasksList">
+                    <!-- Задачи будут рендериться сюда с помощью JS -->
+                </ul>
+            </div>
+
+            <div class="task-list">
+                <h3>Выполненные задачи</h3>
+                <ul id="doneTasksList">
+                    <!-- Задачи будут рендериться сюда с помощью JS -->
+                </ul>
+            </div>
+        </div>
+    </div>
 </main>
 
 <!-- Модальное окно для Регистрации -->

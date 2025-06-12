@@ -31,6 +31,7 @@ function setupAuthHandlers() {
     $registerForm.on('submit', (event) => {
         event.preventDefault();
         window.ui.clearFormErrors($registerForm);
+        window.ui.lockForm($registerForm);
 
         const email = $registerForm.find('#registerEmail').val();
         const password = $registerForm.find('#registerPassword').val();
@@ -75,6 +76,9 @@ function setupAuthHandlers() {
                 if (problem.invalidParams) {
                     window.ui.applyValidationErrors($registerForm, problem.invalidParams);
                 }
+            })
+            .always(() => {
+                window.ui.unlockForm($registerForm);
             });
     });
 
@@ -84,6 +88,7 @@ function setupAuthHandlers() {
     $loginForm.on('submit', (event) => {
         event.preventDefault();
         window.ui.clearFormErrors($loginForm);
+        window.ui.lockForm($loginForm);
 
         const email = $loginForm.find('#loginEmail').val();
         const password = $loginForm.find('#loginPassword').val();
@@ -112,6 +117,9 @@ function setupAuthHandlers() {
                 if (problem.invalidParams) {
                     window.ui.applyValidationErrors($loginForm, problem.invalidParams);
                 }
+            })
+            .always(() => {
+                window.ui.unlockForm($registerForm); // <-- РАЗБЛОКИРУЕМ В ЛЮБОМ СЛУЧАЕ
             });
     });
 

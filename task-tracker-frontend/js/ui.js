@@ -120,5 +120,27 @@ window.ui = {
         } else {
             this.showLoggedOutState();
         }
+    },
+
+    /**
+     * Блокирует кнопку отправки формы и показывает индикатор загрузки (опционально).
+     * @param {jQuery} $form - jQuery-объект формы.
+     */
+    lockForm: function($form) {
+        const $submitButton = $form.find('button[type="submit"]');
+        if ($submitButton.length) {
+            $submitButton.prop('disabled', true);
+        }
+    },
+
+    /**
+     * Разблокирует кнопку отправки формы и возвращает ее в исходное состояние.
+     * @param {jQuery} $form - jQuery-объект формы.
+     */
+    unlockForm: function($form) {
+        const $submitButton = $form.find('button[type="submit"]');
+        if ($submitButton.length) {
+            $submitButton.prop('disabled', false);
+        }
     }
 };

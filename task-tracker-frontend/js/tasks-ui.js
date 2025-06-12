@@ -37,8 +37,8 @@ window.tasksUi = {
 
         if (!tasks || tasks.length === 0) {
             // Отображаем сообщение, если задач нет
-            this.$undoneTasksList.html('<li>У вас пока нет невыполненных задач.</li>');
-            this.$doneTasksList.html('<li>Здесь будут появляться выполненные задачи.</li>');
+            this.$undoneTasksList.html('<li class="placeholder-item">У вас пока нет невыполненных задач.</li>');
+            this.$doneTasksList.html('<li class="placeholder-item">Здесь будут появляться выполненные задачи.</li>');
             return;
         }
 

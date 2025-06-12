@@ -10,6 +10,7 @@ function setupTaskHandlers() {
     $createTaskForm.on('submit', (event) => {
         event.preventDefault();
 
+
         // Очищаем предыдущие ошибки
         window.ui.clearFormErrors($createTaskForm);
 
@@ -24,16 +25,25 @@ function setupTaskHandlers() {
             return;
         }
 
+        window.ui.lockForm($createTaskForm);
+
         // Вызываем API для создания задачи
-        window.taskTrackerApi.createTask({ title: title })
+        window.taskTrackerApi.createTask({title: title})
             .done((newTask) => {
                 console.log('Task created successfully:', newTask);
                 window.ui.showToastNotification('Задача добавлена!', 'success');
                 window.ui.clearFormErrors(window.tasksUi.$createTaskForm);
                 $newTaskTitleInput.val(''); // Очищаем поле ввода
 
+                const $list = window.tasksUi.$undoneTasksList;
+
+                if ($list.children('.placeholder-item').length > 0) {
+                    $list.empty();
+                }
+
+                // Теперь добавляем новый элемент в (возможно) уже очищенный список.
                 const taskHtml = window.tasksUi.renderTask(newTask);
-                window.tasksUi.$undoneTasksList.prepend(taskHtml); // Добавляем в начало списка невыполненных
+                $list.prepend(taskHtml);
             })
             .fail((jqXHR) => {
                 const problem = jqXHR.responseJSON;
@@ -46,6 +56,9 @@ function setupTaskHandlers() {
                 if (problem?.invalidParams) {
                     window.ui.applyValidationErrors($createTaskForm, problem.invalidParams);
                 }
+            })
+            .always(() => {
+                window.ui.unlockForm($createTaskForm);
             });
     });
 }

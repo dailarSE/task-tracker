@@ -175,9 +175,11 @@ input.is-invalid {
 }
 
 .task-list ul {
-    list-style-type: none;
-    padding: 0;
-    margin: 0;
+    position: relative; /* Нужно для позиционирования псевдо-элемента */
+    min-height: 50px; /* Минимальная высота, чтобы плейсхолдер было видно */
+    list-style-type: none; /* Убираем стандартные маркеры (точки, кружки и т.д.) */
+    padding: 0;            /* Убираем стандартный левый отступ у списка */
+    margin: 0;             /* Этот сброс у нас уже был, но убедимся, что он есть */
 }
 
 .task-list li {
@@ -198,6 +200,26 @@ input.is-invalid {
 /* Добавляем эффект при наведении на всю строку */
 .task-list li label:hover {
     background-color: #f9f9f9; /* Легкий фон при наведении */
+}
+
+.task-list li[data-processing="true"] {
+    opacity: 0.5;
+    pointer-events: none; /* Полностью отключаем клики на элемент и его детей */
+}
+
+/* Выбираем псевдо-элемент ::after у пустого ul */
+.task-list ul:empty::after {
+    /* Берем текст из data-атрибута родителя */
+    content: attr(data-placeholder);
+
+    /* Стилизуем и позиционируем текст */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.9em;
+    color: #888;
+    text-align: center;
 }
 
 li.done {

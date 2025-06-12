@@ -49,5 +49,38 @@ window.taskTrackerApi = {
                 'Authorization': 'Bearer ' + token
             }
         });
+    },
+
+    /**
+     * Запрашивает список всех задач для текущего пользователя.
+     * @param {string} token - JWT токен.
+     * @returns {Promise} jQuery Promise, который в случае успеха вернет массив объектов задач.
+     */
+    getTasks: function(token) {
+        return $.ajax({
+            url: `${this.BASE_URL}/tasks`,
+            method: 'GET',
+            headers: {
+                'Authorization': 'Bearer ' + token
+            }
+        });
+    },
+
+    /**
+     * Создает новую задачу.
+     * @param {object} taskData - Данные для создания задачи. Ожидается объект вида {title: "..."}.
+     * @param {string} token - JWT токен.
+     * @returns {Promise} jQuery Promise, который в случае успеха вернет созданный объект задачи.
+     */
+    createTask: function(taskData, token) {
+        return $.ajax({
+            url: `${this.BASE_URL}/tasks`,
+            method: 'POST',
+            contentType: 'application/json',
+            headers: {
+                'Authorization': 'Bearer ' + token
+            },
+            data: JSON.stringify(taskData)
+        });
     }
 };

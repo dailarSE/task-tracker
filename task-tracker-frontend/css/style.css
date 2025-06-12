@@ -146,7 +146,54 @@ input.is-invalid {
     font-weight: bold;
 }
 
+
+/* --- Стили для задач --- */
 #tasksContainer {
     display: none; /* Изначально скрыт */
     margin-top: 20px;
+}
+
+.task-creation-container {
+    margin-bottom: 30px;
+}
+
+.task-lists-container {
+    display: flex;
+    gap: 30px; /* Пространство между списками */
+}
+
+.task-list {
+    flex: 1; /* Списки занимают равное пространство */
+    background-color: #fff;
+    padding: 15px;
+    border-radius: 5px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.task-list ul {
+    list-style-type: none;
+    padding: 0;
+}
+
+.task-list li {
+    padding: 8px 12px;
+    border-bottom: 1px solid #eee;
+}
+
+.task-list li:last-child {
+    border-bottom: none;
+}
+
+li.done {
+    text-decoration: line-through;
+    color: #888;
+}
+
+#createTaskForm .form-group {
+    display: flex;
+}
+
+#createTaskForm input[type="text"] {
+    flex-grow: 1; /* Поле ввода занимает все доступное место */
+    margin-right: 10px;
 }

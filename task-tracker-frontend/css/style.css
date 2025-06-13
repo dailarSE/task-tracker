@@ -145,6 +145,7 @@ input.is-invalid {
 }
 
 .toast.success { background-color: #28a745; }
+.toast.info { background-color: #0d6efd; }
 .toast.error   { background-color: #dc3545; }
 .toast.warning { background-color: #ffc107; color: #333; }
 .toast.show    { visibility: visible; opacity: 1; }

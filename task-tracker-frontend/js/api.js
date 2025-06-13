@@ -159,9 +159,9 @@ window.taskTrackerApi = {
      * @returns {Promise} jQuery Promise.
      */
     deleteTask: function(taskId) {
-        // TODO: Implement API call in the next commit
-        console.warn('API call to deleteTask is not yet implemented.');
-        // Для эмуляции, возвращаем "пустой" промис, который ничего не делает
-        return $.Deferred().promise();
+        return this._request({
+            url: `${this.BASE_URL}/tasks/${taskId}`,
+            method: 'DELETE'
+        });
     }
 };

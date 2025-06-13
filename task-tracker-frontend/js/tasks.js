@@ -117,9 +117,27 @@ function setupTaskHandlers() {
         const isConfirmed = window.confirm("Вы уверены, что хотите удалить эту задачу?");
 
         if (isConfirmed) {
-            console.log('User confirmed deletion for task ID:', taskId);
-            // TODO: Вызвать API для удаления и обработать результат.
-            // window.taskTrackerApi.deleteTask(taskId).done(...).fail(...);
+            window.taskTrackerApi.deleteTask(taskId)
+                .done(function() {
+                    console.log('Task ' + taskId + ' deleted successfully.');
+
+                    $listItem.fadeOut(200, function() {$(this).remove();});
+
+                    window.ui.showToastNotification('Задача успешно удалена.', 'success');
+                })
+                .fail(function(jqXHR) {
+                    if (jqXHR.status === 404) {
+                        console.warn('Attempted to delete a task (ID: ' + taskId + ') that was not found. ' +
+                            'Removing from UI.');
+                        $listItem.fadeOut(200, function() { $(this).remove(); });
+                        window.ui.showToastNotification('Задача уже была удалена.', 'info');
+                    } else {
+                        console.error('Failed to delete task:', jqXHR.responseJSON);
+                        const problem = jqXHR.responseJSON;
+                        const message = problem?.detail || 'Could not delete the task.';
+                        window.ui.showToastNotification(message, 'error');
+                    }
+                });
         }
 
         $listItem.removeAttr('data-processing');

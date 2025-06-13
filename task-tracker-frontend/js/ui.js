@@ -86,7 +86,7 @@ window.ui = {
     /**
      * Показывает всплывающее toast-уведомление.
      * @param {string} message - Сообщение для отображения.
-     * @param {string} type - Тип уведомления ('success', 'error', 'warning'), определяет цвет.
+     * @param {string} type - Тип уведомления ('success', 'info', 'error', 'warning'), определяет цвет.
      */
     showToastNotification: function (message, type = 'error') {
         // Очищаем предыдущий таймер, если он был
@@ -96,7 +96,7 @@ window.ui = {
 
         this.$toastMessage.text(message);
         // Устанавливаем класс для цвета
-        this.$toast.removeClass('success error warning').addClass(type);
+        this.$toast.removeClass('success info error warning').addClass(type);
         // Показываем toast
         this.$toast.addClass('show');
 

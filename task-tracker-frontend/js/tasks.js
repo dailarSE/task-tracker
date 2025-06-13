@@ -5,6 +5,7 @@
 function setupTaskHandlers() {
     const $createTaskForm = window.tasksUi.$createTaskForm;
     const $newTaskTitleInput = window.tasksUi.$newTaskTitleInput;
+    const $tasksContainer = $('#tasksContainer');
 
     // --- Обработчик для формы СОЗДАНИЯ ЗАДАЧИ ---
     $createTaskForm.on('submit', (event) => {
@@ -60,7 +61,7 @@ function setupTaskHandlers() {
     });
 
     // --- Обработчик для ИЗМЕНЕНИЯ СТАТУСА ЗАДАЧИ (через делегирование) ---
-    $('#tasksContainer').on('change', '.task-checkbox', function (event) {
+    $tasksContainer.on('change', '.task-checkbox', function (event) {
         const $checkbox = $(this);
         const $listItem = $checkbox.closest('li');
 
@@ -98,5 +99,29 @@ function setupTaskHandlers() {
                 $checkbox.prop('disabled', false);
                 $listItem.removeAttr('data-processing');
             });
+    });
+
+    // --- Обработчик для УДАЛЕНИЯ ЗАДАЧИ (через делегирование) ---
+    $tasksContainer.on('click', '.delete-task-btn', function () {
+        const $button = $(this);
+        const $listItem = $button.closest('li');
+
+        if ($listItem.attr('data-processing')) {
+            return;
+        }
+        $listItem.attr('data-processing', true);
+
+        const taskId = $listItem.data('taskId');
+
+        // Запрашиваем подтверждение у пользователя
+        const isConfirmed = window.confirm("Вы уверены, что хотите удалить эту задачу?");
+
+        if (isConfirmed) {
+            console.log('User confirmed deletion for task ID:', taskId);
+            // TODO: Вызвать API для удаления и обработать результат.
+            // window.taskTrackerApi.deleteTask(taskId).done(...).fail(...);
+        }
+
+        $listItem.removeAttr('data-processing');
     });
 }

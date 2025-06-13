@@ -151,5 +151,17 @@ window.taskTrackerApi = {
             contentType: 'application/json',
             data: JSON.stringify({ status: newStatus })
         });
+    },
+
+    /**
+     * Удаляет задачу.
+     * @param {number} taskId - ID задачи для удаления.
+     * @returns {Promise} jQuery Promise.
+     */
+    deleteTask: function(taskId) {
+        // TODO: Implement API call in the next commit
+        console.warn('API call to deleteTask is not yet implemented.');
+        // Для эмуляции, возвращаем "пустой" промис, который ничего не делает
+        return $.Deferred().promise();
     }
 };

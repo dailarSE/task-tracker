@@ -32,6 +32,7 @@ window.tasksUi = {
                         <input type="checkbox" class="task-checkbox" ${checkedAttr}>
                         <span>${escapedTitle}</span>
                     </label>
+                    <button class="delete-task-btn" aria-label="Delete task">×</button>
                 </li>`;
     },
 
@@ -61,7 +62,7 @@ window.tasksUi = {
      * @param {number} taskId - ID задачи для перемещения.
      * @param {string} newStatus - Новый статус ('PENDING' или 'COMPLETED').
      */
-    moveTaskElement: function(taskId, newStatus) {
+    moveTaskElement: function (taskId, newStatus) {
         const $taskItem = $(`li[data-task-id="${taskId}"]`);
         if ($taskItem.length === 0) return;
 
@@ -69,7 +70,7 @@ window.tasksUi = {
         const $targetList = isCompleted ? this.$doneTasksList : this.$undoneTasksList;
         const self = this;
 
-        $taskItem.fadeOut(200, function() {
+        $taskItem.fadeOut(200, function () {
             const $movedItem = $(this);
             $movedItem.hide();
 
@@ -91,10 +92,10 @@ window.tasksUi = {
      * Сортировка происходит по ID задачи (data-task-id) в порядке убывания (новые вверху).
      * @param {jQuery} $list - jQuery-объект <ul> для сортировки.
      */
-    sortTaskList: function($list) {
+    sortTaskList: function ($list) {
         const items = $list.children('li:not(.placeholder-item)');
         const itemsArray = items.get();
-        itemsArray.sort(function(a, b) {
+        itemsArray.sort(function (a, b) {
             const idA = parseInt(a.getAttribute('data-task-id'), 10);
             const idB = parseInt(b.getAttribute('data-task-id'), 10);
             return idB - idA; // Сортировка по убыванию ID

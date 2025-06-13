@@ -184,6 +184,10 @@ input.is-invalid {
 
 .task-list li {
     border-bottom: 1px solid #eee;
+    display: flex; /* Добавляем flex для выравнивания label и кнопки */
+    justify-content: space-between; /* Распределяем пространство между ними */
+    align-items: center; /* Выравниваем по вертикали */
+    position: relative; /* Нужно для позиционирования псевдо-элементов и кнопок */
 }
 
 .task-list li:last-child {
@@ -191,6 +195,7 @@ input.is-invalid {
 }
 
 .task-list li label {
+    flex-grow: 1;
     display: block;  /* Делаем label блочным элементом, чтобы он занял всю ширину */
     padding: 8px 12px; /* Переносим padding с <li> сюда */
     cursor: pointer;   /* Меняем курсор на "руку" при наведении, показывая интерактивность */
@@ -222,9 +227,27 @@ input.is-invalid {
     text-align: center;
 }
 
-li.done {
+li.done .task-title {
     text-decoration: line-through;
     color: #888;
+}
+
+.delete-task-btn {
+    background: none;
+    border: none;
+    color: #cc0000;
+    font-size: 22px;
+    font-weight: bold;
+    line-height: 1;
+    padding: 0 12px; /* Добавляем отступы для удобства нажатия */
+    cursor: pointer;
+    opacity: 0; /* Изначально кнопка прозрачна */
+    transition: opacity 0.2s;
+}
+
+/* Кнопка становится видимой при наведении на весь элемент <li> */
+li:hover .delete-task-btn {
+    opacity: 1;
 }
 
 #createTaskForm .form-group {

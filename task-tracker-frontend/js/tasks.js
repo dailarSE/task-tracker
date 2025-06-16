@@ -398,8 +398,71 @@ function setupTaskHandlers() {
      * @private
      */
     function _setupEditModalActions() {
-        // TODO: Реализовать обработчики для чекбокса статуса и кнопки удаления.
-        console.log('TODO: Implement _setupEditModalActions');
+        const $form = $taskEditModal.find('form');
+        const $statusCheckbox = $taskEditModal.find('#editTaskStatus');
+        const $deleteBtn = $taskEditModal.find('#deleteTaskInModalBtn');
+
+        // --- Обработчик для ЧЕКБОКСА СТАТУСА ---
+        $statusCheckbox.on('change.editModal', function() {
+            const $checkbox = $(this);
+            const originalTask = $form.data('originalTask');
+            const taskId = originalTask.id;
+            const newStatus = $checkbox.is(':checked') ? 'COMPLETED' : 'PENDING';
+
+            $checkbox.prop('disabled', true);
+            window.tasksUi.showSavingIndicator();
+
+            const payload = {
+                status: newStatus,
+                version: originalTask.version
+            };
+
+            window.tasks.patch(taskId, payload)
+                .done((updatedTask) => {
+                    $form.data('originalTask', updatedTask);
+                    window.tasksUi.showSavedIndicator();
+                    // UI основного списка обновится сам через событие `task:status-changed`
+                })
+                .fail((jqXHR) => {
+                    // Откатываем чекбокс в исходное состояние
+                    $checkbox.prop('checked', !$checkbox.is(':checked'));
+                    window.tasksUi.hideSaveIndicator();
+
+                    if (jqXHR.status === 409) {
+                        // Для простоты MVP, при конфликте статуса мы просто сообщаем об ошибке
+                        // и предлагаем переоткрыть окно.
+                        alert("Не удалось изменить статус: задача была обновлена другим пользователем. Пожалуйста, закройте и снова откройте окно редактирования.");
+                    } else {
+                        window.ui.showToastNotification("Не удалось изменить статус.", "error");
+                    }
+                })
+                .always(() => {
+                    $checkbox.prop('disabled', false);
+                });
+        });
+
+        // --- Обработчик для КНОПКИ УДАЛЕНИЯ ---
+        $deleteBtn.on('click.editModal', function() {
+            const $button = $(this);
+            const originalTask = $form.data('originalTask');
+            const taskId = originalTask.id;
+
+            if (!window.confirm(`Вы уверены, что хотите удалить задачу "${originalTask.title}"?`)) {
+                return;
+            }
+
+            $button.prop('disabled', true);
+
+            window.tasks.delete(taskId)
+                .done(() => {
+                    window.ui.showToastNotification("Задача успешно удалена.", "success");
+                    _closeEditModal(); // Закрываем окно после успешного удаления
+                })
+                .fail(() => {
+                    window.ui.showToastNotification("Не удалось удалить задачу.", "error");
+                    $button.prop('disabled', false);
+                });
+        });
     }
 
     // --- ГЛАВНЫЙ ТРИГГЕР: Клик по заголовку задачи в списке ---

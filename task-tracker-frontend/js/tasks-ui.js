@@ -231,5 +231,73 @@ window.tasksUi = {
         $modal.find('form').data('originalTask', task);
 
         $modal.css('display', 'flex');
+    },
+
+    /**
+     * Показывает UI для разрешения конфликта обновления.
+     * @param {number} taskId - ID задачи.
+     * @param {object} localChanges - Объект с локальными изменениями пользователя.
+     * @param {object} serverTask - Полный актуальный объект задачи с сервера.
+     */
+    showConflictResolver: function(taskId, localChanges, serverTask) {
+        const $modal = this.$taskEditModal;
+        const $resolverContainer = $modal.find('.conflict-resolver');
+
+        $resolverContainer.empty().show(); // Очищаем и показываем блок
+
+        let conflictHtml = '<p><strong>Обнаружен конфликт!</strong> Данные были изменены, пока вы вносили правки.</p>';
+        let hasVisibleConflict = false;
+
+        // Сравниваем title
+        if (localChanges.title !== undefined && localChanges.title !== serverTask.title) {
+            hasVisibleConflict = true;
+            conflictHtml += `<div>
+                                <h4>Заголовок:</h4>
+                                <p><strong>Ваша версия:</strong> ${$('<div/>').text(localChanges.title).html()}</p>
+                                <p><strong>Актуальная версия:</strong> ${$('<div/>').text(serverTask.title).html()}</p>
+                             </div>`;
+        }
+
+        // Сравниваем description
+        const localDesc = localChanges.description || '';
+        const serverDesc = serverTask.description || '';
+        if (localChanges.description !== undefined && localDesc !== serverDesc) {
+            hasVisibleConflict = true;
+            conflictHtml += `<div>
+                                <h4>Описание:</h4>
+                                <p><strong>Ваша версия:</strong> ${$('<div/>').text(localDesc).html()}</p>
+                                <p><strong>Актуальная версия:</strong> ${$('<div/>').text(serverDesc).html()}</p>
+                              </div>`;
+        }
+
+        // ИЗМЕНЕНИЕ: Сравниваем status
+        if (localChanges.status !== serverTask.status) {
+            hasVisibleConflict = true;
+            conflictHtml += `<div><h4>Статус:</h4>
+                                <p><strong>Ваша версия:</strong> ${localState.status === 'COMPLETED' ? 'Выполнено' : 'В работе'}</p>
+                                <p><strong>Актуальная версия:</strong> ${serverTask.status === 'COMPLETED' ? 'Выполнено' : 'В работе'}</p>
+                             </div>`;
+        }
+
+        // Если по какой-то причине видимых конфликтов нет (например, изменился только updatedAt),
+        // все равно сообщаем об этом.
+        if (!hasVisibleConflict) {
+            conflictHtml += '<p>Невидимые изменения (например, время обновления) были сделаны другим пользователем.</p>';
+        }
+
+
+        conflictHtml += `<div class="conflict-actions">
+                            <button type="button" class="btn-primary" id="overwriteBtn">Перезаписать моей версией</button>
+                            <button type="button" class="btn-secondary" id="revertBtn">Принять актуальную версию</button>
+                         </div>`;
+
+        $resolverContainer.html(conflictHtml);
+    },
+
+    /**
+     * Скрывает и очищает UI разрешения конфликта.
+     */
+    hideConflictResolver: function() {
+        this.$taskEditModal.find('.conflict-resolver').hide().empty();
     }
 };

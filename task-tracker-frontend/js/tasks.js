@@ -255,6 +255,7 @@ function setupTaskHandlers() {
 
         let isSaving = false;
         let hasUnsentChanges = false;
+        let isConflictActive = false;
 
         /**
          * Утилита debounce.
@@ -269,12 +270,56 @@ function setupTaskHandlers() {
          * Если сохранение уже идет, просто выставляет флаг.
          */
         function _tryToCommitChanges() {
-            if (isSaving) {
+            if (isSaving || hasUnsentChanges) {
                 hasUnsentChanges = true;
                 console.log("Save in progress. Queuing subsequent changes.");
                 return;
             }
             _commitPendingChanges();
+        }
+
+        /**
+         * Обрабатывает 409 Conflict.
+         */
+        function _handleConflict(conflictingChanges) {
+            isConflictActive = true;
+            window.tasksUi.hideSaveIndicator();
+            window.ui.showToastNotification("Обнаружен конфликт обновления!", "warning");
+
+            const taskId = $form.data('originalTask').id;
+
+            window.tasks.ensureLatest(taskId)
+                .done((freshTask) => {
+                    const localChanges = {
+                        title: $titleInput.val(),
+                        description: $descriptionInput.val(),
+                        status: $taskEditModal.find('#editTaskStatus').is(':checked') ? 'COMPLETED' : 'PENDING'
+                    };
+                    window.tasksUi.showConflictResolver(taskId, localChanges, freshTask);
+
+                    // Привязываем обработчики к новым кнопкам
+                    $('#overwriteBtn').on('click.editModal', function() {
+                        $(this).prop('disabled', true);
+                        const dataToSend = { ...localChanges, version: freshTask.version };
+                        window.tasks.patch(taskId, dataToSend)
+                            .done(() => {
+                                window.tasksUi.hideConflictResolver();
+                                isConflictActive = false;
+                            })
+                            .fail(() => { /* TODO: FT-LS-RETRY-02 */ window.ui.showToastNotification("Не удалось сохранить.", "error"); });
+                    });
+
+                    $('#revertBtn').on('click.editModal', function() {
+                        // Обновляем UI и локальное состояние, включаем live-save обратно
+                        $titleInput.val(freshTask.title);
+                        $descriptionInput.val(freshTask.description || '');
+                        $taskEditModal.find('#editTaskStatus').prop('checked', freshTask.status === 'COMPLETED');
+                        $form.data('originalTask', freshTask);
+                        window.tasksUi.hideConflictResolver();
+                        isConflictActive = false;
+                    });
+                })
+                .fail(() => { /* TODO: FT-LS-RETRY-01 */ window.ui.showToastNotification("Не удалось загрузить данные для разрешения конфликта.", "error"); });
         }
 
         /**
@@ -308,11 +353,15 @@ function setupTaskHandlers() {
                 })
                 .fail((jqXHR) => {
                     // TODO: FT-LS-03, FT-LS-04 - Обработка ошибок
-                    console.error("Live save failed:", jqXHR);
-                    window.tasksUi.hideSaveIndicator();
-                    // Возвращаем неотправленные изменения обратно в `pendingChanges`,
-                    // чтобы пользователь не потерял их.
                     pendingChanges = { ...changesToSend, ...pendingChanges };
+                    window.tasksUi.hideSaveIndicator();
+                    if (jqXHR.status === 409) {
+                        _handleConflict(changesToSend);
+                    } else if (jqXHR.status === 400) {
+                        window.ui.applyValidationErrors($form, jqXHR.responseJSON.invalidParams);
+                    } else {
+                        window.ui.showToastNotification("Не удалось сохранить.", "error");
+                    }
                 })
                 .always(() => {
                     isSaving = false;

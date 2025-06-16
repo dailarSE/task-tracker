@@ -1,66 +1,79 @@
 /**
- * Модуль для управления UI-компонентами.
+ * @file ui.js
+ * @description Модуль для управления ОБЩИМИ, переиспользуемыми UI-компонентами
+ * и их обработчиками. Отвечает за модальные окна регистрации/логина,
+ * toast-уведомления и глобальное состояние UI (залогинен/не залогинен).
+ */
+
+/**
+ * Глобальный объект `ui`, инкапсулирующий все общие UI-хелперы и их инициализацию.
+ * @namespace ui
  */
 window.ui = {
-    // --- Кэшированные элементы UI ---
+    // --- Кэшированные jQuery-объекты для общих элементов ---
     $registerModal: $('#registerModal'),
     $loginModal: $('#loginModal'),
-    $taskEditModal: $('#taskEditModal'),
     $authContainer: $('#authContainer'),
     $userInfo: $('#userInfo'),
     $userEmailDisplay: $('#userEmailDisplay'),
     $toast: $('#toastNotification'),
     $toastMessage: $('#toastMessage'),
-    toastTimer: null, // Таймер для скрытия toast'а
+    toastTimer: null, // Таймер для автоматического скрытия toast-уведомления
 
     /**
      * Инициализирует все общие обработчики событий UI.
-     * Должна вызываться один раз при старте приложения.
+     * Эта функция должна вызываться один раз при старте приложения из `main.js`.
      */
     init: function() {
         this._initModalHandlers();
         this._initGlobalEventHandlers();
+        console.log("Common UI handlers initialized.");
     },
 
     /**
-     * Приватный метод для инициализации обработчиков модальных окон.
+     * Приватный метод для инициализации обработчиков общих модальных окон (регистрация/логин).
      * @private
      */
     _initModalHandlers: function() {
-        const self = this; // Сохраняем контекст `this`
+        const self = this;
 
-        // --- ОБРАБОТЧИКИ ОТКРЫТИЯ ---
+        // --- Обработчики ОТКРЫТИЯ ---
         $('#showRegisterModalBtn').on('click', () => {
             self.clearFormErrors(self.$registerModal);
             self.$registerModal.css('display', 'flex');
         });
+
         $('#showLoginModalBtn').on('click', () => {
             self.clearFormErrors(self.$loginModal);
             self.$loginModal.css('display', 'flex');
         });
 
-        // --- ОБРАБОТЧИКИ ЗАКРЫТИЯ ---
-        // 1. Закрытие по кнопкам "крестик" и "Готово"
-        $('.close-modal-btn, #closeEditModalBtn').on('click', function() {
+        // --- Обработчики ЗАКРЫТИЯ ---
+
+        // Закрытие по кнопке "крестик" для ВСЕХ модальных окон.
+        // Окно редактирования задач будет иметь свой собственный обработчик в `tasks.js`.
+        $('.modal .close-modal-btn').on('click', function() {
+            // Убеждаемся, что мы не закрываем окно редактирования задач,
+            // так как у него своя, более сложная логика закрытия.
             const $modal = $(this).closest('.modal');
-            if ($modal.is(self.$taskEditModal)) {
-                self._closeEditModal();
-            } else {
+            if (!$modal.is('#taskEditModal')) {
                 $modal.css('display', 'none');
             }
         });
 
-        // 2. Закрытие по клику на фон
+        // Закрытие по клику на фон (для всех модалок, кроме окна редактирования)
         let mousedownOnBackdropFor = null;
         $('.modal').on('mousedown', function(event) {
-            if (event.target === this) { mousedownOnBackdropFor = $(this); }
-            else { mousedownOnBackdropFor = null; }
+            if (event.target === this) {
+                mousedownOnBackdropFor = $(this);
+            } else {
+                mousedownOnBackdropFor = null;
+            }
         });
+
         $('.modal').on('mouseup', function(event) {
             if (mousedownOnBackdropFor && mousedownOnBackdropFor.is($(this)) && event.target === this) {
-                if ($(this).is(self.$taskEditModal)) {
-                    self._closeEditModal();
-                } else {
+                if (!$(this).is('#taskEditModal')) {
                     $(this).css('display', 'none');
                 }
             }
@@ -73,6 +86,7 @@ window.ui = {
      * @private
      */
     _initGlobalEventHandlers: function() {
+        // Подписываемся на глобальное событие ошибки, чтобы показывать toast.
         window.eventBus.on('app:error', (event, errorData) => {
             if (errorData && errorData.message) {
                 this.showToastNotification(errorData.message, 'error');
@@ -80,113 +94,103 @@ window.ui = {
         });
     },
 
-    /**
-     * Приватный метод для централизованного закрытия модального окна редактирования.
-     * Выполняет все необходимые действия по очистке.
-     * @private
-     */
-    _closeEditModal: function() {
-        window.eventBus.off('.editModal');
-        console.log('Event handlers for edit modal have been unbound.');
-        this.$taskEditModal.css('display', 'none');
-    },
+    // --- ПУБЛИЧНЫЕ МЕТОДЫ-ХЕЛПЕРЫ ---
+
     /**
      * Обновляет UI, чтобы отразить состояние "пользователь аутентифицирован".
+     * Скрывает кнопки входа/регистрации и показывает блок с email'ом пользователя.
      * @param {string} email - Email пользователя для отображения.
      */
-    showLoggedInState: function (email) {
+    showLoggedInState: function(email) {
         this.$userEmailDisplay.text(email);
         this.$authContainer.hide();
         this.$userInfo.css('display', 'flex');
-        window.tasksUi.show();
+        window.tasksUi.show(); // Показываем контейнер с задачами
     },
 
     /**
      * Обновляет UI, чтобы отразить состояние "пользователь не аутентифицирован".
      */
-    showLoggedOutState: function () {
+    showLoggedOutState: function() {
         this.$userEmailDisplay.text('');
         this.$userInfo.hide();
         this.$authContainer.show();
-        window.tasksUi.hide();
+        window.tasksUi.hide(); // Скрываем контейнер с задачами
     },
 
     /**
      * Сбрасывает ВЕСЬ UI в начальное, "незалогиненное" состояние.
-     * Скрывает все, что должно быть скрыто, показывает то, что должно быть видно.
-     * Очищает все формы и сообщения об ошибках.
+     * Вызывается при логауте.
      */
     resetAllUIStateToLoggedOut: function() {
-        // 1. Показываем/скрываем основные блоки
         this.showLoggedOutState();
-
-        // 2. Очищаем все модальные формы
         this.clearFormErrors(this.$registerModal);
-        this.$registerModal.find('form').trigger('reset'); // Сбрасываем значения полей
-
+        this.$registerModal.find('form').trigger('reset');
         this.clearFormErrors(this.$loginModal);
         this.$loginModal.find('form').trigger('reset');
-
-        // 3. Очищаем все формы на основной странице
-        window.tasksUi.clearCreateTaskForm(); // Делегируем очистку формы задач
+        window.tasksUi.clearCreateTaskForm();
     },
 
-    /** Очищает все сообщения и подсветку ошибок внутри формы. */
-    clearFormErrors: function ($form) {
-        $form.find('.is-invalid').removeClass('is-invalid');
-        $form.find('.field-error-message').text('');
-        $form.find('.general-error-message').text('');
+    /**
+     * Очищает все сообщения и подсветку ошибок внутри указанной формы.
+     * @param {jQuery} $formContainer - jQuery-объект контейнера формы (например, модального окна).
+     */
+    clearFormErrors: function($formContainer) {
+        $formContainer.find('.is-invalid').removeClass('is-invalid');
+        $formContainer.find('.field-error-message').text('');
+        $formContainer.find('.general-error-message').empty(); // .empty() для удаления HTML-элементов, например, ссылок
     },
 
-    /** Показывает общую ошибку для формы. */
-    showGeneralError: function ($form, message) {
-        $form.find('.general-error-message').html(message); // .html() чтобы можно было вставить ссылку
+    /**
+     * Показывает общее сообщение об ошибке для формы.
+     * @param {jQuery} $formContainer - jQuery-объект контейнера формы.
+     * @param {string|jQuery} message - Сообщение для отображения (может быть строкой или jQuery-объектом).
+     */
+    showGeneralError: function($formContainer, message) {
+        $formContainer.find('.general-error-message').html(message);
     },
 
-    /** Подсвечивает поля с ошибками валидации. */
-    applyValidationErrors: function ($form, invalidParams) {
+    /**
+     * Применяет ошибки валидации к полям формы, подсвечивая их.
+     * @param {jQuery} $formContainer - jQuery-объект контейнера формы.
+     * @param {Array<object>} invalidParams - Массив объектов ошибок из ProblemDetail.
+     */
+    applyValidationErrors: function($formContainer, invalidParams) {
         if (!invalidParams || !Array.isArray(invalidParams)) return;
-
         invalidParams.forEach(error => {
             const fieldName = error.field;
-
-            const $field = $form.find(`input[data-field-name="${fieldName}"]`);
-            const $errorContainer = $form.find(`.field-error-message[data-field-name="${fieldName}"]`);
-
+            if (!fieldName) return;
+            const $field = $formContainer.find(`[data-field-name="${fieldName}"]`);
+            const $errorContainer = $formContainer.find(`.field-error-message[data-field-name="${fieldName}"]`);
             if ($field.length) $field.addClass('is-invalid');
             if ($errorContainer.length) $errorContainer.text(error.message);
-
         });
     },
 
     /**
      * Показывает всплывающее toast-уведомление.
      * @param {string} message - Сообщение для отображения.
-     * @param {string} type - Тип уведомления ('success', 'info', 'error', 'warning'), определяет цвет.
+     * @param {'success'|'info'|'error'|'warning'} [type='error'] - Тип уведомления, определяет цвет.
      */
-    showToastNotification: function (message, type = 'error') {
-        // Очищаем предыдущий таймер, если он был
+    showToastNotification: function(message, type = 'error') {
         if (this.toastTimer) {
             clearTimeout(this.toastTimer);
         }
-
         this.$toastMessage.text(message);
-        // Устанавливаем класс для цвета
         this.$toast.removeClass('success info error warning').addClass(type);
-        // Показываем toast
         this.$toast.addClass('show');
-
-        // Устанавливаем таймер на скрытие через 5 секунд
         this.toastTimer = setTimeout(() => {
             this.$toast.removeClass('show');
         }, 5000);
     },
 
-
     /**
-     * Проверяет начальное состояние аутентификации при загрузке страницы.
+     * Запрашивает данные текущего пользователя для инициализации UI.
+     * Этот метод просто инициирует API-запрос и возвращает Promise.
+     * Дальнейшая логика (загрузка задач и т.д.) обрабатывается в `auth.js`.
+     * @returns {Promise} jQuery Promise от API-вызова.
      */
-    checkInitialAuthState: function () {
+    checkInitialAuthState: function() {
         const token = localStorage.getItem('jwt_token');
         if (token) {
             return window.taskTrackerApi.getCurrentUser();
@@ -197,24 +201,18 @@ window.ui = {
     },
 
     /**
-     * Блокирует кнопку отправки формы и показывает индикатор загрузки (опционально).
-     * @param {jQuery} $form - jQuery-объект формы.
+     * Блокирует кнопку отправки формы.
+     * @param {jQuery} $formContainer - jQuery-объект контейнера формы.
      */
-    lockForm: function($form) {
-        const $submitButton = $form.find('button[type="submit"]');
-        if ($submitButton.length) {
-            $submitButton.prop('disabled', true);
-        }
+    lockForm: function($formContainer) {
+        $formContainer.find('button[type="submit"]').prop('disabled', true);
     },
 
     /**
-     * Разблокирует кнопку отправки формы и возвращает ее в исходное состояние.
-     * @param {jQuery} $form - jQuery-объект формы.
+     * Разблокирует кнопку отправки формы.
+     * @param {jQuery} $formContainer - jQuery-объект контейнера формы.
      */
-    unlockForm: function($form) {
-        const $submitButton = $form.find('button[type="submit"]');
-        if ($submitButton.length) {
-            $submitButton.prop('disabled', false);
-        }
+    unlockForm: function($formContainer) {
+        $formContainer.find('button[type="submit"]').prop('disabled', false);
     }
 };

@@ -1,36 +1,58 @@
 /**
- * Модуль для управления UI-компонентами, связанными с задачами.
+ * @file tasks-ui.js
+ * @description
+ * Этот файл отвечает исключительно за рендеринг и обновление DOM-элементов,
+ * связанных с задачами. Он является "тупым" слоем UI, который реагирует
+ * на события, генерируемые `tasks-store.js` через `event-bus.js`.
+ * Он не содержит бизнес-логики или прямых вызовов API.
+ */
+
+/**
+ * Глобальный объект `tasksUi`, инкапсулирующий всю логику рендеринга задач.
+ * @namespace tasksUi
  */
 window.tasksUi = {
-    // --- Кэшированные элементы UI ---
+    // --- Кэшированные jQuery-объекты для элементов UI ---
     $tasksContainer: $('#tasksContainer'),
     $createTaskForm: $('#createTaskForm'),
     $newTaskTitleInput: $('#newTaskTitle'),
     $undoneTasksList: $('#undoneTasksList'),
     $doneTasksList: $('#doneTasksList'),
+    $taskEditModal: $('#taskEditModal'),
 
     /**
-     * Инициализирует подписчики на события.
+     * Инициализирует модуль, подписываясь на необходимые события от EventBus.
+     * Эта функция должна вызываться один раз при старте приложения из `main.js`.
      */
     init: function() {
         window.eventBus.on('tasks:refreshed', (e, tasks) => this.renderTaskLists(tasks));
-        window.eventBus.on('task:updated', (e, task) => this.renderOrUpdateTask(task));
+        window.eventBus.on('task:added', (e, task) => this.addTaskElement(task));
+        window.eventBus.on('task:title-updated', (e, task) => this.updateTaskTitle(task));
+        window.eventBus.on('task:status-changed', (e, task) => this.moveTaskElement(task));
         window.eventBus.on('task:deleted', (e, taskData) => this.removeTaskElement(taskData.id));
+        console.log("Tasks UI event listeners initialized.");
     },
 
-    show: function () {
+    /**
+     * Показывает основной контейнер с задачами.
+     */
+    show: function() {
         this.$tasksContainer.show();
     },
-    hide: function () {
+
+    /**
+     * Скрывает основной контейнер с задачами.
+     */
+    hide: function() {
         this.$tasksContainer.hide();
     },
 
     /**
-     * Создает HTML-разметку для одной задачи.
-     * @param {object} task - Объект задачи, полученный от API.
-     * @returns {string} HTML-строка для <li> элемента.
+     * Генерирует HTML-разметку для одной задачи (элемента <li>).
+     * @param {object} task - Объект задачи.
+     * @returns {string} HTML-строка для <li>.
      */
-    renderTask: function (task) {
+    renderTask: function(task) {
         const isDone = task.status === 'COMPLETED';
         const checkedAttr = isDone ? 'checked' : '';
         const doneClass = isDone ? 'class="done"' : '';
@@ -46,8 +68,8 @@ window.tasksUi = {
     },
 
     /**
-     * Полностью перерисовывает оба списка задач.
-     * @param {Array<object>} tasks - Массив всех задач.
+     * Полностью очищает и перерисовывает оба списка задач на странице.
+     * @param {Array<object>} tasks - Массив всех задач из Store.
      */
     renderTaskLists: function(tasks) {
         this.$undoneTasksList.empty();
@@ -64,85 +86,124 @@ window.tasksUi = {
     },
 
     /**
-     * Обновляет одну задачу в UI.
-     * Если статус изменился - перемещает элемент.
-     * Если нет - просто перерисовывает его на месте.
-     * Если элемента нет - добавляет его.
-     * @param {object} updatedTask - Обновленный объект задачи из Store.
+     * Просто добавляет новый элемент задачи в нужный список.
+     * @param {object} task - Объект новой задачи.
      */
-    renderOrUpdateTask: function(updatedTask) {
-        const $existingItem = $(`li[data-task-id="${updatedTask.id}"]`);
-
-        if ($existingItem.length) {
-            // --- Элемент уже существует, решаем, что с ним делать ---
-            const isCurrentlyDone = $existingItem.parent().is(this.$doneTasksList);
-            const shouldBeDone = updatedTask.status === 'COMPLETED';
-
-            if (isCurrentlyDone !== shouldBeDone) {
-                // СТАТУС ИЗМЕНИЛСЯ - ПЕРЕМЕЩАЕМ
-                this._moveTaskElement($existingItem, shouldBeDone);
-            } else {
-                // Статус не изменился, просто перерисовываем на месте
-                const taskHtml = this.renderTask(updatedTask);
-                $existingItem.replaceWith(taskHtml);
-            }
-        } else {
-            // --- Элемента нет, добавляем его ---
-            const taskHtml = this.renderTask(updatedTask);
-            const $list = updatedTask.status === 'COMPLETED' ? this.$doneTasksList : this.$undoneTasksList;
-            $list.prepend(taskHtml); // Вставляем в начало
-            this.sortTaskList($list); // и сортируем список
-        }
+    addTaskElement: function(task) {
+        const taskHtml = this.renderTask(task);
+        const $list = task.status === 'COMPLETED' ? this.$doneTasksList : this.$undoneTasksList;
+        $list.prepend(taskHtml).hide().fadeIn(200); // Добавляем с небольшим эффектом
+        this.sortTaskList($list);
     },
 
     /**
-     * Приватный метод для анимированного перемещения элемента задачи между списками.
-     * @param {jQuery} $taskItem - jQuery-объект <li> для перемещения.
-     * @param {boolean} shouldBeDone - true, если задача должна быть в списке выполненных.
-     * @private
+     * Просто заменяет КОНТЕНТ (title) существующего элемента задачи.
+     * @param {object} task - Объект обновленной задачи.
      */
-    _moveTaskElement: function($taskItem, shouldBeDone) {
+    replaceTaskElementContent: function(task) {
+        // Находим существующий элемент
+        const $existingItem = $(`li[data-task-id="${task.id}"]`);
+        if (!$existingItem.length) return; // Если элемента нет, ничего не делаем
+
+        // Экранируем новый заголовок
+        const escapedTitle = $('<div/>').text(task.title).html();
+        // Находим и обновляем только span с текстом
+        $existingItem.find('.task-title').html(escapedTitle);
+        console.log(`Task ${task.id} content updated in UI.`);
+    },
+
+    /**
+     * Заменяет заголовок существующего элемента задачи.
+     * @param {object} task - Объект обновленной задачи.
+     */
+    updateTaskTitle: function(task) {
+        const $existingItem = $(`li[data-task-id="${task.id}"]`);
+        if (!$existingItem.length) return;
+
+        const escapedTitle = $('<div/>').text(task.title).html();
+        $existingItem.find('.task-title').html(escapedTitle);
+        console.log(`Task ${task.id} title updated in UI.`);
+    },
+
+    /**
+     * Просто перемещает элемент задачи из одного списка в другой.
+     * @param {object} task - Объект перемещаемой задачи с НОВЫМ статусом.
+     */
+    moveTaskElement: function(task) {
+        const $taskItem = $(`li[data-task-id="${task.id}"]`);
+        if (!$taskItem.length) return;
+
+        const shouldBeDone = task.status === 'COMPLETED';
+        const isCurrentlyDone = $taskItem.parent().is(this.$doneTasksList);
+
+        // Перемещаем, только если элемент находится не в том списке
+        if (shouldBeDone === isCurrentlyDone) return;
+
         const $targetList = shouldBeDone ? this.$doneTasksList : this.$undoneTasksList;
         const self = this;
 
         $taskItem.fadeOut(200, function() {
+            // Обновляем состояние чекбокса и класса перед перемещением
             const $movedItem = $(this);
-            // Обновляем классы и состояние чекбокса перед показом
             $movedItem.find('.task-checkbox').prop('checked', shouldBeDone);
-            if (shouldBeDone) {
-                $movedItem.addClass('done');
-            } else {
-                $movedItem.removeClass('done');
-            }
+            $movedItem.toggleClass('done', shouldBeDone);
 
             $targetList.prepend($movedItem);
             self.sortTaskList($targetList);
             $movedItem.fadeIn(200);
+            console.log(`Task ${task.id} moved to ${shouldBeDone ? 'done' : 'undone'} list.`);
         });
     },
 
     /**
-     * Сортирует задачи внутри указанного jQuery-элемента списка.
-     * Сортировка происходит по ID задачи (data-task-id) в порядке убывания (новые вверху).
-     * @param {jQuery} $list - jQuery-объект <ul> для сортировки.
+     * Удаляет DOM-элемент задачи со страницы с эффектом затухания.
+     * @param {number} taskId - ID задачи для удаления.
      */
-    sortTaskList: function ($list) {
-        const items = $list.children('li:not(.placeholder-item)');
-        const itemsArray = items.get();
-        itemsArray.sort(function (a, b) {
-            const idA = parseInt(a.getAttribute('data-task-id'), 10);
-            const idB = parseInt(b.getAttribute('data-task-id'), 10);
-            return idB - idA; // Сортировка по убыванию ID
-        });
-        $list.append(itemsArray);
-    },
-
     removeTaskElement: function(taskId) {
         $(`li[data-task-id="${taskId}"]`).fadeOut(200, function() { $(this).remove(); });
     },
 
-    clearCreateTaskForm: function () {
+    /**
+     * Сортирует задачи внутри указанного списка по ID (новые вверху).
+     * @param {jQuery} $list - jQuery-объект <ul> для сортировки.
+     */
+    sortTaskList: function($list) {
+        const items = $list.children('li');
+        items.sort(function(a, b) {
+            const idA = parseInt(a.getAttribute('data-task-id'), 10);
+            const idB = parseInt(b.getAttribute('data-task-id'), 10);
+            return idB - idA; // Сортировка по убыванию ID
+        });
+        $list.append(items);
+    },
+
+    /**
+     * Очищает форму создания новой задачи.
+     */
+    clearCreateTaskForm: function() {
         window.ui.clearFormErrors(this.$createTaskForm);
         this.$newTaskTitleInput.val('');
+    },
+
+    /**
+     * Заполняет данными и показывает модальное окно редактирования задачи.
+     * Этот метод не содержит логики обработчиков событий.
+     * @param {object} task - Объект задачи из Store.
+     */
+    showEditModal: function(task) {
+        const $modal = this.$taskEditModal;
+
+        $modal.find('#editTaskId').val(task.id);
+        $modal.find('#editTaskTitle').val(task.title);
+        $modal.find('#editTaskDescription').val(task.description || '');
+        $modal.find('#editTaskStatus').prop('checked', task.status === 'COMPLETED');
+
+        window.ui.clearFormErrors($modal);
+        $modal.find('.conflict-resolver').hide().empty();
+        $modal.find('#saveIndicator').removeClass('show');
+
+        $modal.find('form').data('originalTask', task);
+
+        $modal.css('display', 'flex');
     }
 };

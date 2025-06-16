@@ -189,6 +189,13 @@ input.is-invalid {
     justify-content: space-between; /* Распределяем пространство между ними */
     align-items: center; /* Выравниваем по вертикали */
     position: relative; /* Нужно для позиционирования псевдо-элементов и кнопок */
+    transition: background-color 0.2s; /* Переносим transition на весь элемент */
+}
+
+.task-title {
+    flex-grow: 1;
+    padding: 8px 12px;
+    cursor: pointer; /* Подсказка, что элемент кликабельный */
 }
 
 .task-list li:last-child {
@@ -204,7 +211,7 @@ input.is-invalid {
 }
 
 /* Добавляем эффект при наведении на всю строку */
-.task-list li label:hover {
+.task-list li li:hover {
     background-color: #f9f9f9; /* Легкий фон при наведении */
 }
 

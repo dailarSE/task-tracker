@@ -30,8 +30,8 @@ window.tasksUi = {
         return `<li data-task-id="${task.id}" ${doneClass}>
                     <label>
                         <input type="checkbox" class="task-checkbox" ${checkedAttr}>
-                        <span>${escapedTitle}</span>
                     </label>
+                    <span class="task-title">${escapedTitle}</span>
                     <button class="delete-task-btn" aria-label="Delete task">×</button>
                 </li>`;
     },

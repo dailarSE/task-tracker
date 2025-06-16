@@ -1,10 +1,10 @@
 /**
  * @file tasks.js
  * @description
- * Этот файл является слоем бизнес-логики ("команд") для работы с задачами.
+ * Этот файл является слоем бизнес-логики ("команд") и управления UI-событиями для задач.
  * Он оркестрирует взаимодействие между UI (через обработчики событий),
  * API-слоем (window.taskTrackerApi) и клиентским хранилищем состояния (window.tasksStore).
- * Все асинхронные операции инкапсулированы здесь.
+ * Все асинхронные операции и сложная логика жизненного цикла UI инкапсулированы здесь.
  */
 
 /**
@@ -16,8 +16,7 @@
 window.tasks = {
     /**
      * Загружает все задачи для текущего пользователя с сервера и инициализирует tasksStore.
-     * @returns {Promise} jQuery Promise от API-вызова, который можно использовать
-     * для обработки ошибок на верхнем уровне (например, при инициализации приложения).
+     * @returns {Promise} jQuery Promise от API-вызова.
      */
     loadAll: function() {
         return window.taskTrackerApi.getTasks()
@@ -25,6 +24,7 @@ window.tasks = {
                 window.tasksStore._init(tasks);
             });
     },
+
     /**
      * Отправляет команду на создание новой задачи.
      * @param {object} createData - Данные для создания задачи. Ожидается { title: string, description?: string }.
@@ -36,6 +36,7 @@ window.tasks = {
                 window.tasksStore._addOrUpdate(newTask);
             });
     },
+
     /**
      * Отправляет команду на частичное обновление задачи.
      * @param {number} taskId - ID задачи для обновления.
@@ -48,6 +49,7 @@ window.tasks = {
                 window.tasksStore._addOrUpdate(updatedTask);
             });
     },
+
     /**
      * Отправляет команду на удаление задачи.
      * @param {number} taskId - ID задачи для удаления.
@@ -59,19 +61,18 @@ window.tasks = {
                 window.tasksStore._remove(taskId);
             });
     },
+
     /**
-     * Отправляет команду на обновление только статуса задачи.
-     * Является удобной оберткой над `tasks.patch`.
+     * Загружает актуальную версию задачи с сервера и обновляет Store.
+     * Эта команда используется для синхронизации перед началом редактирования.
      * @param {number} taskId - ID задачи.
-     * @param {'PENDING' | 'COMPLETED'} newStatus - Новый статус задачи.
      * @returns {Promise} jQuery Promise от API-вызова.
      */
-    updateStatus: function(taskId, newStatus) {
-        // Обертка над patch для удобства
-        const currentTask = window.tasksStore.get(taskId);
-
-        const patchData = { status: newStatus, version: currentTask.version };
-        return this.patch(taskId, patchData);
+    ensureLatest: function(taskId) {
+        return window.taskTrackerApi.getTaskById(taskId)
+            .done((freshTask) => {
+                this._addOrUpdate(freshTask);
+            });
     }
 };
 
@@ -80,45 +81,32 @@ window.tasks = {
  * Эта функция должна вызываться один раз при старте приложения.
  */
 function setupTaskHandlers() {
-    const $createTaskForm = window.tasksUi.$createTaskForm;
-    const $newTaskTitleInput = window.tasksUi.$newTaskTitleInput;
     const $tasksContainer = $('#tasksContainer');
+    const $createTaskForm = $('#createTaskForm');
+    const $newTaskTitleInput = $('#newTaskTitle');
+    const $taskEditModal = $('#taskEditModal');
 
     // --- Обработчик для формы СОЗДАНИЯ ЗАДАЧИ ---
     $createTaskForm.on('submit', (event) => {
         event.preventDefault();
-
-        // Очищаем предыдущие ошибки
         window.ui.clearFormErrors($createTaskForm);
 
         const title = $newTaskTitleInput.val().trim();
-
-        // Простая клиентская валидация, чтобы не отправлять пустой запрос
         if (!title) {
-            window.ui.applyValidationErrors($createTaskForm, [{
-                field: 'title', // Используем data-field-name из HTML
-                message: 'Title is required'
-            }]);
+            window.ui.applyValidationErrors($createTaskForm, [{ field: 'title', message: 'Title is required' }]);
             return;
         }
 
         window.ui.lockForm($createTaskForm);
-
-        // Вызываем API для создания задачи
-        window.tasks.create({title: title})
-            .done((newTask) => {
-                console.log('Task created successfully:', newTask);
+        window.tasks.create({ title: title })
+            .done(() => {
+                $newTaskTitleInput.val('');
                 window.ui.showToastNotification('Задача добавлена!', 'success');
-                window.ui.clearFormErrors(window.tasksUi.$createTaskForm);
-                $newTaskTitleInput.val(''); // Очищаем поле ввода
             })
             .fail((jqXHR) => {
                 const problem = jqXHR.responseJSON;
-                console.error("Failed to create task:", problem);
-
                 const errorMessage = problem?.detail || problem?.title || 'Failed to create task.';
                 window.ui.showGeneralError($createTaskForm, errorMessage);
-
                 if (problem?.invalidParams) {
                     window.ui.applyValidationErrors($createTaskForm, problem.invalidParams);
                 }
@@ -128,76 +116,149 @@ function setupTaskHandlers() {
             });
     });
 
-    // --- Обработчик для ИЗМЕНЕНИЯ СТАТУСА ЗАДАЧИ (через делегирование) ---
-    $tasksContainer.on('change', '.task-checkbox', function (event) {
+    // --- Обработчик для ИЗМЕНЕНИЯ СТАТУСА ЗАДАЧИ ---
+    $tasksContainer.on('change', '.task-checkbox', function(event) {
         const $checkbox = $(this);
         const $listItem = $checkbox.closest('li');
+        if ($listItem.attr('data-processing')) { event.preventDefault(); return; }
 
-        // 1. Проверяем, не выполняется ли уже операция.
-        if ($listItem.attr('data-processing')) {
-            event.preventDefault();
-            return;
-        }
         $listItem.attr('data-processing', true);
-
-        const taskId = $listItem.data('taskId');
-
-        // 1. Определяем новый статус
-        const newStatus = $checkbox.is(':checked') ? 'COMPLETED' : 'PENDING';
-
-        // 2. Блокируем чекбокс, чтобы предотвратить двойные клики
         $checkbox.prop('disabled', true);
 
-        window.tasks.updateStatus(taskId, newStatus)
-            .fail((jqXHR) => {
-                console.error('Failed to update task status:', jqXHR.responseJSON);
+        const taskId = $listItem.data('taskId');
+        const newStatus = $checkbox.is(':checked') ? 'COMPLETED' : 'PENDING';
 
+        const currentTask = window.tasksStore.get(taskId);
+        if (!currentTask) {
+            console.error(`Task with ID ${taskId} not found in store for status update.`);
+            $checkbox.prop('disabled', false);
+            $listItem.removeAttr('data-processing');
+            return;
+        }
+
+        const patchData = { status: newStatus, version: currentTask.version };
+        window.tasks.patch(taskId, patchData)
+            .fail(() => {
                 $checkbox.prop('checked', !$checkbox.is(':checked'));
-
-                const problem = jqXHR.responseJSON;
-                const message = problem?.detail || 'Could not update task status.';
-                window.ui.showToastNotification(message, 'error');
+                window.ui.showToastNotification('Could not update task status.', 'error');
             })
             .always(() => {
-                // 4. В любом случае разблокируем чекбокс
                 $checkbox.prop('disabled', false);
                 $listItem.removeAttr('data-processing');
             });
     });
 
-    // --- Обработчик для УДАЛЕНИЯ ЗАДАЧИ (через делегирование) ---
-    $tasksContainer.on('click', '.delete-task-btn', function () {
+    // --- Обработчик для УДАЛЕНИЯ ЗАДАЧИ ---
+    $tasksContainer.on('click', '.delete-task-btn', function() {
         const $button = $(this);
         const $listItem = $button.closest('li');
-
-        if ($listItem.attr('data-processing')) {
-            return;
-        }
-        $listItem.attr('data-processing', true);
+        if ($listItem.attr('data-processing')) return;
 
         const taskId = $listItem.data('taskId');
+        if (!window.confirm("Вы уверены, что хотите удалить эту задачу?")) return;
 
-        // Запрашиваем подтверждение у пользователя
-        const isConfirmed = window.confirm("Вы уверены, что хотите удалить эту задачу?");
+        $listItem.attr('data-processing', true);
+        $button.prop('disabled', true);
 
-        if (isConfirmed) {
-            window.tasks.delete(taskId)
-                .done(function() {
-                    window.ui.showToastNotification('Задача успешно удалена.', 'success');
-                })
-                .fail(function(jqXHR) {
-                    if (jqXHR.status === 404) {
-                        window.tasksStore._remove(taskId);
-                        window.ui.showToastNotification('Задача уже была удалена.', 'info');
-                    } else {
-                        console.error('Failed to delete task:', jqXHR.responseJSON);
-                        const problem = jqXHR.responseJSON;
-                        const message = problem?.detail || 'Could not delete the task.';
-                        window.ui.showToastNotification(message, 'error');
-                    }
-                });
-        }
+        window.tasks.delete(taskId)
+            .done(() => {
+                window.ui.showToastNotification('Задача успешно удалена.', 'success');
+            })
+            .fail((jqXHR) => {
+                if (jqXHR.status === 404) {
+                    window.tasksStore._remove(taskId);
+                    window.ui.showToastNotification('Задача уже была удалена.', 'info');
+                } else {
+                    const problem = jqXHR.responseJSON;
+                    const message = problem?.detail || 'Could not delete the task.';
+                    window.ui.showToastNotification(message, 'error');
+                    $button.prop('disabled', false);
+                }
+            })
+            .always(() => {
+                if ($listItem.length) { $listItem.removeAttr('data-processing'); }
+            });
+    });
 
-        $listItem.removeAttr('data-processing');
+    // ===================================================================
+    // == ЛОГИКА МОДАЛЬНОГО ОКНА РЕДАКТИРОВАНИЯ
+    // ===================================================================
+
+    /**
+     * Закрывает модальное окно редактирования и очищает все его обработчики.
+     * @private
+     */
+    function _closeEditModal() {
+        $taskEditModal.find('*').off('.editModal');
+        $taskEditModal.off('.editModal');
+        console.log('DOM event handlers for edit modal have been unbound.');
+        $taskEditModal.css('display', 'none');
+    }
+
+    /**
+     * Открывает модальное окно редактирования для задачи.
+     * @param {number} taskId - ID задачи для редактирования.
+     * @private
+     */
+    function _openEditModal(taskId) {
+        window.ui.showToastNotification('Загрузка...', 'info');
+
+        window.tasks.ensureLatest(taskId)
+            .done((freshTask) => {
+                window.tasksUi.showEditModal(freshTask);
+                _setupEditModalHandlers(freshTask); // Привязываем обработчики
+            })
+            .fail(() => {
+                window.tasksStore._remove(taskId);
+                window.ui.showToastNotification('Не удалось загрузить задачу. Возможно, она была удалена.', 'error');
+            });
+    }
+
+    /**
+     * Привязывает все обработчики событий к элементам внутри модального окна.
+     * @param {object} task - Объект задачи, для которой открыто окно.
+     * @private
+     */
+    function _setupEditModalHandlers(task) {
+        console.log(`Setting up handlers for task ${task.id}`);
+
+        // --- Закрытие окна ---
+        $taskEditModal.find('#closeEditModalBtn, .close-modal-btn').on('click.editModal', _closeEditModal);
+
+        let mousedownOnBackdrop = false;
+        $taskEditModal.on('mousedown.editModal', function(event) {
+            mousedownOnBackdrop = (event.target === this);
+        }).on('mouseup.editModal', function(event) {
+            if (mousedownOnBackdrop && event.target === this) { _closeEditModal(); }
+            mousedownOnBackdrop = false;
+        });
+
+        // --- Обработчики действий ---
+        _setupLiveSaveHandlers();
+        _setupEditModalActions();
+    }
+
+    /**
+     * Настраивает "live save" для полей title и description.
+     * @private
+     */
+    function _setupLiveSaveHandlers() {
+        // TODO: Реализовать debounce-логику и "batched" PATCH.
+        console.log('TODO: Implement _setupLiveSaveHandlers');
+    }
+
+    /**
+     * Настраивает действия для кнопок внутри модального окна (статус, удаление).
+     * @private
+     */
+    function _setupEditModalActions() {
+        // TODO: Реализовать обработчики для чекбокса статуса и кнопки удаления.
+        console.log('TODO: Implement _setupEditModalActions');
+    }
+
+    // --- ГЛАВНЫЙ ТРИГГЕР: Клик по заголовку задачи в списке ---
+    $tasksContainer.on('click', '.task-title', function() {
+        const taskId = $(this).closest('li').data('taskId');
+        _openEditModal(taskId);
     });
 }

@@ -125,6 +125,19 @@ window.taskTrackerApi = {
     },
 
     /**
+     * **НОВЫЙ МЕТОД**
+     * Запрашивает одну задачу по ее ID.
+     * @param {number} taskId - ID задачи.
+     * @returns {Promise} jQuery Promise.
+     */
+    getTaskById: function(taskId) {
+        return this._request({
+            url: `${this.BASE_URL}/tasks/${taskId}`,
+            method: 'GET'
+        });
+    },
+
+    /**
      * Создает новую задачу.
      * @param {object} taskData - Данные для создания задачи. Ожидается объект вида {title: "..."}.
      * @returns {Promise} jQuery Promise, который в случае успеха вернет созданный объект задачи.
@@ -139,38 +152,10 @@ window.taskTrackerApi = {
     },
 
     /**
-     * Обновляет статус существующей задачи.
-     * @param {number} taskId - ID задачи для обновления.
-     * @param {string} newStatus - Новый статус ('PENDING' или 'COMPLETED').
-     * @returns {Promise} jQuery Promise, который в случае успеха вернет обновленный объект задачи.
-     */
-    updateTaskStatus: function(taskId, newStatus) {
-        return this._request({
-            url: `${this.BASE_URL}/tasks/${taskId}`,
-            method: 'PATCH',
-            contentType: 'application/json',
-            data: JSON.stringify({ status: newStatus })
-        });
-    },
-
-    /**
-     * Отправляет запрос на частичное обновление существующей задачи.
-     * Использует метод PATCH и стандарт JSON Merge Patch (RFC 7396).
-     *
-     * Этот метод защищен, требует валидного JWT и использует внутреннюю
-     * обертку `_request` для автоматической обработки 401 ошибок.
-     *
-     * @param {number} taskId - Уникальный идентификатор задачи для обновления.
-     * @param {object} patchData - Объект, содержащий только те поля, которые
-     *   необходимо изменить, а также обязательное поле `version` для
-     *   оптимистической блокировки.
-     *   Пример: `{ "title": "Новый заголовок", "version": 5 }`
-     *   Пример для очистки поля: `{ "description": null, "version": 6 }`
-     *
-     * @returns {Promise} jQuery Promise (jqXHR).
-     *   - В случае успеха (.done()), возвращает полный, обновленный объект задачи (`TaskResponse`).
-     *   - В случае ошибки (.fail()), возвращает jqXHR с `responseJSON`, содержащим
-     *     ProblemDetail (например, при 400, 404, 409).
+     * Частично обновляет существующую задачу.
+     * @param {number} taskId - ID задачи.
+     * @param {object} patchData - Объект с измененными полями и версией.
+     * @returns {Promise} jQuery Promise.
      */
     patchTask: function(taskId, patchData) {
         return this._request({

@@ -9,6 +9,9 @@ window.tasksUi = {
     $undoneTasksList: $('#undoneTasksList'),
     $doneTasksList: $('#doneTasksList'),
 
+    /**
+     * Инициализирует подписчики на события.
+     */
     init: function() {
         window.eventBus.on('tasks:refreshed', (e, tasks) => this.renderTaskLists(tasks));
         window.eventBus.on('task:updated', (e, task) => this.renderOrUpdateTask(task));
@@ -43,71 +46,77 @@ window.tasksUi = {
     },
 
     /**
-     * Очищает и заполняет списки задач на странице.
-     * @param {Array<object>} tasks - Массив объектов задач.
+     * Полностью перерисовывает оба списка задач.
+     * @param {Array<object>} tasks - Массив всех задач.
      */
     renderTaskLists: function(tasks) {
         this.$undoneTasksList.empty();
         this.$doneTasksList.empty();
         if (tasks) {
-            tasks.forEach(task => this.renderOrUpdateTask(task));
+            tasks.forEach(task => {
+                const taskHtml = this.renderTask(task);
+                const $list = task.status === 'COMPLETED' ? this.$doneTasksList : this.$undoneTasksList;
+                $list.append(taskHtml);
+            });
+            this.sortTaskList(this.$undoneTasksList);
+            this.sortTaskList(this.$doneTasksList);
         }
     },
 
     /**
-     * Рендерит или обновляет один DOM-элемент задачи в списке.
-     *
-     * Если элемент с `data-task-id` уже существует в DOM, он будет заменен
-     * новым отрендеренным HTML. Это гарантирует, что все данные (title,
-     * статус, и т.д.) будут актуальными.
-     *
-     * Если элемент не найден, он будет создан и добавлен в начало
-     * соответствующего списка (выполненные/невыполненные) в зависимости
-     * от статуса задачи.
-     *
-     * После любого изменения вызывает сортировку списков для поддержания порядка.
-     *
-     * @param {object} task - Объект задачи, полученный из Store.
+     * Обновляет одну задачу в UI.
+     * Если статус изменился - перемещает элемент.
+     * Если нет - просто перерисовывает его на месте.
+     * Если элемента нет - добавляет его.
+     * @param {object} updatedTask - Обновленный объект задачи из Store.
      */
-    renderOrUpdateTask: function(task) {
-        const $existingItem = $(`li[data-task-id="${task.id}"]`);
-        const taskHtml = this.renderTask(task);
+    renderOrUpdateTask: function(updatedTask) {
+        const $existingItem = $(`li[data-task-id="${updatedTask.id}"]`);
+
         if ($existingItem.length) {
-            $existingItem.replaceWith(taskHtml);
+            // --- Элемент уже существует, решаем, что с ним делать ---
+            const isCurrentlyDone = $existingItem.parent().is(this.$doneTasksList);
+            const shouldBeDone = updatedTask.status === 'COMPLETED';
+
+            if (isCurrentlyDone !== shouldBeDone) {
+                // СТАТУС ИЗМЕНИЛСЯ - ПЕРЕМЕЩАЕМ
+                this._moveTaskElement($existingItem, shouldBeDone);
+            } else {
+                // Статус не изменился, просто перерисовываем на месте
+                const taskHtml = this.renderTask(updatedTask);
+                $existingItem.replaceWith(taskHtml);
+            }
         } else {
-            const $list = task.status === 'COMPLETED' ? this.$doneTasksList : this.$undoneTasksList;
-            $list.prepend(taskHtml);
+            // --- Элемента нет, добавляем его ---
+            const taskHtml = this.renderTask(updatedTask);
+            const $list = updatedTask.status === 'COMPLETED' ? this.$doneTasksList : this.$undoneTasksList;
+            $list.prepend(taskHtml); // Вставляем в начало
+            this.sortTaskList($list); // и сортируем список
         }
-        this.sortTaskList(this.$undoneTasksList);
-        this.sortTaskList(this.$doneTasksList);
     },
 
     /**
-     * Динамически перемещает элемент задачи и сортирует списки ПОСЛЕ анимации.
-     * @param {number} taskId - ID задачи для перемещения.
-     * @param {string} newStatus - Новый статус ('PENDING' или 'COMPLETED').
+     * Приватный метод для анимированного перемещения элемента задачи между списками.
+     * @param {jQuery} $taskItem - jQuery-объект <li> для перемещения.
+     * @param {boolean} shouldBeDone - true, если задача должна быть в списке выполненных.
+     * @private
      */
-    moveTaskElement: function (taskId, newStatus) {
-        const $taskItem = $(`li[data-task-id="${taskId}"]`);
-        if ($taskItem.length === 0) return;
-
-        const isCompleted = newStatus === 'COMPLETED';
-        const $targetList = isCompleted ? this.$doneTasksList : this.$undoneTasksList;
+    _moveTaskElement: function($taskItem, shouldBeDone) {
+        const $targetList = shouldBeDone ? this.$doneTasksList : this.$undoneTasksList;
         const self = this;
 
-        $taskItem.fadeOut(200, function () {
+        $taskItem.fadeOut(200, function() {
             const $movedItem = $(this);
-            $movedItem.hide();
-
-            $targetList.prepend($movedItem);
-
-            self.sortTaskList($targetList);
-
-            if (isCompleted) {
+            // Обновляем классы и состояние чекбокса перед показом
+            $movedItem.find('.task-checkbox').prop('checked', shouldBeDone);
+            if (shouldBeDone) {
                 $movedItem.addClass('done');
             } else {
                 $movedItem.removeClass('done');
             }
+
+            $targetList.prepend($movedItem);
+            self.sortTaskList($targetList);
             $movedItem.fadeIn(200);
         });
     },

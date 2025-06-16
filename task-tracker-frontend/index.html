@@ -115,6 +115,49 @@
     </div>
 </div>
 
+<!-- Модальное окно для Редактирования Задачи -->
+<div id="taskEditModal" class="modal">
+    <div class="modal-content">
+        <button type="button" class="close-modal-btn" aria-label="Close">×</button>
+        <h2>Редактировать задачу</h2>
+        <form id="taskEditForm" novalidate>
+            <input type="hidden" id="editTaskId">
+
+            <div class="form-group">
+                <label for="editTaskTitle">Заголовок:</label>
+                <div class="input-with-error">
+                    <input type="text" id="editTaskTitle" data-field-name="title" required>
+                    <div data-field-name="title" class="field-error-message"></div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="editTaskDescription">Описание:</label>
+                <div class="input-with-error">
+                    <textarea id="editTaskDescription" data-field-name="description" rows="4"></textarea>
+                    <div data-field-name="description" class="field-error-message"></div>
+                </div>
+            </div>
+
+            <div class="form-group status-group">
+                <label>
+                    <input type="checkbox" id="editTaskStatus">
+                    <span>Выполнено</span>
+                </label>
+                <div id="saveIndicator">Сохранено</div>
+            </div>
+
+            <!-- Блок для разрешения конфликтов, изначально скрыт -->
+            <div class="conflict-resolver"></div>
+
+            <div class="modal-footer">
+                <button type="button" id="deleteTaskInModalBtn" class="btn-delete">Удалить задачу</button>
+                <button type="button" id="closeEditModalBtn" class="btn-secondary">Готово</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- Контейнер для Toast-уведомлений -->
 <div id="toastNotification" class="toast">
     <span id="toastMessage"></span>

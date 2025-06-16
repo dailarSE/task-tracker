@@ -69,7 +69,6 @@ window.tasks = {
     updateStatus: function(taskId, newStatus) {
         // Обертка над patch для удобства
         const currentTask = window.tasksStore.get(taskId);
-        if (!currentTask) return $.Deferred().reject().promise();
 
         const patchData = { status: newStatus, version: currentTask.version };
         return this.patch(taskId, patchData);

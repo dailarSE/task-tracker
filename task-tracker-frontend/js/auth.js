@@ -12,6 +12,25 @@ function setupAuthHandlers() {
     const $logoutBtn = $('#logoutBtn');
 
     /**
+     * Выполняется после любого успешного входа в систему.
+     * Обновляет UI и запускает загрузку данных пользователя.
+     * @param {string} email - Email вошедшего пользователя.
+     * @private
+     */
+    function _onLoginSuccess(email) {
+        window.ui.showLoggedInState(email);
+
+        window.tasks.loadAll()
+            .fail((jqXHR) => {
+                console.error("Critical failure: Could not load tasks after login.", jqXHR.responseJSON);
+                const problem = jqXHR.responseJSON;
+                const message = problem?.detail || 'Could not load your tasks. Please try refreshing the page.';
+                // Используем глобальное событие ошибки
+                window.eventBus.trigger('app:error', { message: message });
+            });
+    }
+
+    /**
      * Централизованная функция для выполнения логаута.
      * idempotent: многократный вызов не меняет результат после первого успешного выполнения.
      */
@@ -23,7 +42,20 @@ function setupAuthHandlers() {
 
     }
 
-    window.auth = {handleLogout: handleLogout};
+    // --- Публичный API модуля auth ---
+    window.auth = {
+        /**
+         * Проверяет начальное состояние аутентификации при загрузке страницы.
+         */
+        checkInitialState: function() {
+            window.ui.checkInitialAuthState()
+                .done((user) => {
+                    _onLoginSuccess(user.email);
+                });
+            // Ошибки (401, нет токена) уже обработаны в ui.checkInitialAuthState или api.js
+        },
+        handleLogout: handleLogout
+    };
 
     // ===================================================================
     // Обработчик для формы РЕГИСТРАЦИИ
@@ -44,8 +76,7 @@ function setupAuthHandlers() {
                 localStorage.setItem(JWT_STORAGE_KEY, response.accessToken);
                 window.ui.$registerModal.css('display', 'none');
                 $registerForm.trigger('reset');
-                window.ui.showLoggedInState(email);
-                loadAndDisplayTasks();
+                _onLoginSuccess(email);
             })
             .fail((jqXHR) => {
                 const problem = jqXHR.responseJSON;
@@ -100,8 +131,7 @@ function setupAuthHandlers() {
                 localStorage.setItem(JWT_STORAGE_KEY, response.accessToken);
                 window.ui.$loginModal.css('display', 'none');
                 $loginForm.trigger('reset');
-                window.ui.showLoggedInState(email);
-                loadAndDisplayTasks();
+                _onLoginSuccess(email);
             })
             .fail((jqXHR) => {
                 const problem = jqXHR.responseJSON;
@@ -126,7 +156,6 @@ function setupAuthHandlers() {
     // ===================================================================
     // Обработчик для кнопки ВЫХОДА (Logout)
     // ===================================================================
-    $logoutBtn.on('click', () => {
-        handleLogout();
-    });
+    $logoutBtn.on('click', handleLogout);
+
 }

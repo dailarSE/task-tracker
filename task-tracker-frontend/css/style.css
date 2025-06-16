@@ -88,12 +88,15 @@ form label {
 /* Общий стиль для всех полей ввода в формах */
 form input[type="email"],
 form input[type="password"],
-form input[type="text"] {
+form input[type="text"],
+form textarea { /* ИЗМЕНЕНИЕ: Добавили textarea */
     width: 100%;
     padding: 8px;
     box-sizing: border-box;
     border: 1px solid #ccc;
     border-radius: 4px;
+    font-family: inherit; /* Наследуем шрифт */
+    font-size: inherit;   /* Наследуем размер шрифта */
 }
 
 .input-with-error {
@@ -261,4 +264,76 @@ li:hover .delete-task-btn {
 #createTaskForm .form-group {
     display: flex;
     align-items: flex-start;
+}
+
+/* ==========================================================================
+   Task-specific Styles (для модального окна редактирования)
+   ========================================================================== */
+#taskEditForm .status-group {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 20px;
+}
+
+#saveIndicator {
+    font-size: 0.8em;
+    color: #6c757d;
+    transition: opacity 0.3s;
+    opacity: 0; /* Изначально скрыт */
+}
+
+#saveIndicator.show {
+    opacity: 1;
+}
+
+#taskEditForm .modal-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid #eee;
+}
+
+.btn-delete {
+    background-color: transparent;
+    border: none;
+    color: #dc3545;
+    cursor: pointer;
+    padding: 0;
+}
+.btn-delete:hover {
+    text-decoration: underline;
+}
+
+.btn-secondary { /* Кнопка "Готово" */
+    background-color: #6c757d;
+    color: white;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.btn-secondary:hover {
+    background-color: #5a6268;
+}
+
+.conflict-resolver {
+    display: none; /* Изначально скрыт */
+    border: 1px solid #ffc107;
+    background-color: #fff3cd;
+    padding: 10px;
+    margin-top: 15px;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+.conflict-resolver p {
+    margin: 0 0 10px 0;
+}
+
+.conflict-resolver .conflict-actions {
+    display: flex;
+    gap: 10px;
 }

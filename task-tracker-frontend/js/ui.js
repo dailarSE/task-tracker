@@ -1,5 +1,3 @@
-// js/ui.js
-
 /**
  * Модуль для управления UI-компонентами.
  */
@@ -7,6 +5,7 @@ window.ui = {
     // --- Кэшированные элементы UI ---
     $registerModal: $('#registerModal'),
     $loginModal: $('#loginModal'),
+    $taskEditModal: $('#taskEditModal'),
     $authContainer: $('#authContainer'),
     $userInfo: $('#userInfo'),
     $userEmailDisplay: $('#userEmailDisplay'),
@@ -14,6 +13,83 @@ window.ui = {
     $toastMessage: $('#toastMessage'),
     toastTimer: null, // Таймер для скрытия toast'а
 
+    /**
+     * Инициализирует все общие обработчики событий UI.
+     * Должна вызываться один раз при старте приложения.
+     */
+    init: function() {
+        this._initModalHandlers();
+        this._initGlobalEventHandlers();
+    },
+
+    /**
+     * Приватный метод для инициализации обработчиков модальных окон.
+     * @private
+     */
+    _initModalHandlers: function() {
+        const self = this; // Сохраняем контекст `this`
+
+        // --- ОБРАБОТЧИКИ ОТКРЫТИЯ ---
+        $('#showRegisterModalBtn').on('click', () => {
+            self.clearFormErrors(self.$registerModal);
+            self.$registerModal.css('display', 'flex');
+        });
+        $('#showLoginModalBtn').on('click', () => {
+            self.clearFormErrors(self.$loginModal);
+            self.$loginModal.css('display', 'flex');
+        });
+
+        // --- ОБРАБОТЧИКИ ЗАКРЫТИЯ ---
+        // 1. Закрытие по кнопкам "крестик" и "Готово"
+        $('.close-modal-btn, #closeEditModalBtn').on('click', function() {
+            const $modal = $(this).closest('.modal');
+            if ($modal.is(self.$taskEditModal)) {
+                self._closeEditModal();
+            } else {
+                $modal.css('display', 'none');
+            }
+        });
+
+        // 2. Закрытие по клику на фон
+        let mousedownOnBackdropFor = null;
+        $('.modal').on('mousedown', function(event) {
+            if (event.target === this) { mousedownOnBackdropFor = $(this); }
+            else { mousedownOnBackdropFor = null; }
+        });
+        $('.modal').on('mouseup', function(event) {
+            if (mousedownOnBackdropFor && mousedownOnBackdropFor.is($(this)) && event.target === this) {
+                if ($(this).is(self.$taskEditModal)) {
+                    self._closeEditModal();
+                } else {
+                    $(this).css('display', 'none');
+                }
+            }
+            mousedownOnBackdropFor = null;
+        });
+    },
+
+    /**
+     * Приватный метод для инициализации глобальных подписчиков на события.
+     * @private
+     */
+    _initGlobalEventHandlers: function() {
+        window.eventBus.on('app:error', (event, errorData) => {
+            if (errorData && errorData.message) {
+                this.showToastNotification(errorData.message, 'error');
+            }
+        });
+    },
+
+    /**
+     * Приватный метод для централизованного закрытия модального окна редактирования.
+     * Выполняет все необходимые действия по очистке.
+     * @private
+     */
+    _closeEditModal: function() {
+        window.eventBus.off('.editModal');
+        console.log('Event handlers for edit modal have been unbound.');
+        this.$taskEditModal.css('display', 'none');
+    },
     /**
      * Обновляет UI, чтобы отразить состояние "пользователь аутентифицирован".
      * @param {string} email - Email пользователя для отображения.
@@ -106,19 +182,17 @@ window.ui = {
         }, 5000);
     },
 
+
     /**
      * Проверяет начальное состояние аутентификации при загрузке страницы.
      */
     checkInitialAuthState: function () {
         const token = localStorage.getItem('jwt_token');
         if (token) {
-            window.taskTrackerApi.getCurrentUser()
-                .done((user) => {
-                    this.showLoggedInState(user.email);
-                    loadAndDisplayTasks();
-                });
+            return window.taskTrackerApi.getCurrentUser();
         } else {
             this.showLoggedOutState();
+            return $.Deferred().reject().promise();
         }
     },
 

@@ -1,6 +1,84 @@
 /**
- * Модуль для управления бизнес-логикой задач.
- * Инициализирует обработчики для создания, редактирования, удаления задач.
+ * @file tasks.js
+ * @description
+ * Этот файл является слоем бизнес-логики ("команд") для работы с задачами.
+ * Он оркестрирует взаимодействие между UI (через обработчики событий),
+ * API-слоем (window.taskTrackerApi) и клиентским хранилищем состояния (window.tasksStore).
+ * Все асинхронные операции инкапсулированы здесь.
+ */
+
+/**
+ * Глобальный объект `tasks`, содержащий "команды" для манипуляции задачами.
+ * Каждая команда представляет собой одну логическую операцию, которая вызывает API,
+ * и при успехе обновляет клиентский Store.
+ * @namespace tasks
+ */
+window.tasks = {
+    /**
+     * Загружает все задачи для текущего пользователя с сервера и инициализирует tasksStore.
+     * @returns {Promise} jQuery Promise от API-вызова, который можно использовать
+     * для обработки ошибок на верхнем уровне (например, при инициализации приложения).
+     */
+    loadAll: function() {
+        return window.taskTrackerApi.getTasks()
+            .done(tasks => {
+                window.tasksStore._init(tasks);
+            });
+    },
+    /**
+     * Отправляет команду на создание новой задачи.
+     * @param {object} createData - Данные для создания задачи. Ожидается { title: string, description?: string }.
+     * @returns {Promise} jQuery Promise от API-вызова.
+     */
+    create: function(createData) {
+        return window.taskTrackerApi.createTask(createData)
+            .done(newTask => {
+                window.tasksStore._addOrUpdate(newTask);
+            });
+    },
+    /**
+     * Отправляет команду на частичное обновление задачи.
+     * @param {number} taskId - ID задачи для обновления.
+     * @param {object} patchData - Объект с измененными полями и обязательным полем 'version'.
+     * @returns {Promise} jQuery Promise от API-вызова.
+     */
+    patch: function(taskId, patchData) {
+        return window.taskTrackerApi.patchTask(taskId, patchData)
+            .done(updatedTask => {
+                window.tasksStore._addOrUpdate(updatedTask);
+            });
+    },
+    /**
+     * Отправляет команду на удаление задачи.
+     * @param {number} taskId - ID задачи для удаления.
+     * @returns {Promise} jQuery Promise от API-вызова.
+     */
+    delete: function(taskId) {
+        return window.taskTrackerApi.deleteTask(taskId)
+            .done(() => {
+                window.tasksStore._remove(taskId);
+            });
+    },
+    /**
+     * Отправляет команду на обновление только статуса задачи.
+     * Является удобной оберткой над `tasks.patch`.
+     * @param {number} taskId - ID задачи.
+     * @param {'PENDING' | 'COMPLETED'} newStatus - Новый статус задачи.
+     * @returns {Promise} jQuery Promise от API-вызова.
+     */
+    updateStatus: function(taskId, newStatus) {
+        // Обертка над patch для удобства
+        const currentTask = window.tasksStore.get(taskId);
+        if (!currentTask) return $.Deferred().reject().promise();
+
+        const patchData = { status: newStatus, version: currentTask.version };
+        return this.patch(taskId, patchData);
+    }
+};
+
+/**
+ * Инициализирует все обработчики UI-событий, связанных с задачами.
+ * Эта функция должна вызываться один раз при старте приложения.
  */
 function setupTaskHandlers() {
     const $createTaskForm = window.tasksUi.$createTaskForm;
@@ -10,7 +88,6 @@ function setupTaskHandlers() {
     // --- Обработчик для формы СОЗДАНИЯ ЗАДАЧИ ---
     $createTaskForm.on('submit', (event) => {
         event.preventDefault();
-
 
         // Очищаем предыдущие ошибки
         window.ui.clearFormErrors($createTaskForm);
@@ -29,19 +106,12 @@ function setupTaskHandlers() {
         window.ui.lockForm($createTaskForm);
 
         // Вызываем API для создания задачи
-        window.taskTrackerApi.createTask({title: title})
+        window.tasks.create({title: title})
             .done((newTask) => {
                 console.log('Task created successfully:', newTask);
                 window.ui.showToastNotification('Задача добавлена!', 'success');
                 window.ui.clearFormErrors(window.tasksUi.$createTaskForm);
                 $newTaskTitleInput.val(''); // Очищаем поле ввода
-
-                const $list = window.tasksUi.$undoneTasksList;
-
-                // Теперь добавляем новый элемент в (возможно) уже очищенный список.
-                const taskHtml = window.tasksUi.renderTask(newTask);
-                $list.prepend(taskHtml);
-                window.tasksUi.sortTaskList($list);
             })
             .fail((jqXHR) => {
                 const problem = jqXHR.responseJSON;
@@ -50,7 +120,6 @@ function setupTaskHandlers() {
                 const errorMessage = problem?.detail || problem?.title || 'Failed to create task.';
                 window.ui.showGeneralError($createTaskForm, errorMessage);
 
-                // Затем ошибки по конкретным полям, если они есть
                 if (problem?.invalidParams) {
                     window.ui.applyValidationErrors($createTaskForm, problem.invalidParams);
                 }
@@ -80,11 +149,7 @@ function setupTaskHandlers() {
         // 2. Блокируем чекбокс, чтобы предотвратить двойные клики
         $checkbox.prop('disabled', true);
 
-        window.taskTrackerApi.updateTaskStatus(taskId, newStatus)
-            .done((updatedTask) => {
-                console.log('Task status updated successfully:', updatedTask);
-                window.tasksUi.moveTaskElement(taskId, updatedTask.status);
-            })
+        window.tasks.updateStatus(taskId, newStatus)
             .fail((jqXHR) => {
                 console.error('Failed to update task status:', jqXHR.responseJSON);
 
@@ -117,19 +182,13 @@ function setupTaskHandlers() {
         const isConfirmed = window.confirm("Вы уверены, что хотите удалить эту задачу?");
 
         if (isConfirmed) {
-            window.taskTrackerApi.deleteTask(taskId)
+            window.tasks.delete(taskId)
                 .done(function() {
-                    console.log('Task ' + taskId + ' deleted successfully.');
-
-                    $listItem.fadeOut(200, function() {$(this).remove();});
-
                     window.ui.showToastNotification('Задача успешно удалена.', 'success');
                 })
                 .fail(function(jqXHR) {
                     if (jqXHR.status === 404) {
-                        console.warn('Attempted to delete a task (ID: ' + taskId + ') that was not found. ' +
-                            'Removing from UI.');
-                        $listItem.fadeOut(200, function() { $(this).remove(); });
+                        window.tasksStore._remove(taskId);
                         window.ui.showToastNotification('Задача уже была удалена.', 'info');
                     } else {
                         console.error('Failed to delete task:', jqXHR.responseJSON);

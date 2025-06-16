@@ -154,6 +154,34 @@ window.taskTrackerApi = {
     },
 
     /**
+     * Отправляет запрос на частичное обновление существующей задачи.
+     * Использует метод PATCH и стандарт JSON Merge Patch (RFC 7396).
+     *
+     * Этот метод защищен, требует валидного JWT и использует внутреннюю
+     * обертку `_request` для автоматической обработки 401 ошибок.
+     *
+     * @param {number} taskId - Уникальный идентификатор задачи для обновления.
+     * @param {object} patchData - Объект, содержащий только те поля, которые
+     *   необходимо изменить, а также обязательное поле `version` для
+     *   оптимистической блокировки.
+     *   Пример: `{ "title": "Новый заголовок", "version": 5 }`
+     *   Пример для очистки поля: `{ "description": null, "version": 6 }`
+     *
+     * @returns {Promise} jQuery Promise (jqXHR).
+     *   - В случае успеха (.done()), возвращает полный, обновленный объект задачи (`TaskResponse`).
+     *   - В случае ошибки (.fail()), возвращает jqXHR с `responseJSON`, содержащим
+     *     ProblemDetail (например, при 400, 404, 409).
+     */
+    patchTask: function(taskId, patchData) {
+        return this._request({
+            url: `${this.BASE_URL}/tasks/${taskId}`,
+            method: 'PATCH',
+            contentType: 'application/merge-patch+json',
+            data: JSON.stringify(patchData)
+        });
+    },
+
+    /**
      * Удаляет задачу.
      * @param {number} taskId - ID задачи для удаления.
      * @returns {Promise} jQuery Promise.

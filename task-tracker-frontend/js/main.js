@@ -42,18 +42,7 @@ function initializeModalHandlers() {
  * Загружает и отображает задачи для аутентифицированного пользователя.
  */
 function loadAndDisplayTasks() {
-    const token = localStorage.getItem('jwt_token');
-    if (!token) {
-        console.error("loadAndDisplayTasks called without a token.");
-        return;
-    }
-
-    window.taskTrackerApi.getTasks(token)
-        .done((tasks) => {
-            window.tasksUi.renderTaskLists(tasks);
-            window.tasksUi.sortTaskList(window.tasksUi.$undoneTasksList);
-            window.tasksUi.sortTaskList(window.tasksUi.$doneTasksList);
-        })
+    window.tasks.loadAll()
         .fail((jqXHR) => {
             console.error("Failed to load tasks:", jqXHR.responseJSON);
             const problem = jqXHR.responseJSON;

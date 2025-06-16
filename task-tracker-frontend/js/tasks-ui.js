@@ -9,6 +9,12 @@ window.tasksUi = {
     $undoneTasksList: $('#undoneTasksList'),
     $doneTasksList: $('#doneTasksList'),
 
+    init: function() {
+        window.eventBus.on('tasks:refreshed', (e, tasks) => this.renderTaskLists(tasks));
+        window.eventBus.on('task:updated', (e, task) => this.renderOrUpdateTask(task));
+        window.eventBus.on('task:deleted', (e, taskData) => this.removeTaskElement(taskData.id));
+    },
+
     show: function () {
         this.$tasksContainer.show();
     },
@@ -40,21 +46,40 @@ window.tasksUi = {
      * Очищает и заполняет списки задач на странице.
      * @param {Array<object>} tasks - Массив объектов задач.
      */
-    renderTaskLists: function (tasks) {
-        // Очищаем оба списка перед рендерингом
+    renderTaskLists: function(tasks) {
         this.$undoneTasksList.empty();
         this.$doneTasksList.empty();
-
         if (tasks) {
-            tasks.forEach(task => {
-                const taskHtml = this.renderTask(task);
-                if (task.status === 'COMPLETED') {
-                    this.$doneTasksList.append(taskHtml);
-                } else {
-                    this.$undoneTasksList.append(taskHtml);
-                }
-            });
+            tasks.forEach(task => this.renderOrUpdateTask(task));
         }
+    },
+
+    /**
+     * Рендерит или обновляет один DOM-элемент задачи в списке.
+     *
+     * Если элемент с `data-task-id` уже существует в DOM, он будет заменен
+     * новым отрендеренным HTML. Это гарантирует, что все данные (title,
+     * статус, и т.д.) будут актуальными.
+     *
+     * Если элемент не найден, он будет создан и добавлен в начало
+     * соответствующего списка (выполненные/невыполненные) в зависимости
+     * от статуса задачи.
+     *
+     * После любого изменения вызывает сортировку списков для поддержания порядка.
+     *
+     * @param {object} task - Объект задачи, полученный из Store.
+     */
+    renderOrUpdateTask: function(task) {
+        const $existingItem = $(`li[data-task-id="${task.id}"]`);
+        const taskHtml = this.renderTask(task);
+        if ($existingItem.length) {
+            $existingItem.replaceWith(taskHtml);
+        } else {
+            const $list = task.status === 'COMPLETED' ? this.$doneTasksList : this.$undoneTasksList;
+            $list.prepend(taskHtml);
+        }
+        this.sortTaskList(this.$undoneTasksList);
+        this.sortTaskList(this.$doneTasksList);
     },
 
     /**
@@ -101,6 +126,10 @@ window.tasksUi = {
             return idB - idA; // Сортировка по убыванию ID
         });
         $list.append(itemsArray);
+    },
+
+    removeTaskElement: function(taskId) {
+        $(`li[data-task-id="${taskId}"]`).fadeOut(200, function() { $(this).remove(); });
     },
 
     clearCreateTaskForm: function () {

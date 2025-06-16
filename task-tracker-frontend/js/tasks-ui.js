@@ -19,6 +19,7 @@ window.tasksUi = {
     $undoneTasksList: $('#undoneTasksList'),
     $doneTasksList: $('#doneTasksList'),
     $taskEditModal: $('#taskEditModal'),
+    $saveIndicator: $('#saveIndicator'),
 
     /**
      * Инициализирует модуль, подписываясь на необходимые события от EventBus.
@@ -183,6 +184,31 @@ window.tasksUi = {
     clearCreateTaskForm: function() {
         window.ui.clearFormErrors(this.$createTaskForm);
         this.$newTaskTitleInput.val('');
+    },
+
+    /**
+     * Показывает индикатор "Сохранение...".
+     */
+    showSavingIndicator: function() {
+        this.$saveIndicator.text('Сохранение...').addClass('show');
+    },
+
+    /**
+     * Показывает индикатор "Сохранено" и плавно скрывает его.
+     */
+    showSavedIndicator: function() {
+        this.$saveIndicator.text('Сохранено');
+        this.$saveIndicator.addClass('show');
+        setTimeout(() => {
+            this.$saveIndicator.removeClass('show');
+        }, 2000); // Скрываем через 2 секунды
+    },
+
+    /**
+     * Немедленно скрывает индикатор сохранения.
+     */
+    hideSaveIndicator: function() {
+        this.$saveIndicator.removeClass('show');
     },
 
     /**

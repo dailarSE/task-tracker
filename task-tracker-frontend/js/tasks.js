@@ -239,12 +239,109 @@ function setupTaskHandlers() {
     }
 
     /**
-     * Настраивает "live save" для полей title и description.
+     * Настраивает "live save" для полей title и description в модальном окне.
+     * Использует debounce для предотвращения частых запросов и батчинг
+     * для отправки всех изменений одним запросом.
      * @private
      */
     function _setupLiveSaveHandlers() {
-        // TODO: Реализовать debounce-логику и "batched" PATCH.
-        console.log('TODO: Implement _setupLiveSaveHandlers');
+        const $form = $taskEditModal.find('form');
+        const $titleInput = $taskEditModal.find('#editTaskTitle');
+        const $descriptionInput = $taskEditModal.find('#editTaskDescription');
+
+        let pendingChanges = {}; // Объект для накопления изменений
+        let debounceTimer = null;
+        const DEBOUNCE_DELAY = 750; // мс
+
+        let isSaving = false;
+        let hasUnsentChanges = false;
+
+        /**
+         * Утилита debounce.
+         */
+        function _debounce(func, delay) {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(func, delay);
+        }
+
+        /**
+         * Пытается запустить отправку изменений.
+         * Если сохранение уже идет, просто выставляет флаг.
+         */
+        function _tryToCommitChanges() {
+            if (isSaving) {
+                hasUnsentChanges = true;
+                console.log("Save in progress. Queuing subsequent changes.");
+                return;
+            }
+            _commitPendingChanges();
+        }
+
+        /**
+         * Отправляет накопленные изменения на сервер.
+         */
+        function _commitPendingChanges() {
+            const originalTask = $form.data('originalTask');
+            if (!originalTask || Object.keys(pendingChanges).length === 0) {
+                return; // Нечего отправлять
+            }
+
+            isSaving = true;
+            window.tasksUi.showSavingIndicator();
+
+            const changesToSend = { ...pendingChanges };
+            pendingChanges = {};
+            hasUnsentChanges = false;
+
+            const taskId = originalTask.id;
+            const payload = { ...changesToSend, version: originalTask.version };
+
+
+            window.tasks.patch(taskId, payload)
+                .done((updatedTask) => {
+                    console.log(`Task ${taskId} saved successfully. New version: ${updatedTask.version}`);
+                    // 1. Обновляем наш "якорь" с последней успешной версией
+                    $form.data('originalTask', updatedTask);
+                    // 2. Показываем фидбэк
+                    window.tasksUi.showSavedIndicator();
+                    // 3. Store уже обновился внутри tasks.patch().done()
+                })
+                .fail((jqXHR) => {
+                    // TODO: FT-LS-03, FT-LS-04 - Обработка ошибок
+                    console.error("Live save failed:", jqXHR);
+                    window.tasksUi.hideSaveIndicator();
+                    // Возвращаем неотправленные изменения обратно в `pendingChanges`,
+                    // чтобы пользователь не потерял их.
+                    pendingChanges = { ...changesToSend, ...pendingChanges };
+                })
+                .always(() => {
+                    isSaving = false;
+                    // Если за время запроса накопились новые изменения,
+                    // сразу же пытаемся их отправить.
+                    if (hasUnsentChanges) {
+                        _tryToCommitChanges();
+                    }
+                });
+        }
+
+        // --- Привязка обработчиков ---
+        $titleInput.on('input.editModal', () => {
+            const originalTask = $form.data('originalTask');
+            const currentValue = $titleInput.val();
+            if (originalTask.title !== currentValue) {
+                pendingChanges.title = currentValue;
+                _debounce(_tryToCommitChanges, DEBOUNCE_DELAY);
+            }
+        });
+
+        $descriptionInput.on('input.editModal', () => {
+            const originalTask = $form.data('originalTask');
+            const currentValue = $descriptionInput.val();
+            if (originalTask.description !== currentValue) {
+                pendingChanges.description = currentValue;
+                _debounce(_tryToCommitChanges, DEBOUNDE_DELAY);
+            }
+        });
     }
 
     /**

@@ -3,15 +3,20 @@ package com.example.tasktracker.backend.task.web;
 import com.example.tasktracker.backend.security.jwt.JwtProperties;
 import com.example.tasktracker.backend.task.dto.TaskCreateRequest;
 import com.example.tasktracker.backend.task.dto.TaskResponse;
-import com.example.tasktracker.backend.task.dto.TaskStatusUpdateRequest;
 import com.example.tasktracker.backend.task.dto.TaskUpdateRequest;
 import com.example.tasktracker.backend.task.entity.TaskStatus;
-import com.example.tasktracker.backend.task.exception.TaskNotFoundException; // Для assert'а type URI
+import com.example.tasktracker.backend.task.exception.TaskNotFoundException;
 import com.example.tasktracker.backend.test.util.TestJwtUtil;
 import com.example.tasktracker.backend.user.entity.User;
-import com.example.tasktracker.backend.user.repository.UserRepository; // Только для setUp/tearDown и создания пользователей для тестов
+import com.example.tasktracker.backend.user.repository.UserRepository;
 import com.example.tasktracker.backend.web.ApiConstants;
-import org.junit.jupiter.api.*;
+import com.example.tasktracker.backend.web.exception.ResourceConflictException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -20,11 +25,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.context.MessageSource; // Для проверки сообщений ProblemDetail
+import org.springframework.context.MessageSource;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
 import org.springframework.lang.Nullable;
-import org.springframework.security.crypto.password.PasswordEncoder; // Для создания пользователей в setUp
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -101,15 +106,21 @@ class TaskControllerIT {
 
     // --- Вспомогательные методы для HTTP запросов и создания сущностей через API ---
 
-    private <T> HttpEntity<T> createHttpEntity(@Nullable T body, @Nullable String jwtToken) {
+    private <T> HttpEntity<T> createHttpEntity(@Nullable T body, @Nullable String jwtToken, @Nullable MediaType contentType) {
         HttpHeaders headers = new HttpHeaders();
-        if (body != null) {
-            headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setAccept(List.of(MediaType.APPLICATION_JSON, MediaType.valueOf("application/problem+json")));
+        if (contentType != null) {
+            headers.setContentType(contentType);
         }
         if (jwtToken != null) {
             headers.setBearerAuth(jwtToken);
         }
         return new HttpEntity<>(body, headers);
+    }
+
+    private <T> HttpEntity<T> createHttpEntity(@Nullable T body, @Nullable String jwtToken) {
+        return createHttpEntity(body, jwtToken, MediaType.APPLICATION_JSON);
+
     }
 
     private TaskResponse createTaskApi(String title, String description, String jwtToken) {
@@ -213,6 +224,43 @@ class TaskControllerIT {
         assertThat(problemDetail.getProperties().get("expectedType")).isEqualTo(expectedParamType);
     }
 
+    private void assertConflictProblemDetail(ResponseEntity<ProblemDetail> responseEntity, String expectedInstanceSuffix, Long expectedResourceId) {
+        assertProblemDetailBase(responseEntity, HttpStatus.CONFLICT,
+                ResourceConflictException.PROBLEM_TYPE_URI_PATH,
+                ResourceConflictException.PROBLEM_TYPE_SUFFIX,
+                expectedInstanceSuffix);
+        ProblemDetail problemDetail = responseEntity.getBody();
+        assertThat(problemDetail).isNotNull();
+        assertThat(problemDetail.getProperties())
+                .isNotNull()
+                .hasEntrySatisfying(ResourceConflictException.CONFLICTING_RESOURCE_ID_PROPERTY,
+                        value -> assertThat(value.toString()).isEqualTo(expectedResourceId.toString()));
+    }
+
+    private void assertConstraintViolationProblemDetail(ResponseEntity<ProblemDetail> responseEntity, String expectedInstanceSuffix, String expectedInvalidField) {
+        // Используем правильный type URI для этого типа исключения
+        assertProblemDetailBase(responseEntity, HttpStatus.BAD_REQUEST,
+                "validation/constraint-violation",
+                "validation.constraintViolation",
+                expectedInstanceSuffix);
+
+        ProblemDetail problemDetail = responseEntity.getBody();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) problemDetail.getProperties().get("invalidParams");
+        assertThat(invalidParams).isNotNull();
+
+        // Логика проверки invalidParams остается той же
+        boolean fieldErrorFound = invalidParams.stream().anyMatch(errorMap ->
+                expectedInvalidField.equals(errorMap.get("field")) &&
+                        errorMap.containsKey("message") &&
+                        errorMap.get("message") instanceof String &&
+                        !((String) errorMap.get("message")).isEmpty()
+        );
+        assertThat(fieldErrorFound)
+                .as("Expected validation error for field '%s' was not found in invalidParams: %s",
+                        expectedInvalidField, invalidParams)
+                .isTrue();
+    }
 
     // =====================================================================================
     // == Тесты для POST /api/v1/tasks (US4)
@@ -448,11 +496,70 @@ class TaskControllerIT {
     @DisplayName("PUT /api/v1/tasks/{taskId} (Update Task) Tests")
     class UpdateTaskITests {
 
+        @Test
+        @DisplayName("Успешное обновление -> должен вернуть 200 OK и обновленную задачу с новой версией")
+        void updateTask_whenValidRequest_shouldReturn200AndUpdatedTaskWithNewVersion() {
+            // Arrange
+            TaskResponse createdTask = createTaskApi("Original Title", "Desc", jwtForTestUser1);
+            assertThat(createdTask.getVersion()).isEqualTo(0);
+
+            TaskUpdateRequest updateRequest = new TaskUpdateRequest("Updated Title", "Updated Desc", TaskStatus.COMPLETED, 0); // Передаем версию 0
+
+            // Act
+            ResponseEntity<TaskResponse> responseEntity = updateTaskApi(createdTask.getId(), updateRequest, jwtForTestUser1);
+
+            // Assert
+            assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.OK);
+            TaskResponse updatedTask = responseEntity.getBody();
+            assertThat(updatedTask).isNotNull();
+            assertThat(updatedTask.getTitle()).isEqualTo("Updated Title");
+            assertThat(updatedTask.getStatus()).isEqualTo(TaskStatus.COMPLETED);
+            assertThat(updatedTask.getVersion()).isEqualTo(1); // Версия инкрементировалась
+        }
+
+        @Test
+        @DisplayName("Неверная версия (конфликт) -> должен вернуть 409 Conflict")
+        void updateTask_whenVersionIsIncorrect_shouldReturn409Conflict() {
+            // Arrange
+            TaskResponse createdTask = createTaskApi("Task for conflict", "Desc", jwtForTestUser1); // version = 0
+
+            // Имитируем, что кто-то другой уже обновил задачу, ее версия теперь 1
+            TaskUpdateRequest firstUpdateRequest = new TaskUpdateRequest("First update", "d", TaskStatus.PENDING, 0);
+            updateTaskApi(createdTask.getId(), firstUpdateRequest, jwtForTestUser1);
+
+            // Теперь пытаемся обновить, но со старой версией 0
+            TaskUpdateRequest conflictingUpdateRequest = new TaskUpdateRequest("Conflicting update", "d", TaskStatus.PENDING, 0);
+            HttpEntity<TaskUpdateRequest> requestEntity = createHttpEntity(conflictingUpdateRequest, jwtForTestUser1);
+            String taskUrl = baseTasksUrl + "/" + createdTask.getId();
+
+            // Act
+            ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
+                    taskUrl, HttpMethod.PUT, requestEntity, ProblemDetail.class);
+
+            // Assert
+            assertConflictProblemDetail(responseEntity, "/tasks/" + createdTask.getId(), createdTask.getId());
+        }
+
+        // Обновленный тест на валидацию DTO
+        @Test
+        void updateTask_whenVersionIsMissing_shouldReturn400() {
+            TaskResponse createdTask = createTaskApi("Task To Update", "Desc", jwtForTestUser1);
+            // Создаем DTO без версии
+            TaskUpdateRequest invalidDto = new TaskUpdateRequest("Any Title", "Any Desc", TaskStatus.PENDING, null);
+            String taskUrl = baseTasksUrl + "/" + createdTask.getId();
+            HttpEntity<TaskUpdateRequest> requestEntity = createHttpEntity(invalidDto, jwtForTestUser1);
+
+            ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
+                    taskUrl, HttpMethod.PUT, requestEntity, ProblemDetail.class);
+
+            assertValidationProblemDetail(responseEntity, "/tasks/" + createdTask.getId(), "version");
+        }
+
         // TC_IT_UPDATE_01 (US7_AC3 - PENDING -> COMPLETED)
         @Test
         void updateTask_whenValidRequestAndOwnTask_statusToCompleted_shouldReturn200AndUpdatedTask() {
             TaskResponse createdTask = createTaskApi("Original Title", "Original Desc", jwtForTestUser1);
-            TaskUpdateRequest updateRequest = new TaskUpdateRequest("Updated Title", "Updated Desc", TaskStatus.COMPLETED);
+            TaskUpdateRequest updateRequest = new TaskUpdateRequest("Updated Title", "Updated Desc", TaskStatus.COMPLETED, 0);
 
             ResponseEntity<TaskResponse> putResponseEntity = updateTaskApi(createdTask.getId(), updateRequest, jwtForTestUser1);
 
@@ -478,9 +585,9 @@ class TaskControllerIT {
         void updateTask_whenValidRequestAndOwnTask_statusToPending_shouldReturn200AndUpdatedTask() {
             TaskResponse taskCompleted = createTaskApi("To Be Pending", "Desc", jwtForTestUser1);
             // Сначала переводим в COMPLETED
-            updateTaskApi(taskCompleted.getId(), new TaskUpdateRequest(taskCompleted.getTitle(), taskCompleted.getDescription(), TaskStatus.COMPLETED), jwtForTestUser1);
+            updateTaskApi(taskCompleted.getId(), new TaskUpdateRequest(taskCompleted.getTitle(), taskCompleted.getDescription(), TaskStatus.COMPLETED,0), jwtForTestUser1);
 
-            TaskUpdateRequest updateToPendingRequest = new TaskUpdateRequest("Still To Be Pending", "New Desc", TaskStatus.PENDING);
+            TaskUpdateRequest updateToPendingRequest = new TaskUpdateRequest("Still To Be Pending", "New Desc", TaskStatus.PENDING,1);
             ResponseEntity<TaskResponse> putResponseEntity = updateTaskApi(taskCompleted.getId(), updateToPendingRequest, jwtForTestUser1);
 
             assertThat(putResponseEntity.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -496,7 +603,7 @@ class TaskControllerIT {
         @Test
         void updateTask_whenDescriptionSetToNull_shouldReturn200AndTaskWithNullDescription() {
             TaskResponse createdTask = createTaskApi("Task With Desc", "Initial Description", jwtForTestUser1);
-            TaskUpdateRequest updateRequest = new TaskUpdateRequest(createdTask.getTitle(), null, createdTask.getStatus());
+            TaskUpdateRequest updateRequest = new TaskUpdateRequest(createdTask.getTitle(), null, createdTask.getStatus(),0);
 
             ResponseEntity<TaskResponse> putResponseEntity = updateTaskApi(createdTask.getId(), updateRequest, jwtForTestUser1);
 
@@ -511,7 +618,7 @@ class TaskControllerIT {
         @Test
         void updateTask_whenStatusNotChanged_shouldReturn200AndCompletedAtUnchanged() {
             TaskResponse createdTask = createTaskApi("Task PENDING", "Desc", jwtForTestUser1); // status = PENDING
-            TaskUpdateRequest updateRequest = new TaskUpdateRequest("Updated Title", "Updated Desc", TaskStatus.PENDING);
+            TaskUpdateRequest updateRequest = new TaskUpdateRequest("Updated Title", "Updated Desc", TaskStatus.PENDING,0);
 
             ResponseEntity<TaskResponse> putResponseEntity = updateTaskApi(createdTask.getId(), updateRequest, jwtForTestUser1);
 
@@ -520,12 +627,12 @@ class TaskControllerIT {
 
             // Теперь для COMPLETED
             TaskResponse taskMadeCompleted = createTaskApi("Task COMPLETED", "Desc", jwtForTestUser1);
-            updateTaskApi(taskMadeCompleted.getId(), new TaskUpdateRequest(taskMadeCompleted.getTitle(), taskMadeCompleted.getDescription(), TaskStatus.COMPLETED), jwtForTestUser1);
+            updateTaskApi(taskMadeCompleted.getId(), new TaskUpdateRequest(taskMadeCompleted.getTitle(), taskMadeCompleted.getDescription(), TaskStatus.COMPLETED,0), jwtForTestUser1);
             ResponseEntity<TaskResponse> getCompletedResponse = getTaskApi(taskMadeCompleted.getId(), jwtForTestUser1);
             Instant initialCompletedAt = getCompletedResponse.getBody().getCompletedAt();
             assertThat(initialCompletedAt).isNotNull();
 
-            TaskUpdateRequest updateRequestSameStatus = new TaskUpdateRequest("Updated Title COMPLETED", "New Desc", TaskStatus.COMPLETED);
+            TaskUpdateRequest updateRequestSameStatus = new TaskUpdateRequest("Updated Title COMPLETED", "New Desc", TaskStatus.COMPLETED,1);
             ResponseEntity<TaskResponse> putSameStatusResponseEntity = updateTaskApi(taskMadeCompleted.getId(), updateRequestSameStatus, jwtForTestUser1);
 
             assertThat(putSameStatusResponseEntity.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -535,11 +642,11 @@ class TaskControllerIT {
         // TC_IT_UPDATE_05 до TC_IT_UPDATE_09 (US7_AC2 - ошибки валидации DTO)
         static Stream<Arguments> invalidTaskUpdateRequests() {
             return Stream.of(
-                    Arguments.of(new TaskUpdateRequest("", "desc", TaskStatus.PENDING), "title"),
-                    Arguments.of(new TaskUpdateRequest(" ", "desc", TaskStatus.PENDING), "title"),
-                    Arguments.of(new TaskUpdateRequest("t".repeat(256), "desc", TaskStatus.PENDING), "title"),
-                    Arguments.of(new TaskUpdateRequest("Valid Title", "d".repeat(1001), TaskStatus.PENDING), "description"),
-                    Arguments.of(new TaskUpdateRequest("Valid Title", "desc", null), "status") // status = null
+                    Arguments.of(new TaskUpdateRequest("", "desc", TaskStatus.PENDING,0), "title"),
+                    Arguments.of(new TaskUpdateRequest(" ", "desc", TaskStatus.PENDING,0), "title"),
+                    Arguments.of(new TaskUpdateRequest("t".repeat(256), "desc", TaskStatus.PENDING,0), "title"),
+                    Arguments.of(new TaskUpdateRequest("Valid Title", "d".repeat(1001), TaskStatus.PENDING,0), "description"),
+                    Arguments.of(new TaskUpdateRequest("Valid Title", "desc", null,0), "status") // status = null
             );
         }
 
@@ -581,7 +688,7 @@ class TaskControllerIT {
         void updateTask_whenTaskNotFound_shouldReturn404() {
             Long nonExistentTaskId = 999L;
             String taskUrl = baseTasksUrl + "/" + nonExistentTaskId;
-            TaskUpdateRequest updateRequest = new TaskUpdateRequest("Any", "Any", TaskStatus.PENDING);
+            TaskUpdateRequest updateRequest = new TaskUpdateRequest("Any", "Any", TaskStatus.PENDING,0);
             HttpEntity<TaskUpdateRequest> requestEntity = createHttpEntity(updateRequest, jwtForTestUser1);
 
             ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
@@ -595,7 +702,7 @@ class TaskControllerIT {
         void updateTask_whenTaskBelongsToAnotherUser_shouldReturn404() {
             TaskResponse anotherUserTask = createTaskApi("Another User's Task For Update", "Desc", jwtForTestUser2); // Создаем от имени user2
             String taskUrl = baseTasksUrl + "/" + anotherUserTask.getId();
-            TaskUpdateRequest updateRequest = new TaskUpdateRequest("Attempted Update", "Desc", TaskStatus.COMPLETED);
+            TaskUpdateRequest updateRequest = new TaskUpdateRequest("Attempted Update", "Desc", TaskStatus.COMPLETED,0);
             HttpEntity<TaskUpdateRequest> requestEntity = createHttpEntity(updateRequest, jwtForTestUser1); // Пытаемся обновить от имени user1
 
             ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
@@ -609,7 +716,7 @@ class TaskControllerIT {
         void updateTask_whenNoJwt_shouldReturn401() {
             TaskResponse createdTask = createTaskApi("Task for No JWT Update", "Desc", jwtForTestUser1);
             String taskUrl = baseTasksUrl + "/" + createdTask.getId();
-            TaskUpdateRequest updateRequest = new TaskUpdateRequest("Update No JWT", "Desc", TaskStatus.PENDING);
+            TaskUpdateRequest updateRequest = new TaskUpdateRequest("Update No JWT", "Desc", TaskStatus.PENDING,0);
             HttpEntity<TaskUpdateRequest> requestEntity = createHttpEntity(updateRequest, null); // No JWT
 
             ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
@@ -624,7 +731,7 @@ class TaskControllerIT {
             TaskResponse createdTask = createTaskApi("Task for Expired JWT Update", "Desc", jwtForTestUser1);
             String expiredToken = testJwtUtil.generateExpiredToken(testUser1, Duration.ofSeconds(1), Duration.ofSeconds(5));
             String taskUrl = baseTasksUrl + "/" + createdTask.getId();
-            TaskUpdateRequest updateRequest = new TaskUpdateRequest("Update Expired JWT", "Desc", TaskStatus.PENDING);
+            TaskUpdateRequest updateRequest = new TaskUpdateRequest("Update Expired JWT", "Desc", TaskStatus.PENDING,0);
             HttpEntity<TaskUpdateRequest> requestEntity = createHttpEntity(updateRequest, expiredToken);
 
             ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
@@ -638,7 +745,7 @@ class TaskControllerIT {
         void updateTask_whenTaskIdIsInvalidFormat_shouldReturn400() {
             String invalidTaskId = "abc";
             String taskUrl = baseTasksUrl + "/" + invalidTaskId;
-            TaskUpdateRequest updateRequest = new TaskUpdateRequest("Valid", "Valid", TaskStatus.PENDING);
+            TaskUpdateRequest updateRequest = new TaskUpdateRequest("Valid", "Valid", TaskStatus.PENDING,0);
             HttpEntity<TaskUpdateRequest> requestEntity = createHttpEntity(updateRequest, jwtForTestUser1);
 
             ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
@@ -649,135 +756,79 @@ class TaskControllerIT {
     }
 
     // =====================================================================================
-    // == Тесты для PATCH /api/v1/tasks/{taskId} (US9 - Update Task Status)
+    // == Тесты для PATCH
     // =====================================================================================
     @Nested
-    @DisplayName("PATCH /api/v1/tasks/{taskId} (Update Task Status) Tests")
-    class UpdateTaskStatusITests {
+    @DisplayName("PATCH /api/v1/tasks/{taskId} (Partial Update) Tests")
+    class PatchTaskITests {
 
-        // Вспомогательный метод для PATCH запроса
-        private ResponseEntity<TaskResponse> patchTaskStatusApi(Long taskId, TaskStatusUpdateRequest updateRequest, String jwtToken) {
-            String taskUrl = baseTasksUrl + "/" + taskId;
-            HttpEntity<TaskStatusUpdateRequest> entity = createHttpEntity(updateRequest, jwtToken);
-            return testRestTemplate.exchange(taskUrl, HttpMethod.PATCH, entity, TaskResponse.class);
+        @Autowired private ObjectMapper objectMapper;
+
+        private HttpEntity<JsonNode> createPatchRequest(Map<String, Object> patchData, String jwtToken) {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.valueOf("application/merge-patch+json"));
+            if (jwtToken != null) { headers.setBearerAuth(jwtToken); }
+            return new HttpEntity<>(objectMapper.valueToTree(patchData), headers);
         }
 
-        // TC_IT_PATCH_STATUS_01 (US9_AC3 - PENDING -> COMPLETED)
         @Test
-        void updateTaskStatus_whenPendingToCompleted_shouldReturn200AndUpdatedTask() {
-            TaskResponse createdTask = createTaskApi("Task PENDING for PATCH", "Desc", jwtForTestUser1); // Изначально PENDING
-            assertThat(createdTask.getStatus()).isEqualTo(TaskStatus.PENDING);
-            assertThat(createdTask.getCompletedAt()).isNull();
-            Instant initialUpdatedAt = createdTask.getUpdatedAt();
+        @DisplayName("Успешный PATCH (title и status) -> должен вернуть 200 OK и обновленную задачу")
+        void patchTask_whenUpdatingTitleAndStatus_shouldReturn200AndUpdatedTask() {
+            TaskResponse createdTask = createTaskApi("Original Title", "Original Desc", jwtForTestUser1);
+            Map<String, Object> patch = Map.of( "title", "Patched Title", "status", "COMPLETED", "version", 0 );
+            HttpEntity<JsonNode> requestEntity = createPatchRequest(patch, jwtForTestUser1);
+            String taskUrl = baseTasksUrl + "/" + createdTask.getId();
 
-            TaskStatusUpdateRequest statusRequest = new TaskStatusUpdateRequest(TaskStatus.COMPLETED);
-            ResponseEntity<TaskResponse> patchResponse = patchTaskStatusApi(createdTask.getId(), statusRequest, jwtForTestUser1);
+            ResponseEntity<TaskResponse> responseEntity = testRestTemplate.exchange(taskUrl, HttpMethod.PATCH, requestEntity, TaskResponse.class);
 
-            assertThat(patchResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
-            TaskResponse updatedTask = patchResponse.getBody();
+            assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.OK);
+            TaskResponse updatedTask = responseEntity.getBody();
             assertThat(updatedTask).isNotNull();
-            assertThat(updatedTask.getId()).isEqualTo(createdTask.getId());
+            assertThat(updatedTask.getTitle()).isEqualTo("Patched Title");
+            assertThat(updatedTask.getDescription()).isEqualTo("Original Desc");
             assertThat(updatedTask.getStatus()).isEqualTo(TaskStatus.COMPLETED);
-            assertThat(updatedTask.getCompletedAt()).isNotNull().isAfterOrEqualTo(initialUpdatedAt); // completedAt установился
-            assertThat(updatedTask.getUpdatedAt()).isNotNull().isAfterOrEqualTo(initialUpdatedAt); // updatedAt обновился
-            assertThat(updatedTask.getCompletedAt()).isEqualTo(updatedTask.getUpdatedAt());
+            assertThat(updatedTask.getCompletedAt()).isNotNull();
+            assertThat(updatedTask.getVersion()).isEqualTo(1);
         }
 
-        // TC_IT_PATCH_STATUS_02 (US9_AC3 - COMPLETED -> PENDING)
         @Test
-        void updateTaskStatus_whenCompletedToPending_shouldReturn200AndResetCompletedAt() {
-            TaskResponse taskInitiallyPending = createTaskApi("Task COMPLETED for PATCH", "Desc", jwtForTestUser1);
-            // Сначала делаем COMPLETED через PUT (или PATCH, если бы он был первым)
-            TaskUpdateRequest makeCompletedRequest = new TaskUpdateRequest(taskInitiallyPending.getTitle(),
-                    taskInitiallyPending.getDescription(), TaskStatus.COMPLETED);
-            updateTaskApi(taskInitiallyPending.getId(), makeCompletedRequest, jwtForTestUser1); // Используем PUT для перевода в COMPLETED
-
-            ResponseEntity<TaskResponse> completedTaskGetResponse = getTaskApi(taskInitiallyPending.getId(), jwtForTestUser1);
-            assertThat(completedTaskGetResponse.getBody().getStatus()).isEqualTo(TaskStatus.COMPLETED);
-            assertThat(completedTaskGetResponse.getBody().getCompletedAt()).isNotNull();
-            Instant updatedAtAfterCompletion = completedTaskGetResponse.getBody().getUpdatedAt();
-
-
-            TaskStatusUpdateRequest statusRequestToPending = new TaskStatusUpdateRequest(TaskStatus.PENDING);
-            ResponseEntity<TaskResponse> patchResponse = patchTaskStatusApi(taskInitiallyPending.getId(), statusRequestToPending, jwtForTestUser1);
-
-            assertThat(patchResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
-            TaskResponse updatedTask = patchResponse.getBody();
-            assertThat(updatedTask).isNotNull();
-            assertThat(updatedTask.getStatus()).isEqualTo(TaskStatus.PENDING);
-            assertThat(updatedTask.getCompletedAt()).isNull(); // completedAt сбросился
-            assertThat(updatedTask.getUpdatedAt()).isNotNull().isAfterOrEqualTo(updatedAtAfterCompletion);
-        }
-
-        // TC_IT_PATCH_STATUS_03 (US9_AC2 - DTO validation: status is null)
-        @Test
-        void updateTaskStatus_whenDtoStatusIsNull_shouldReturn400() {
-            TaskResponse createdTask = createTaskApi("Task for Null Status PATCH", "Desc", jwtForTestUser1);
-            TaskStatusUpdateRequest invalidRequest = new TaskStatusUpdateRequest(null); // status is null
-            HttpEntity<TaskStatusUpdateRequest> requestEntity = createHttpEntity(invalidRequest, jwtForTestUser1);
+        @DisplayName("PATCH без 'version' -> должен вернуть 400 Bad Request")
+        void patchTask_whenVersionIsMissing_shouldReturn400() {
+            TaskResponse createdTask = createTaskApi("Task for patch", "Desc", jwtForTestUser1);
+            Map<String, Object> patch = Map.of("title", "Some Title"); // Нет 'version'
+            HttpEntity<JsonNode> requestEntity = createPatchRequest(patch, jwtForTestUser1);
             String taskUrl = baseTasksUrl + "/" + createdTask.getId();
 
-            ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
-                    taskUrl, HttpMethod.PATCH, requestEntity, ProblemDetail.class);
+            ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(taskUrl, HttpMethod.PATCH, requestEntity, ProblemDetail.class);
 
-            assertValidationProblemDetail(responseEntity, "/tasks/" + createdTask.getId(), "status");
+            assertConstraintViolationProblemDetail(responseEntity, "/tasks/" + createdTask.getId(), "version");
         }
 
-        // TC_IT_PATCH_STATUS_04 (US9_AC4 - Task Not Found)
         @Test
-        void updateTaskStatus_whenTaskNotFound_shouldReturn404() {
-            Long nonExistentTaskId = 888L;
-            TaskStatusUpdateRequest request = new TaskStatusUpdateRequest(TaskStatus.COMPLETED);
-            String taskUrl = baseTasksUrl + "/" + nonExistentTaskId;
-            HttpEntity<TaskStatusUpdateRequest> entity = createHttpEntity(request, jwtForTestUser1);
-
-            ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
-                    taskUrl, HttpMethod.PATCH, entity, ProblemDetail.class);
-
-            assertTaskNotFoundProblemDetail(responseEntity, "/tasks/" + nonExistentTaskId, nonExistentTaskId, testUser1.getId());
-        }
-
-        // TC_IT_PATCH_STATUS_05 (US9_AC4 - Task Belongs to Another User)
-        @Test
-        void updateTaskStatus_whenTaskBelongsToAnotherUser_shouldReturn404() {
-            TaskResponse anotherUserTask = createTaskApi("Another User's Task for PATCH", "Desc", jwtForTestUser2);
-            TaskStatusUpdateRequest request = new TaskStatusUpdateRequest(TaskStatus.COMPLETED);
-            String taskUrl = baseTasksUrl + "/" + anotherUserTask.getId();
-            HttpEntity<TaskStatusUpdateRequest> entity = createHttpEntity(request, jwtForTestUser1); // Пытаемся обновить от имени user1
-
-            ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
-                    taskUrl, HttpMethod.PATCH, entity, ProblemDetail.class);
-
-            assertTaskNotFoundProblemDetail(responseEntity, "/tasks/" + anotherUserTask.getId(),
-                    anotherUserTask.getId(), testUser1.getId());
-        }
-
-        // TC_IT_PATCH_STATUS_06 (US9_AC1 - No JWT)
-        @Test
-        void updateTaskStatus_whenNoJwt_shouldReturn401() {
-            TaskResponse createdTask = createTaskApi("Task for No JWT PATCH", "Desc", jwtForTestUser1);
-            TaskStatusUpdateRequest request = new TaskStatusUpdateRequest(TaskStatus.COMPLETED);
+        @DisplayName("PATCH с невалидным полем (пустой title) -> должен вернуть 400 Bad Request")
+        void patchTask_whenPatchMakesEntityInvalid_shouldReturn400() {
+            TaskResponse createdTask = createTaskApi("Task for patch", "Desc", jwtForTestUser1);
+            Map<String, Object> patch = Map.of("title", "", "version", 0);
+            HttpEntity<JsonNode> requestEntity = createPatchRequest(patch, jwtForTestUser1);
             String taskUrl = baseTasksUrl + "/" + createdTask.getId();
-            HttpEntity<TaskStatusUpdateRequest> entity = createHttpEntity(request, null); // No JWT
 
-            ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
-                    taskUrl, HttpMethod.PATCH, entity, ProblemDetail.class);
+            ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(taskUrl, HttpMethod.PATCH, requestEntity, ProblemDetail.class);
 
-            assertGeneralUnauthorizedProblemDetail(responseEntity, "/tasks/" + createdTask.getId());
+            assertConstraintViolationProblemDetail(responseEntity, "/tasks/" + createdTask.getId(), "title");
         }
 
-        // TC_IT_PATCH_STATUS_07 (US9 - Invalid TaskId format)
         @Test
-        void updateTaskStatus_whenTaskIdIsInvalidFormat_shouldReturn400() {
-            String invalidTaskId = "not-a-number";
-            String taskUrl = baseTasksUrl + "/" + invalidTaskId;
-            TaskStatusUpdateRequest request = new TaskStatusUpdateRequest(TaskStatus.PENDING);
-            HttpEntity<TaskStatusUpdateRequest> entity = createHttpEntity(request, jwtForTestUser1);
+        @DisplayName("PATCH с неверной версией -> должен вернуть 409 Conflict")
+        void patchTask_whenVersionIsIncorrect_shouldReturn409Conflict() {
+            TaskResponse createdTask = createTaskApi("Task for patch conflict", "Desc", jwtForTestUser1); // version=0
+            updateTaskApi(createdTask.getId(), new TaskUpdateRequest("T", "D", TaskStatus.PENDING, 0), jwtForTestUser1); // version=1
+            Map<String, Object> patch = Map.of("title", "Conflicting Patch", "version", 0);
+            HttpEntity<JsonNode> requestEntity = createPatchRequest(patch, jwtForTestUser1);
+            String taskUrl = baseTasksUrl + "/" + createdTask.getId();
 
-            ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
-                    taskUrl, HttpMethod.PATCH, entity, ProblemDetail.class);
+            ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(taskUrl, HttpMethod.PATCH, requestEntity, ProblemDetail.class);
 
-            assertTypeMismatchProblemDetail(responseEntity, "/tasks/" + invalidTaskId, "taskId", invalidTaskId, "Long");
+            assertConflictProblemDetail(responseEntity, "/tasks/" + createdTask.getId(), createdTask.getId());
         }
     }
 

@@ -208,7 +208,6 @@ public class TaskService {
         // Обновляем поля
         taskToUpdate.setTitle(request.getTitle());
         taskToUpdate.setDescription(request.getDescription());
-        taskToUpdate.setVersion(request.getVersion());
 
         Instant now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
 
@@ -275,6 +274,8 @@ public class TaskService {
 
             Set<ConstraintViolation<TaskUpdateRequest>> violations = validator.validate(updateRequestDto);
             if (!violations.isEmpty()) {
+                log.warn("Invalid task update request for task ID: {} for user ID: {}. Violations: {}",
+                        taskId, currentUserId, violations);
                 throw new ConstraintViolationException(violations);
             }
 

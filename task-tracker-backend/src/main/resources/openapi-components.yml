@@ -1,5 +1,32 @@
 components:
   schemas:
+
+    TaskPatchRequest:
+      type: object
+      description: "Тело запроса для частичного обновления задачи (JSON Merge Patch). Отправляйте только те поля, которые нужно изменить, и обязательное поле 'version'."
+      properties:
+        title:
+          type: string
+          description: "Новый заголовок задачи."
+          example: "Очень важный новый заголовок"
+        description:
+          type: string
+          description: "Новое описание задачи. Укажите null, чтобы очистить поле."
+          example: "Детальное описание задачи..."
+          nullable: true
+        status:
+          type: string
+          description: "Новый статус задачи."
+          enum: [ PENDING, COMPLETED ]
+          example: "COMPLETED"
+        version:
+          type: integer
+          format: int32
+          description: "Текущая версия задачи для оптимистической блокировки. Обязательное поле."
+          example: 1
+      required:
+        - version
+
     # ---------------------------------------------------------
     # Общая Базовая Схема для ProblemDetail (RFC 7807)
     # ---------------------------------------------------------
@@ -88,6 +115,17 @@ components:
           properties:
             errorRef: { type: string, format: uuid, description: "Уникальный идентификатор ошибки для отслеживания.", example: "a1b2c3d4-e5f6-7890-1234-567890abcdef" }
 
+    ConflictProblem:
+      description: "Тело ответа для ошибки конфликта версий ресурса (HTTP 409)."
+      allOf:
+        - $ref: '#/components/schemas/BaseProblemDetail'
+        - type: object
+          properties:
+            conflictingResourceId:
+              type: integer
+              format: int64
+              description: "ID ресурса, который вызвал конфликт."
+              example: 123
   responses:
     # ---------------------------------------------------------
     # Определения Компонентов Ответов для Ошибок
@@ -277,6 +315,20 @@ components:
             detail: "A user with email 'test@example.com' already exists."
             instance: "/api/v1/users/register"
             conflictingEmail: "test@example.com"
+
+    ConflictGeneral:
+      description: "Операция не может быть выполнена из-за конфликта с текущим состоянием ресурса (например, устаревшая версия при оптимистической блокировке)."
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ConflictProblem'
+          example:
+            type: "https://task-tracker.example.com/probs/resource-conflict"
+            title: "Resource Conflict"
+            status: 409
+            detail: "The resource was modified by another request. Please fetch the latest version and try again."
+            instance: "/api/v1/tasks/123"
+            conflictingResourceId: 123
 
     # ---------------------------------------------------------
     # 500 - INTERNAL SERVER ERROR

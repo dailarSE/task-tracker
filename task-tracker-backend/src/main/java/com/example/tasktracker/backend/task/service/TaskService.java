@@ -9,6 +9,7 @@ import com.example.tasktracker.backend.task.exception.TaskNotFoundException;
 import com.example.tasktracker.backend.task.repository.TaskRepository;
 import com.example.tasktracker.backend.user.repository.UserRepository;
 import com.example.tasktracker.backend.web.exception.ResourceConflictException;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.ConstraintViolation;
@@ -17,6 +18,7 @@ import jakarta.validation.Validator;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.http.converter.HttpMessageConversionException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -184,8 +186,8 @@ public class TaskService {
      */
     @Transactional
     TaskResponse doUpdateTaskInTransaction(@NonNull Long taskId,
-                                                        @NonNull TaskUpdateRequest request,
-                                                        @NonNull Long currentUserId) {
+                                           @NonNull TaskUpdateRequest request,
+                                           @NonNull Long currentUserId) {
         log.debug("Attempting to update task with ID: {} for user ID: {} with new title: '{}', status: {}",
                 taskId, currentUserId, request.getTitle(), request.getStatus());
 
@@ -257,14 +259,14 @@ public class TaskService {
         Task taskToUpdate = taskRepository.findByIdAndUserId(taskId, currentUserId)
                 .orElseThrow(() -> new TaskNotFoundException(taskId, currentUserId));
 
-        TaskStatus oldStatus = taskToUpdate.getStatus();
-
         try {
+            TaskStatus oldStatus = taskToUpdate.getStatus();
+
             TaskUpdateRequest updateRequestDto = new TaskUpdateRequest(
                     taskToUpdate.getTitle(),
                     taskToUpdate.getDescription(),
                     taskToUpdate.getStatus(),
-                    taskToUpdate.getVersion()
+                    null // Версия это обязательное поле патча
             );
 
             objectMapper.readerForUpdating(updateRequestDto).readValue(patchNode);
@@ -296,8 +298,11 @@ public class TaskService {
 
             log.info("Task ID: {} patched successfully for user ID: {}. Pending transaction commit.", taskId, currentUserId);
             return TaskResponse.fromEntity(taskToUpdate);
-
-        } catch (IOException e) {
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to apply JSON merge patch to task ID: {}. Invalid JSON format or value. Details: {}",
+                    taskId, e.getMessage());
+            throw new HttpMessageConversionException("Invalid patch data: " + e.getOriginalMessage(), e);
+        } catch ( IOException e) {
             log.error("Failed to apply JSON merge patch to task ID: {}", taskId, e);
             throw new IllegalStateException("Error processing patch for task " + taskId, e);
         }
@@ -357,9 +362,9 @@ public class TaskService {
      * @param timestamp Временная метка для установки {@code completedAt}.
      * @throws NullPointerException если {@code task} или {@code newStatus} равны {@code null}.
      */
-     void updateCompletedAtBasedOnStatus(@NonNull Task task,
-                                                @NonNull TaskStatus newStatus,
-                                                @NonNull Instant timestamp) {
+    void updateCompletedAtBasedOnStatus(@NonNull Task task,
+                                        @NonNull TaskStatus newStatus,
+                                        @NonNull Instant timestamp) {
         TaskStatus oldStatus = task.getStatus(); // Текущий (старый) статус задачи
 
         Objects.requireNonNull(oldStatus, "Old status of the task cannot be null when updating completedAt.");

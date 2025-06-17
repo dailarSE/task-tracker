@@ -7,3 +7,5 @@ databaseChangeLog:
       file: db/changelog/changesets/2025-05-27-14-55-add-index-tasks-user-created-at.yaml
   - include:
       file: db/changelog/changesets/2025-05-31-create-undelivered-email-commands-table.yaml
+  - include:
+      file: db/changelog/changesets/2025-06-17-09-00-add-version-to-tasks-table.yaml

@@ -1,0 +1,28 @@
+databaseChangeLog:
+  - changeSet:
+      id: 5 # Следующий по порядку ID
+      author: dailar401@gmail.com
+      comment: "Add nullable version column to tasks table"
+      changes:
+        - addColumn:
+            tableName: tasks
+            columns:
+              - column:
+                  name: version
+                  type: INT
+                  constraints:
+                    nullable: true # Временно разрешаем NULL
+
+  - changeSet:
+      id: 6
+      author: dailar401@gmail.com
+      comment: "Initialize version for existing tasks and make it non-nullable"
+      changes:
+        - sql:
+            comment: "Set initial version to 0 for all existing tasks"
+            dbms: postgresql
+            sql: UPDATE tasks SET version = 0 WHERE version IS NULL;
+        - addNotNullConstraint:
+            tableName: tasks
+            columnName: version
+            columnDataType: INT

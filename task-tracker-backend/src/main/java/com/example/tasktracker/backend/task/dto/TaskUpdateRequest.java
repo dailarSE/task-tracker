@@ -43,4 +43,11 @@ public class TaskUpdateRequest {
     @Schema(description = "Новый статус задачи.", example = "PENDING")
     @NotNull(message = "{task.validation.status.notNull}")
     private TaskStatus status;
+
+    /**
+     * The current version of the task entity, required for optimistic locking.
+     */
+    @Schema(description = "Текущая версия задачи для оптимистической блокировки.", example = "0", requiredMode = Schema.RequiredMode.REQUIRED)
+    @NotNull(message = "{task.validation.version.notNull}")
+    private Integer version;
 }

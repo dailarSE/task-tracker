@@ -80,6 +80,14 @@ public class Task {
     private Instant completedAt;
 
     /**
+     * Поле для оптимистической блокировки.
+     * Автоматически инкрементируется Hibernate при каждом обновлении сущности.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Integer version;
+
+    /**
      * Пользователь, которому принадлежит эта задача.
      * Связь {@link ManyToOne}. Владелец не может быть изменен после создания.
      */

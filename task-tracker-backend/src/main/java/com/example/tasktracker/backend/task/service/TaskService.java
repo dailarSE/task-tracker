@@ -169,7 +169,8 @@ public class TaskService {
                                                         @NonNull TaskUpdateRequest request,
                                                         @NonNull Long currentUserId) {
         try {
-            return self.doUpdateTaskInTransaction(taskId, request, currentUserId);
+            Task detachedTask = self.doUpdateTaskInTransaction(taskId, request, currentUserId);
+            return TaskResponse.fromEntity(detachedTask);
         } catch (ObjectOptimisticLockingFailureException e) {
             log.warn("Optimistic lock conflict for task ID: {} during PUT. Triggered at commit time.", taskId, e);
             throw new ResourceConflictException(taskId);
@@ -182,10 +183,10 @@ public class TaskService {
      * @param taskId        ID задачи.
      * @param request       DTO с данными для обновления.
      * @param currentUserId ID пользователя.
-     * @return DTO с обновленными данными.
+     * @return Task с обновленными данными.
      */
     @Transactional
-    TaskResponse doUpdateTaskInTransaction(@NonNull Long taskId,
+    Task doUpdateTaskInTransaction(@NonNull Long taskId,
                                            @NonNull TaskUpdateRequest request,
                                            @NonNull Long currentUserId) {
         log.debug("Attempting to update task with ID: {} for user ID: {} with new title: '{}', status: {}",
@@ -219,7 +220,7 @@ public class TaskService {
 
         log.info("Task update logic completed for task ID: {} (user ID: {}). Pending transaction commit.",
                 taskToUpdate.getId(), currentUserId);
-        return TaskResponse.fromEntity(taskToUpdate);
+        return taskToUpdate;
     }
 
     /**
@@ -237,7 +238,8 @@ public class TaskService {
     @Transactional(propagation = Propagation.NEVER)
     public TaskResponse patchTask(@NonNull Long taskId, @NonNull JsonNode patchNode, @NonNull Long currentUserId) {
         try {
-            return self.doPatchTaskInTransaction(taskId, patchNode, currentUserId);
+            Task detachedTask = self.doPatchTaskInTransaction(taskId, patchNode, currentUserId);
+            return TaskResponse.fromEntity(detachedTask);
         } catch (ObjectOptimisticLockingFailureException e) {
             log.warn("Optimistic lock conflict for task ID: {} during PATCH. Triggered at commit time.", taskId, e);
             throw new ResourceConflictException(taskId);
@@ -250,10 +252,10 @@ public class TaskService {
      * @param taskId        ID задачи.
      * @param patchNode     JsonNode с изменениями.
      * @param currentUserId ID пользователя.
-     * @return DTO с обновленными данными.
+     * @return Task с обновленными данными.
      */
     @Transactional
-    TaskResponse doPatchTaskInTransaction(@NonNull Long taskId, @NonNull JsonNode patchNode, @NonNull Long currentUserId) {
+    Task doPatchTaskInTransaction(@NonNull Long taskId, @NonNull JsonNode patchNode, @NonNull Long currentUserId) {
         log.debug("Attempting to patch task with ID: {} for user ID: {}", taskId, currentUserId);
 
         Task taskToUpdate = taskRepository.findByIdAndUserId(taskId, currentUserId)
@@ -297,7 +299,7 @@ public class TaskService {
             taskToUpdate.setUpdatedAt(now);
 
             log.info("Task ID: {} patched successfully for user ID: {}. Pending transaction commit.", taskId, currentUserId);
-            return TaskResponse.fromEntity(taskToUpdate);
+            return taskToUpdate;
         } catch (JsonProcessingException e) {
             log.warn("Failed to apply JSON merge patch to task ID: {}. Invalid JSON format or value. Details: {}",
                     taskId, e.getMessage());

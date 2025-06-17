@@ -2,7 +2,6 @@ package com.example.tasktracker.backend.task.service;
 
 import com.example.tasktracker.backend.task.dto.TaskCreateRequest;
 import com.example.tasktracker.backend.task.dto.TaskResponse;
-import com.example.tasktracker.backend.task.dto.TaskStatusUpdateRequest;
 import com.example.tasktracker.backend.task.dto.TaskUpdateRequest;
 import com.example.tasktracker.backend.task.entity.Task;
 import com.example.tasktracker.backend.task.entity.TaskStatus;
@@ -10,6 +9,14 @@ import com.example.tasktracker.backend.task.exception.TaskNotFoundException;
 import com.example.tasktracker.backend.task.repository.TaskRepository;
 import com.example.tasktracker.backend.user.entity.User;
 import com.example.tasktracker.backend.user.repository.UserRepository;
+import com.example.tasktracker.backend.web.exception.ResourceConflictException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import jakarta.persistence.EntityNotFoundException;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -17,12 +24,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.orm.jpa.JpaObjectRetrievalFailureException; // Для TC_CS_CREATE_02
-import jakarta.persistence.EntityNotFoundException; // Для cause в JpaObjectRetrievalFailureException
-
+import org.springframework.http.converter.HttpMessageConversionException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.orm.jpa.JpaObjectRetrievalFailureException;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -38,19 +44,19 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class TaskServiceTest {
 
-    @Mock
-    private TaskRepository mockTaskRepository;
-    @Mock
-    private UserRepository mockUserRepository;
-    @Mock
-    private Clock mockClock;
+    @Mock private TaskRepository mockTaskRepository;
+    @Mock private UserRepository mockUserRepository;
+    @Mock private Clock mockClock;
+    private ObjectMapper realObjectMapper = new ObjectMapper();
+    private Validator realValidator = Validation.buildDefaultValidatorFactory().getValidator();
+    @Mock private TaskService selfInjectedMock;
 
-    @InjectMocks
     private TaskService taskService;
 
     // --- Общие тестовые данные и вспомогательные методы ---
     private static final Long DEFAULT_USER_ID = 1L;
     private static final Long DEFAULT_TASK_ID = 10L;
+    private static final Integer DEFAULT_VERSION = 0;
     private static final String DEFAULT_TASK_TITLE = "Test Task";
     private static final String DEFAULT_TASK_DESCRIPTION = "Test Description";
     private static final Instant FIXED_INSTANT_NOW = Instant.parse("2025-01-01T12:00:00Z");
@@ -62,6 +68,9 @@ class TaskServiceTest {
 
     @BeforeEach
     void setUpForEachTest() {
+        taskService = new TaskService(
+                selfInjectedMock, mockTaskRepository, mockUserRepository, realObjectMapper, realValidator, mockClock
+        );
         // Настраиваем мок Clock для всех тестов, где он может быть использован
         lenient().when(mockClock.instant()).thenReturn(FIXED_INSTANT_NOW);
         lenient().when(mockClock.getZone()).thenReturn(ZoneId.of("UTC")); // Если Clock.systemUTC() используется где-то
@@ -75,20 +84,14 @@ class TaskServiceTest {
         return new TaskCreateRequest(title, description);
     }
 
-    private TaskUpdateRequest createValidTaskUpdateRequest(String title, String description, TaskStatus status) {
-        return new TaskUpdateRequest(title, description, status);
-    }
-
-    private Task createTaskEntity(Long id, String title, String description, TaskStatus status, User user, Instant createdAt, Instant updatedAt, Instant completedAt) {
+    private Task createTaskEntity(Long id, String title, String description, TaskStatus status, User user, Integer version) {
         Task task = new Task();
         task.setId(id);
         task.setTitle(title);
         task.setDescription(description);
         task.setStatus(status);
         task.setUser(user);
-        task.setCreatedAt(createdAt);
-        task.setUpdatedAt(updatedAt);
-        task.setCompletedAt(completedAt);
+        task.setVersion(version);
         return task;
     }
 
@@ -107,7 +110,9 @@ class TaskServiceTest {
             when(mockUserRepository.getReferenceById(DEFAULT_USER_ID)).thenReturn(mockUserReference);
 
             Task savedTaskEntity = createTaskEntity(DEFAULT_TASK_ID, DEFAULT_TASK_TITLE, DEFAULT_TASK_DESCRIPTION, TaskStatus.PENDING,
-                    mockUserReference, FIXED_INSTANT_NOW, FIXED_INSTANT_NOW, null);
+                    mockUserReference, null);
+            savedTaskEntity.setCreatedAt(FIXED_INSTANT_NOW);
+            savedTaskEntity.setUpdatedAt(FIXED_INSTANT_NOW);
             when(mockTaskRepository.save(any(Task.class))).thenReturn(savedTaskEntity);
 
             // Act
@@ -141,7 +146,7 @@ class TaskServiceTest {
             when(mockUserRepository.getReferenceById(DEFAULT_USER_ID)).thenReturn(mockUserReference);
 
             Task savedTaskEntity = createTaskEntity(DEFAULT_TASK_ID, DEFAULT_TASK_TITLE, null, TaskStatus.PENDING,
-                    mockUserReference, FIXED_INSTANT_NOW, FIXED_INSTANT_NOW, null);
+                    mockUserReference, null);
             when(mockTaskRepository.save(any(Task.class))).thenReturn(savedTaskEntity);
 
             // Act
@@ -200,8 +205,8 @@ class TaskServiceTest {
         @DisplayName("TC_CS_GETALL_01: У пользователя есть задачи")
         void getAllTasksForCurrentUser_whenUserHasTasks_shouldReturnListOfTaskResponses() {
             // Arrange
-            Task task1 = createTaskEntity(1L, "Task 1", "Desc 1", TaskStatus.PENDING, mockUserReference, FIXED_INSTANT_NOW, FIXED_INSTANT_NOW, null);
-            Task task2 = createTaskEntity(2L, "Task 2", "Desc 2", TaskStatus.COMPLETED, mockUserReference, FIXED_INSTANT_NOW, FIXED_INSTANT_NOW, FIXED_INSTANT_NOW);
+            Task task1 = createTaskEntity(1L, "Task 1", "Desc 1", TaskStatus.PENDING, mockUserReference, 0);
+            Task task2 = createTaskEntity(2L, "Task 2", "Desc 2", TaskStatus.COMPLETED, mockUserReference,0);
             when(mockTaskRepository.findAllByUserIdOrderByCreatedAtDesc(DEFAULT_USER_ID)).thenReturn(List.of(task1, task2));
 
             // Act
@@ -247,7 +252,7 @@ class TaskServiceTest {
         @DisplayName("TC_CS_GETBYID_01: Задача найдена и принадлежит пользователю")
         void getTaskById_whenTaskExistsAndBelongsToUser_shouldReturnTaskResponse() {
             // Arrange
-            Task foundTask = createTaskEntity(DEFAULT_TASK_ID, DEFAULT_TASK_TITLE, DEFAULT_TASK_DESCRIPTION, TaskStatus.PENDING, mockUserReference, FIXED_INSTANT_NOW, FIXED_INSTANT_NOW, null);
+            Task foundTask = createTaskEntity(DEFAULT_TASK_ID, DEFAULT_TASK_TITLE, DEFAULT_TASK_DESCRIPTION, TaskStatus.PENDING, mockUserReference, null);
             when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.of(foundTask));
 
             // Act
@@ -293,356 +298,186 @@ class TaskServiceTest {
         }
     }
 
-    // =====================================================================================
-    // == Тесты для метода updateTaskForCurrentUserOrThrow(Long, TaskUpdateRequest, Long)
-    // =====================================================================================
+    // =====================================================================
+    // == Тесты для updateTaskForCurrentUserOrThrow (PUT)
+    // =====================================================================
     @Nested
-    @DisplayName("updateTaskForCurrentUserOrThrow Tests")
-    class UpdateTaskForCurrentUserOrThrowTests {
+    @DisplayName("updateTaskForCurrentUserOrThrow Tests (PUT)")
+    class UpdateTaskTests {
 
         @Test
-        @DisplayName("TC_CS_UPDATE_01: Успешное обновление задачи (меняем title, description, status PENDING -> COMPLETED)")
-        void updateTask_whenValidRequestAndTaskExists_shouldUpdateAndReturnTaskResponse() {
+        @DisplayName("Успешное обновление -> должен вызвать внутренний транзакционный метод и вернуть DTO")
+        void updateTask_whenSuccessful_shouldCallInternalMethodAndReturnDto() {
             // Arrange
-            TaskUpdateRequest updateRequest = createValidTaskUpdateRequest("Updated Title", "Updated Desc", TaskStatus.COMPLETED);
+            TaskUpdateRequest request = new TaskUpdateRequest("T", "D", TaskStatus.PENDING, DEFAULT_VERSION);
+            Task updatedTask = createTaskEntity(DEFAULT_TASK_ID, "T", "D", TaskStatus.PENDING, mockUserReference, 1);
 
-            Instant initialCreatedAt = FIXED_INSTANT_NOW.minusSeconds(100);
-            Instant initialUpdatedAt = FIXED_INSTANT_NOW.minusSeconds(50); // Пусть updatedAt будет немного позже createdAt
-            Task existingTask = createTaskEntity(
-                    DEFAULT_TASK_ID,
-                    DEFAULT_TASK_TITLE,
-                    DEFAULT_TASK_DESCRIPTION,
-                    TaskStatus.PENDING,
-                    mockUserReference,
-                    initialCreatedAt,
-                    initialUpdatedAt,
-                    null // completedAt изначально null
-            );
-
-            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.of(existingTask));
+            when(selfInjectedMock.doUpdateTaskInTransaction(DEFAULT_TASK_ID, request, DEFAULT_USER_ID))
+                    .thenReturn(updatedTask);
 
             // Act
-            TaskResponse response = taskService.updateTaskForCurrentUserOrThrow(DEFAULT_TASK_ID, updateRequest, DEFAULT_USER_ID);
+            TaskResponse response = taskService.updateTaskForCurrentUserOrThrow(DEFAULT_TASK_ID, request, DEFAULT_USER_ID);
 
             // Assert
-            verify(mockTaskRepository).findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID);
-
-            assertThat(existingTask.getTitle()).isEqualTo("Updated Title");
-            assertThat(existingTask.getDescription()).isEqualTo("Updated Desc");
-            assertThat(existingTask.getStatus()).isEqualTo(TaskStatus.COMPLETED);
-            assertThat(existingTask.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW); // Установлено вручную в сервисе
-            assertThat(existingTask.getCompletedAt()).isEqualTo(FIXED_INSTANT_NOW); // Установлено через updateCompletedAtBasedOnStatus
-            assertThat(existingTask.getCreatedAt()).isEqualTo(initialCreatedAt); // Не должно меняться
-
+            verify(selfInjectedMock).doUpdateTaskInTransaction(DEFAULT_TASK_ID, request, DEFAULT_USER_ID);
             assertThat(response).isNotNull();
-            assertThat(response.getId()).isEqualTo(DEFAULT_TASK_ID);
-            assertThat(response.getTitle()).isEqualTo("Updated Title");
-            assertThat(response.getDescription()).isEqualTo("Updated Desc");
-            assertThat(response.getStatus()).isEqualTo(TaskStatus.COMPLETED);
-            assertThat(response.getUserId()).isEqualTo(DEFAULT_USER_ID);
-            assertThat(response.getCreatedAt()).isEqualTo(initialCreatedAt);
-            assertThat(response.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW);
-            assertThat(response.getCompletedAt()).isEqualTo(FIXED_INSTANT_NOW);
+            assertThat(response.getId()).isEqualTo(updatedTask.getId());
         }
 
         @Test
-        @DisplayName("TC_CS_UPDATE_02: Задача не найдена / не принадлежит пользователю")
-        void updateTask_whenTaskNotFoundOrNotBelongsToUser_shouldThrowTaskNotFoundException() {
+        @DisplayName("Конфликт блокировки при коммите -> должен выбросить ResourceConflictException")
+        void updateTask_whenOptimisticLockExceptionOnCommit_shouldThrowResourceConflictException() {
             // Arrange
-            TaskUpdateRequest updateRequest = createValidTaskUpdateRequest("Upd", "Upd", TaskStatus.PENDING);
-            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.empty());
+            TaskUpdateRequest request = new TaskUpdateRequest("T", "D", TaskStatus.PENDING, DEFAULT_VERSION);
+            when(selfInjectedMock.doUpdateTaskInTransaction(DEFAULT_TASK_ID, request, DEFAULT_USER_ID))
+                    .thenThrow(new ObjectOptimisticLockingFailureException(Task.class, DEFAULT_TASK_ID));
 
             // Act & Assert
-            assertThatThrownBy(() -> taskService.updateTaskForCurrentUserOrThrow(DEFAULT_TASK_ID, updateRequest, DEFAULT_USER_ID))
-                    .isInstanceOf(TaskNotFoundException.class);
-            verify(mockTaskRepository, never()).save(any(Task.class));
+            assertThatThrownBy(() -> taskService.updateTaskForCurrentUserOrThrow(DEFAULT_TASK_ID, request, DEFAULT_USER_ID))
+                    .isInstanceOf(ResourceConflictException.class)
+                    .hasFieldOrPropertyWithValue("conflictingResourceId", DEFAULT_TASK_ID);
         }
 
+        // Тесты для doUpdateTaskInTransaction
         @Test
-        @DisplayName("TC_CS_UPDATE_03: taskId равен null")
-        void updateTask_whenTaskIdIsNull_shouldThrowNullPointerException() {
-            TaskUpdateRequest request = createValidTaskUpdateRequest("T", "D", TaskStatus.PENDING);
-            assertThatNullPointerException()
-                    .isThrownBy(() -> taskService.updateTaskForCurrentUserOrThrow(null, request, DEFAULT_USER_ID))
-                    .withMessageContaining("taskId");
-        }
+        @DisplayName("[Internal] Несовпадение версии -> должен выбросить ResourceConflictException")
+        void doUpdateTask_whenVersionMismatch_shouldThrowResourceConflictException() {
+            // Arrange
+            Task existingTask = new Task();
+            existingTask.setVersion(1); // Версия в БД - 1
+            TaskUpdateRequest request = new TaskUpdateRequest("T", "D", TaskStatus.PENDING, 0); // Клиент шлет старую версию 0
 
-        @Test
-        @DisplayName("TC_CS_UPDATE_04: TaskUpdateRequest равен null")
-        void updateTask_whenRequestIsNull_shouldThrowNullPointerException() {
-            assertThatNullPointerException()
-                    .isThrownBy(() -> taskService.updateTaskForCurrentUserOrThrow(DEFAULT_TASK_ID, null, DEFAULT_USER_ID))
-                    .withMessageContaining("request");
-        }
+            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID))
+                    .thenReturn(Optional.of(existingTask));
 
-        @Test
-        @DisplayName("TC_CS_UPDATE_05: currentUserId равен null")
-        void updateTask_whenCurrentUserIdIsNull_shouldThrowNullPointerException() {
-            TaskUpdateRequest request = createValidTaskUpdateRequest("T", "D", TaskStatus.PENDING);
-            assertThatNullPointerException()
-                    .isThrownBy(() -> taskService.updateTaskForCurrentUserOrThrow(DEFAULT_TASK_ID, request, null))
-                    .withMessageContaining("currentUserId");
+            // Act & Assert
+            assertThatThrownBy(() -> taskService.doUpdateTaskInTransaction(DEFAULT_TASK_ID, request, DEFAULT_USER_ID))
+                    .isInstanceOf(ResourceConflictException.class);
         }
     }
 
-    // =====================================================================================
-    // == Тесты для package-private метода updateCompletedAtBasedOnStatus(Task, TaskStatus, Instant)
-    // =====================================================================================
+    // =====================================================================
+    // == Тесты для patchTask (PATCH)
+    // =====================================================================
     @Nested
-    @DisplayName("updateCompletedAtBasedOnStatus Tests (package-private)")
-    class UpdateCompletedAtBasedOnStatusTests {
+    @DisplayName("patchTask Tests (PATCH)")
+    class PatchTaskTests {
 
-        private Task task;
+        private JsonNode mockPatchNode;
 
         @BeforeEach
-        void setUpForThisNestedClass() {
-            task = new Task(); // Простая задача для тестов этого метода
-            task.setId(DEFAULT_TASK_ID);
-            // Clock уже настроен в @BeforeEach внешнего класса на FIXED_INSTANT_NOW
+        void setup() {
+            ObjectNode node = realObjectMapper.createObjectNode();
+            node.put("title", "Patched Title");
+            node.put("version", DEFAULT_VERSION);
+            mockPatchNode = node;
         }
 
         @Test
-        @DisplayName("TC_CS_PRIV_COMP_01: Старый PENDING, новый COMPLETED")
-        void updateCompletedAt_whenStatusChangesToCompleted_shouldSetCompletedAt() {
+        @DisplayName("Успешный PATCH -> должен вызвать внутренний транзакционный метод и вернуть DTO")
+        void patchTask_whenSuccessful_shouldCallInternalMethod() {
             // Arrange
-            task.setStatus(TaskStatus.PENDING);
-            task.setCompletedAt(null); // Изначально не завершена
+            Task patchedTask = createTaskEntity(DEFAULT_TASK_ID, "Patched", "D", TaskStatus.PENDING, mockUserReference, 1);
+            when(selfInjectedMock.doPatchTaskInTransaction(DEFAULT_TASK_ID, mockPatchNode, DEFAULT_USER_ID))
+                    .thenReturn(patchedTask);
 
             // Act
-            taskService.updateCompletedAtBasedOnStatus(task, TaskStatus.COMPLETED, FIXED_INSTANT_NOW);
+            TaskResponse response = taskService.patchTask(DEFAULT_TASK_ID, mockPatchNode, DEFAULT_USER_ID);
 
             // Assert
-            assertThat(task.getCompletedAt()).isEqualTo(FIXED_INSTANT_NOW);
+            verify(selfInjectedMock).doPatchTaskInTransaction(DEFAULT_TASK_ID, mockPatchNode, DEFAULT_USER_ID);
+            assertThat(response).isNotNull();
+            assertThat(response.getId()).isEqualTo(patchedTask.getId());
         }
 
         @Test
-        @DisplayName("TC_CS_PRIV_COMP_02: Старый COMPLETED, новый PENDING")
-        void updateCompletedAt_whenStatusChangesFromCompletedToPending_shouldSetCompletedAtToNull() {
+        @DisplayName("[Internal] Успешный PATCH -> должен обновить поля и вернуть сущность")
+        void doPatchTask_whenValidPatch_shouldUpdateFieldsAndReturnEntity() {
             // Arrange
-            task.setStatus(TaskStatus.COMPLETED);
-            task.setCompletedAt(FIXED_INSTANT_NOW.minusSeconds(10)); // Была завершена ранее
+            Task existingTask = createTaskEntity(DEFAULT_TASK_ID, "Original Title", "Original Desc", TaskStatus.PENDING, mockUserReference, DEFAULT_VERSION);
+            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID))
+                    .thenReturn(Optional.of(existingTask));
 
             // Act
-            taskService.updateCompletedAtBasedOnStatus(task, TaskStatus.PENDING, FIXED_INSTANT_NOW);
+            Task response = taskService.doPatchTaskInTransaction(DEFAULT_TASK_ID, mockPatchNode, DEFAULT_USER_ID);
 
             // Assert
-            assertThat(task.getCompletedAt()).isNull();
+            assertThat(response.getTitle()).isEqualTo("Patched Title");
+            assertThat(response.getDescription()).isEqualTo("Original Desc");
         }
 
         @Test
-        @DisplayName("TC_CS_PRIV_COMP_03: Старый COMPLETED, новый COMPLETED")
-        void updateCompletedAt_whenStatusIsCompletedAndRemainsCompleted_shouldNotChangeCompletedAt() {
+        @DisplayName("[Internal] PATCH без версии -> должен выбросить ConstraintViolationException")
+        void doPatchTask_whenVersionIsMissing_shouldThrowConstraintViolationException() {
             // Arrange
-            Instant previousCompletedAt = FIXED_INSTANT_NOW.minusSeconds(60);
-            task.setStatus(TaskStatus.COMPLETED);
-            task.setCompletedAt(previousCompletedAt);
+            Task existingTask = new Task();
+            existingTask.setVersion(DEFAULT_VERSION);
+            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID))
+                    .thenReturn(Optional.of(existingTask));
 
-            // Act
-            taskService.updateCompletedAtBasedOnStatus(task, TaskStatus.COMPLETED, FIXED_INSTANT_NOW);
-
-            // Assert
-            assertThat(task.getCompletedAt()).isEqualTo(previousCompletedAt); // Не должно измениться
-        }
-
-        @Test
-        @DisplayName("TC_CS_PRIV_COMP_04: Старый PENDING, новый PENDING")
-        void updateCompletedAt_whenStatusIsPendingAndRemainsPending_shouldNotChangeCompletedAt() {
-            // Arrange
-            task.setStatus(TaskStatus.PENDING);
-            task.setCompletedAt(null);
-
-            // Act
-            taskService.updateCompletedAtBasedOnStatus(task, TaskStatus.PENDING, FIXED_INSTANT_NOW);
-
-            // Assert
-            assertThat(task.getCompletedAt()).isNull(); // Должно остаться null
-        }
-
-        @Test
-        @DisplayName("TC_CS_PRIV_COMP_05: task равен null")
-        void updateCompletedAt_whenTaskIsNull_shouldThrowNullPointerException() {
-            assertThatNullPointerException()
-                    .isThrownBy(() -> taskService.updateCompletedAtBasedOnStatus(null, TaskStatus.COMPLETED, FIXED_INSTANT_NOW))
-                    .withMessageContaining("task");
-        }
-
-        @Test
-        @DisplayName("TC_CS_PRIV_COMP_06: newStatus равен null")
-        void updateCompletedAt_whenNewStatusIsNull_shouldThrowNullPointerException() {
-            assertThatNullPointerException()
-                    .isThrownBy(() -> taskService.updateCompletedAtBasedOnStatus(task, null, FIXED_INSTANT_NOW))
-                    .withMessageContaining("newStatus");
-        }
-
-        @Test
-        @DisplayName("TC_CS_PRIV_COMP_07: timestamp равен null")
-        void updateCompletedAt_whenTimestampIsNull_shouldThrowNullPointerException() {
-            assertThatNullPointerException()
-                    .isThrownBy(() -> taskService.updateCompletedAtBasedOnStatus(task, TaskStatus.COMPLETED, null))
-                    .withMessageContaining("timestamp");
-        }
-
-        @Test
-        @DisplayName("TC_CS_PRIV_COMP_08: task.getStatus() (старый статус) равен null")
-        void updateCompletedAt_whenTaskOldStatusIsNull_shouldThrowNullPointerException() {
-            // Arrange
-            task.setStatus(null); // Устанавливаем старый статус в null
+            ObjectNode patchWithoutVersion = new ObjectMapper().createObjectNode();
+            patchWithoutVersion.put("title", "New Title");
 
             // Act & Assert
-            assertThatNullPointerException()
-                    .isThrownBy(() -> taskService.updateCompletedAtBasedOnStatus(task, TaskStatus.COMPLETED, FIXED_INSTANT_NOW))
-                    .withMessage("Old status of the task cannot be null when updating completedAt.");
-        }
-    }
-
-    // =====================================================================================
-    // == Тесты для метода updateTaskStatusForCurrentUserOrThrow(Long, TaskStatusUpdateRequest, Long)
-    // =====================================================================================
-    @Nested
-    @DisplayName("updateTaskStatusForCurrentUserOrThrow Tests")
-    class UpdateTaskStatusForCurrentUserOrThrowTests {
-
-        @Test
-        @DisplayName("TC_CS_UPD_STATUS_01: Успешное обновление статуса PENDING -> COMPLETED")
-        void updateTaskStatus_whenPendingToCompleted_shouldUpdateStatusAndCompletedAt() {
-            // Arrange
-            TaskStatusUpdateRequest updateRequest = new TaskStatusUpdateRequest(TaskStatus.COMPLETED);
-            Task existingTask = createTaskEntity(
-                    DEFAULT_TASK_ID, DEFAULT_TASK_TITLE, null, TaskStatus.PENDING,
-                    mockUserReference, FIXED_INSTANT_NOW.minusSeconds(10), FIXED_INSTANT_NOW.minusSeconds(5), null
-            );
-            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.of(existingTask));
-            // Clock мокируется в @BeforeEach внешнего класса на FIXED_INSTANT_NOW
-
-            // Act
-            TaskResponse response = taskService.updateTaskStatusForCurrentUserOrThrow(DEFAULT_TASK_ID, updateRequest, DEFAULT_USER_ID);
-
-            // Assert
-            verify(mockTaskRepository).findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID);
-            // Проверяем, что сущность была изменена правильно перед маппингом (save не вызывается)
-            assertThat(existingTask.getStatus()).isEqualTo(TaskStatus.COMPLETED);
-            assertThat(existingTask.getCompletedAt()).isEqualTo(FIXED_INSTANT_NOW); // Установлено текущим временем из Clock
-            assertThat(existingTask.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW);   // Обновлено
-
-            assertThat(response.getStatus()).isEqualTo(TaskStatus.COMPLETED);
-            assertThat(response.getCompletedAt()).isEqualTo(FIXED_INSTANT_NOW);
-            assertThat(response.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW);
+            assertThatThrownBy(() -> taskService.doPatchTaskInTransaction(DEFAULT_TASK_ID, patchWithoutVersion, DEFAULT_USER_ID))
+                    .isInstanceOf(ConstraintViolationException.class)
+                    .hasMessageContaining("version");
         }
 
         @Test
-        @DisplayName("TC_CS_UPD_STATUS_02: Успешное обновление статуса COMPLETED -> PENDING")
-        void updateTaskStatus_whenCompletedToPending_shouldUpdateStatusAndResetCompletedAt() {
+        @DisplayName("[Internal] PATCH с невалидным полем -> должен выбросить ConstraintViolationException")
+        void doPatchTask_whenPatchMakesEntityInvalid_shouldThrowConstraintViolationException() {
             // Arrange
-            TaskStatusUpdateRequest updateRequest = new TaskStatusUpdateRequest(TaskStatus.PENDING);
-            Instant previousCompletedAt = FIXED_INSTANT_NOW.minusSeconds(100);
-            Task existingTask = createTaskEntity(
-                    DEFAULT_TASK_ID, DEFAULT_TASK_TITLE, null, TaskStatus.COMPLETED,
-                    mockUserReference, FIXED_INSTANT_NOW.minusSeconds(200), previousCompletedAt, previousCompletedAt
-            );
-            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.of(existingTask));
+            Task existingTask = new Task();
+            existingTask.setVersion(DEFAULT_VERSION);
+            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID))
+                    .thenReturn(Optional.of(existingTask));
 
-            // Act
-            TaskResponse response = taskService.updateTaskStatusForCurrentUserOrThrow(DEFAULT_TASK_ID, updateRequest, DEFAULT_USER_ID);
-
-            // Assert
-            assertThat(existingTask.getStatus()).isEqualTo(TaskStatus.PENDING);
-            assertThat(existingTask.getCompletedAt()).isNull(); // Должно быть сброшено
-            assertThat(existingTask.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW);
-
-            assertThat(response.getStatus()).isEqualTo(TaskStatus.PENDING);
-            assertThat(response.getCompletedAt()).isNull();
-        }
-
-        @Test
-        @DisplayName("TC_CS_UPD_STATUS_03: Статус не меняется (PENDING -> PENDING)")
-        void updateTaskStatus_whenStatusDoesNotChangePending_shouldOnlyUpdateUpdatedAt() {
-            // Arrange
-            TaskStatusUpdateRequest updateRequest = new TaskStatusUpdateRequest(TaskStatus.PENDING);
-            Task existingTask = createTaskEntity(
-                    DEFAULT_TASK_ID, DEFAULT_TASK_TITLE, null, TaskStatus.PENDING,
-                    mockUserReference, FIXED_INSTANT_NOW.minusSeconds(100), FIXED_INSTANT_NOW.minusSeconds(50), null
-            );
-            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.of(existingTask));
-
-            // Act
-            TaskResponse response = taskService.updateTaskStatusForCurrentUserOrThrow(DEFAULT_TASK_ID, updateRequest, DEFAULT_USER_ID);
-
-            // Assert
-            assertThat(existingTask.getStatus()).isEqualTo(TaskStatus.PENDING);
-            assertThat(existingTask.getCompletedAt()).isNull();
-            assertThat(existingTask.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW); // updatedAt все равно обновляется
-
-            assertThat(response.getStatus()).isEqualTo(TaskStatus.PENDING);
-            assertThat(response.getCompletedAt()).isNull();
-        }
-
-        @Test
-        @DisplayName("TC_CS_UPD_STATUS_04: Статус не меняется (COMPLETED -> COMPLETED)")
-        void updateTaskStatus_whenStatusDoesNotChangeCompleted_shouldOnlyUpdateUpdatedAt() {
-            // Arrange
-            TaskStatusUpdateRequest updateRequest = new TaskStatusUpdateRequest(TaskStatus.COMPLETED);
-            Instant previousCompletedAt = FIXED_INSTANT_NOW.minusSeconds(100);
-            Task existingTask = createTaskEntity(
-                    DEFAULT_TASK_ID, DEFAULT_TASK_TITLE, null, TaskStatus.COMPLETED,
-                    mockUserReference, FIXED_INSTANT_NOW.minusSeconds(200), previousCompletedAt, previousCompletedAt
-            );
-            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.of(existingTask));
-
-            // Act
-            TaskResponse response = taskService.updateTaskStatusForCurrentUserOrThrow(DEFAULT_TASK_ID, updateRequest, DEFAULT_USER_ID);
-
-            // Assert
-            assertThat(existingTask.getStatus()).isEqualTo(TaskStatus.COMPLETED);
-            assertThat(existingTask.getCompletedAt()).isEqualTo(previousCompletedAt); // Не должно измениться
-            assertThat(existingTask.getUpdatedAt()).isEqualTo(FIXED_INSTANT_NOW); // updatedAt обновляется
-
-            assertThat(response.getStatus()).isEqualTo(TaskStatus.COMPLETED);
-            assertThat(response.getCompletedAt()).isEqualTo(previousCompletedAt);
-        }
-
-
-        @Test
-        @DisplayName("TC_CS_UPD_STATUS_05: Задача не найдена / не принадлежит пользователю -> должен выбросить TaskNotFoundException")
-        void updateTaskStatus_whenTaskNotFound_shouldThrowTaskNotFoundException() {
-            // Arrange
-            TaskStatusUpdateRequest updateRequest = new TaskStatusUpdateRequest(TaskStatus.COMPLETED);
-            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID)).thenReturn(Optional.empty());
+            ObjectNode patchWithInvalidTitle = new ObjectMapper().createObjectNode();
+            patchWithInvalidTitle.put("title", ""); // Пустой title невалиден
+            patchWithInvalidTitle.put("version", DEFAULT_VERSION);
 
             // Act & Assert
-            assertThatThrownBy(() -> taskService.updateTaskStatusForCurrentUserOrThrow(DEFAULT_TASK_ID, updateRequest, DEFAULT_USER_ID))
-                    .isInstanceOf(TaskNotFoundException.class);
+            assertThatThrownBy(() -> taskService.doPatchTaskInTransaction(DEFAULT_TASK_ID, patchWithInvalidTitle, DEFAULT_USER_ID))
+                    .isInstanceOf(ConstraintViolationException.class)
+                    .hasMessageContaining("title");
         }
 
         @Test
-        @DisplayName("TC_CS_UPD_STATUS_06: TaskStatusUpdateRequest null -> должен выбросить NullPointerException")
-        void updateTaskStatus_whenRequestIsNull_shouldThrowNullPointerException() {
-            assertThatNullPointerException()
-                    .isThrownBy(() -> taskService.updateTaskStatusForCurrentUserOrThrow(DEFAULT_TASK_ID, null, DEFAULT_USER_ID))
-                    .withMessageContaining("request");
-        }
-
-        @Test
-        @DisplayName("TC_CS_UPD_STATUS_07: taskId null -> должен выбросить NullPointerException")
-        void updateTaskStatus_whenTaskIdIsNull_shouldThrowNullPointerException() {
+        @DisplayName("[Internal] PATCH с невалидным значением Enum -> должен выбросить HttpMessageConversionException")
+        void doPatchTask_whenEnumIsInvalid_shouldThrowHttpMessageConversionException() {
             // Arrange
-            TaskStatusUpdateRequest validRequest = new TaskStatusUpdateRequest(TaskStatus.PENDING);
+            Task existingTask = createTaskEntity(DEFAULT_TASK_ID, "T", "D", TaskStatus.PENDING, mockUserReference, DEFAULT_VERSION);
+            when(mockTaskRepository.findByIdAndUserId(DEFAULT_TASK_ID, DEFAULT_USER_ID))
+                    .thenReturn(Optional.of(existingTask));
+
+            ObjectNode patchWithInvalidEnum = realObjectMapper.createObjectNode();
+            patchWithInvalidEnum.put("status", "INVALID_STATUS");
+            patchWithInvalidEnum.put("version", DEFAULT_VERSION);
 
             // Act & Assert
-            assertThatNullPointerException()
-                    .isThrownBy(() -> taskService.updateTaskStatusForCurrentUserOrThrow(null, validRequest, DEFAULT_USER_ID))
-                    .withMessageContaining("taskId"); // Проверяем имя параметра из @NonNull
+            assertThatThrownBy(() -> taskService.doPatchTaskInTransaction(DEFAULT_TASK_ID, patchWithInvalidEnum, DEFAULT_USER_ID))
+                    .isInstanceOf(HttpMessageConversionException.class)
+                    .hasMessageContaining("Invalid patch data");
         }
 
         @Test
-        @DisplayName("TC_CS_UPD_STATUS_08: currentUserId null -> должен выбросить NullPointerException")
-        void updateTaskStatus_whenCurrentUserIdIsNull_shouldThrowNullPointerException() {
+        @DisplayName("Конфликт блокировки при коммите -> должен выбросить ResourceConflictException")
+        void patchTask_whenOptimisticLockExceptionOnCommit_shouldBeCaughtAndRethrownAsResourceConflict() {
             // Arrange
-            TaskStatusUpdateRequest validRequest = new TaskStatusUpdateRequest(TaskStatus.PENDING);
+            // Настраиваем self-инъекцию так, чтобы она выбрасывала исключение,
+            // которое Spring выбрасывает при коммите транзакции для внутреннего метода
+            when(selfInjectedMock.doPatchTaskInTransaction(anyLong(), any(JsonNode.class), anyLong()))
+                    .thenThrow(new ObjectOptimisticLockingFailureException(Task.class, DEFAULT_TASK_ID));
 
             // Act & Assert
-            assertThatNullPointerException()
-                    .isThrownBy(() -> taskService.updateTaskStatusForCurrentUserOrThrow(DEFAULT_TASK_ID, validRequest, null))
-                    .withMessageContaining("currentUserId"); // Проверяем имя параметра из @NonNull
+            // Проверяем, что публичный метод-обертка patchTask правильно обрабатывает это исключение
+            assertThatThrownBy(() -> taskService.patchTask(DEFAULT_TASK_ID, mockPatchNode, DEFAULT_USER_ID))
+                    .isInstanceOf(ResourceConflictException.class)
+                    .extracting("conflictingResourceId").isEqualTo(DEFAULT_TASK_ID);
+
+            // Убеждаемся, что вызов был делегирован внутреннему методу
+            verify(selfInjectedMock).doPatchTaskInTransaction(DEFAULT_TASK_ID, mockPatchNode, DEFAULT_USER_ID);
         }
     }
 

@@ -71,7 +71,7 @@ window.tasks = {
     ensureLatest: function(taskId) {
         return window.taskTrackerApi.getTaskById(taskId)
             .done((freshTask) => {
-                this._addOrUpdate(freshTask);
+                window.tasksStore._addOrUpdate(freshTask);
             });
     }
 };
@@ -206,7 +206,7 @@ function setupTaskHandlers() {
         window.tasks.ensureLatest(taskId)
             .done((freshTask) => {
                 window.tasksUi.showEditModal(freshTask);
-                _setupEditModalHandlers(freshTask); // Привязываем обработчики
+                _setupEditModalHandlers();
             })
             .fail(() => {
                 window.tasksStore._remove(taskId);
@@ -216,252 +216,155 @@ function setupTaskHandlers() {
 
     /**
      * Привязывает все обработчики событий к элементам внутри модального окна.
-     * @param {object} task - Объект задачи, для которой открыто окно.
+     * Эта функция инкапсулирует всю сложную логику "live save" и обработки ошибок.
      * @private
      */
-    function _setupEditModalHandlers(task) {
-        console.log(`Setting up handlers for task ${task.id}`);
-
-        // --- Закрытие окна ---
-        $taskEditModal.find('#closeEditModalBtn, .close-modal-btn').on('click.editModal', _closeEditModal);
-
-        let mousedownOnBackdrop = false;
-        $taskEditModal.on('mousedown.editModal', function(event) {
-            mousedownOnBackdrop = (event.target === this);
-        }).on('mouseup.editModal', function(event) {
-            if (mousedownOnBackdrop && event.target === this) { _closeEditModal(); }
-            mousedownOnBackdrop = false;
-        });
-
-        // --- Обработчики действий ---
-        _setupLiveSaveHandlers();
-        _setupEditModalActions();
-    }
-
-    /**
-     * Настраивает "live save" для полей title и description в модальном окне.
-     * Использует debounce для предотвращения частых запросов и батчинг
-     * для отправки всех изменений одним запросом.
-     * @private
-     */
-    function _setupLiveSaveHandlers() {
+    function _setupEditModalHandlers() {
         const $form = $taskEditModal.find('form');
         const $titleInput = $taskEditModal.find('#editTaskTitle');
         const $descriptionInput = $taskEditModal.find('#editTaskDescription');
+        const $statusCheckbox = $taskEditModal.find('#editTaskStatus');
+        const $deleteBtn = $taskEditModal.find('#deleteTaskInModalBtn');
 
-        let pendingChanges = {}; // Объект для накопления изменений
+        let pendingChanges = {};
         let debounceTimer = null;
-        const DEBOUNCE_DELAY = 750; // мс
+        const DEBOUNCE_DELAY = 750;
 
         let isSaving = false;
-        let hasUnsentChanges = false;
         let isConflictActive = false;
+        let conflictRetryCount = 0;
+        const MAX_CONFLICT_RETRIES = 2;
 
-        /**
-         * Утилита debounce.
-         */
-        function _debounce(func, delay) {
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(func, delay);
+        function _debounce(func, delay) { clearTimeout(debounceTimer); debounceTimer = setTimeout(func, delay); }
+
+        function _resetStateAfterConflict() {
+            isConflictActive = false;
+            conflictRetryCount = 0;
+            pendingChanges = {};
+            window.tasksUi.hideConflictResolver();
+            $titleInput.prop('disabled', false);
+            $descriptionInput.prop('disabled', false);
+            $statusCheckbox.prop('disabled', false);
         }
 
-        /**
-         * Пытается запустить отправку изменений.
-         * Если сохранение уже идет, просто выставляет флаг.
-         */
-        function _tryToCommitChanges() {
-            if (isSaving || hasUnsentChanges) {
-                hasUnsentChanges = true;
-                console.log("Save in progress. Queuing subsequent changes.");
+        function _handleConflict(failedPayload) {
+            isConflictActive = true;
+            conflictRetryCount++;
+
+            $('#overwriteBtn, #revertBtn').off('.editModal');
+
+            if (conflictRetryCount > MAX_CONFLICT_RETRIES) {
+                window.ui.showToastNotification("Не удалось сохранить: слишком много конфликтов. Пожалуйста, закройте и снова откройте окно.", "error");
+                _resetStateAfterConflict();
                 return;
             }
-            _commitPendingChanges();
-        }
-
-        /**
-         * Обрабатывает 409 Conflict.
-         */
-        function _handleConflict(conflictingChanges) {
-            isConflictActive = true;
-            window.tasksUi.hideSaveIndicator();
-            window.ui.showToastNotification("Обнаружен конфликт обновления!", "warning");
 
             const taskId = $form.data('originalTask').id;
-
             window.tasks.ensureLatest(taskId)
                 .done((freshTask) => {
-                    const localChanges = {
+                    const localState = {
                         title: $titleInput.val(),
                         description: $descriptionInput.val(),
-                        status: $taskEditModal.find('#editTaskStatus').is(':checked') ? 'COMPLETED' : 'PENDING'
+                        status: $statusCheckbox.is(':checked') ? 'COMPLETED' : 'PENDING'
                     };
-                    window.tasksUi.showConflictResolver(taskId, localChanges, freshTask);
+                    window.tasksUi.showConflictResolver(taskId,localState, freshTask);
 
-                    // Привязываем обработчики к новым кнопкам
                     $('#overwriteBtn').on('click.editModal', function() {
-                        $(this).prop('disabled', true);
-                        const dataToSend = { ...localChanges, version: freshTask.version };
-                        window.tasks.patch(taskId, dataToSend)
-                            .done(() => {
-                                window.tasksUi.hideConflictResolver();
-                                isConflictActive = false;
-                            })
-                            .fail(() => { /* TODO: FT-LS-RETRY-02 */ window.ui.showToastNotification("Не удалось сохранить.", "error"); });
+                        const dataToSend = { ...localState, version: freshTask.version };
+                        _commitSinglePatch(dataToSend);
                     });
-
                     $('#revertBtn').on('click.editModal', function() {
-                        // Обновляем UI и локальное состояние, включаем live-save обратно
                         $titleInput.val(freshTask.title);
                         $descriptionInput.val(freshTask.description || '');
-                        $taskEditModal.find('#editTaskStatus').prop('checked', freshTask.status === 'COMPLETED');
+                        $statusCheckbox.prop('checked', freshTask.status === 'COMPLETED');
                         $form.data('originalTask', freshTask);
-                        window.tasksUi.hideConflictResolver();
-                        isConflictActive = false;
+                        window.tasksStore._addOrUpdate(freshTask);
+                        _resetStateAfterConflict();
                     });
                 })
-                .fail(() => { /* TODO: FT-LS-RETRY-01 */ window.ui.showToastNotification("Не удалось загрузить данные для разрешения конфликта.", "error"); });
+                .fail(() => { window.ui.showToastNotification("Ошибка загрузки актуальных данных для разрешения конфликта.", "error"); });
         }
 
-        /**
-         * Отправляет накопленные изменения на сервер.
-         */
-        function _commitPendingChanges() {
-            const originalTask = $form.data('originalTask');
-            if (!originalTask || Object.keys(pendingChanges).length === 0) {
-                return; // Нечего отправлять
-            }
-
+        function _commitSinglePatch(payload) {
+            const taskId = $form.data('originalTask').id;
             isSaving = true;
             window.tasksUi.showSavingIndicator();
 
-            const changesToSend = { ...pendingChanges };
-            pendingChanges = {};
-            hasUnsentChanges = false;
-
-            const taskId = originalTask.id;
-            const payload = { ...changesToSend, version: originalTask.version };
-
-
-            window.tasks.patch(taskId, payload)
-                .done((updatedTask) => {
-                    console.log(`Task ${taskId} saved successfully. New version: ${updatedTask.version}`);
-                    // 1. Обновляем наш "якорь" с последней успешной версией
+            return window.tasks.patch(taskId, payload)
+                .done(updatedTask => {
                     $form.data('originalTask', updatedTask);
-                    // 2. Показываем фидбэк
                     window.tasksUi.showSavedIndicator();
-                    // 3. Store уже обновился внутри tasks.patch().done()
+                    _resetStateAfterConflict(); // Сбрасываем состояние конфликта при успехе
                 })
-                .fail((jqXHR) => {
-                    // TODO: FT-LS-03, FT-LS-04 - Обработка ошибок
-                    pendingChanges = { ...changesToSend, ...pendingChanges };
+                .fail(jqXHR => {
                     window.tasksUi.hideSaveIndicator();
                     if (jqXHR.status === 409) {
-                        _handleConflict(changesToSend);
-                    } else if (jqXHR.status === 400) {
+                        _handleConflict(payload);
+                    } else if (jqXHR.status === 400 && jqXHR.responseJSON?.invalidParams) {
                         window.ui.applyValidationErrors($form, jqXHR.responseJSON.invalidParams);
                     } else {
                         window.ui.showToastNotification("Не удалось сохранить.", "error");
                     }
                 })
-                .always(() => {
-                    isSaving = false;
-                    // Если за время запроса накопились новые изменения,
-                    // сразу же пытаемся их отправить.
-                    if (hasUnsentChanges) {
-                        _tryToCommitChanges();
-                    }
-                });
+                .always(() => { isSaving = false; });
         }
 
-        // --- Привязка обработчиков ---
-        $titleInput.on('input.editModal', () => {
+        function _commitPendingChanges() {
             const originalTask = $form.data('originalTask');
-            const currentValue = $titleInput.val();
-            if (originalTask.title !== currentValue) {
-                pendingChanges.title = currentValue;
-                _debounce(_tryToCommitChanges, DEBOUNCE_DELAY);
-            }
+            if (!originalTask || Object.keys(pendingChanges).length === 0) return $.Deferred().resolve().promise();
+
+            const payload = { ...pendingChanges, version: originalTask.version };
+            pendingChanges = {};
+
+            return _commitSinglePatch(payload);
+        }
+
+        function _tryToCommitChanges() {
+            if (isSaving || isConflictActive) return;
+            _commitPendingChanges();
+        }
+
+        // --- Привязка обработчиков с неймспейсом '.editModal' ---
+        $taskEditModal.find('#closeEditModalBtn, .close-modal-btn').on('click.editModal', _closeEditModal);
+
+        let mousedownOnBackdrop = false;
+        $taskEditModal.on('mousedown.editModal', function(event) { mousedownOnBackdrop = (event.target === this); })
+            .on('mouseup.editModal', function(event) { if (mousedownOnBackdrop && event.target === this) { _closeEditModal(); } mousedownOnBackdrop = false; });
+
+        $titleInput.on('input.editModal', function() {
+            window.ui.clearFormErrors($form);
+            pendingChanges.title = $(this).val();
+            _debounce(_tryToCommitChanges, DEBOUNCE_DELAY);
         });
 
-        $descriptionInput.on('input.editModal', () => {
-            const originalTask = $form.data('originalTask');
-            const currentValue = $descriptionInput.val();
-            if (originalTask.description !== currentValue) {
-                pendingChanges.description = currentValue;
-                _debounce(_tryToCommitChanges, DEBOUNDE_DELAY);
-            }
+        $descriptionInput.on('input.editModal', function() {
+            window.ui.clearFormErrors($form);
+            pendingChanges.description = $(this).val();
+            _debounce(_tryToCommitChanges, DEBOUNCE_DELAY);
         });
-    }
 
-    /**
-     * Настраивает действия для кнопок внутри модального окна (статус, удаление).
-     * @private
-     */
-    function _setupEditModalActions() {
-        const $form = $taskEditModal.find('form');
-        const $statusCheckbox = $taskEditModal.find('#editTaskStatus');
-        const $deleteBtn = $taskEditModal.find('#deleteTaskInModalBtn');
-
-        // --- Обработчик для ЧЕКБОКСА СТАТУСА ---
         $statusCheckbox.on('change.editModal', function() {
-            const $checkbox = $(this);
-            const originalTask = $form.data('originalTask');
-            const taskId = originalTask.id;
-            const newStatus = $checkbox.is(':checked') ? 'COMPLETED' : 'PENDING';
-
-            $checkbox.prop('disabled', true);
-            window.tasksUi.showSavingIndicator();
-
-            const payload = {
-                status: newStatus,
-                version: originalTask.version
-            };
-
-            window.tasks.patch(taskId, payload)
-                .done((updatedTask) => {
-                    $form.data('originalTask', updatedTask);
-                    window.tasksUi.showSavedIndicator();
-                    // UI основного списка обновится сам через событие `task:status-changed`
-                })
-                .fail((jqXHR) => {
-                    // Откатываем чекбокс в исходное состояние
-                    $checkbox.prop('checked', !$checkbox.is(':checked'));
-                    window.tasksUi.hideSaveIndicator();
-
-                    if (jqXHR.status === 409) {
-                        // Для простоты MVP, при конфликте статуса мы просто сообщаем об ошибке
-                        // и предлагаем переоткрыть окно.
-                        alert("Не удалось изменить статус: задача была обновлена другим пользователем. Пожалуйста, закройте и снова откройте окно редактирования.");
-                    } else {
-                        window.ui.showToastNotification("Не удалось изменить статус.", "error");
-                    }
-                })
-                .always(() => {
-                    $checkbox.prop('disabled', false);
-                });
-        });
-
-        // --- Обработчик для КНОПКИ УДАЛЕНИЯ ---
-        $deleteBtn.on('click.editModal', function() {
-            const $button = $(this);
-            const originalTask = $form.data('originalTask');
-            const taskId = originalTask.id;
-
-            if (!window.confirm(`Вы уверены, что хотите удалить задачу "${originalTask.title}"?`)) {
+            if (isSaving || isConflictActive) {
+                $(this).prop('checked', !$(this).is(':checked'));
+                window.ui.showToastNotification("Пожалуйста, подождите завершения сохранения.", "info");
                 return;
             }
+            clearTimeout(debounceTimer);
+            pendingChanges.status = $(this).is(':checked') ? 'COMPLETED' : 'PENDING';
+            _commitPendingChanges().fail(() => {
+                const taskInStore = window.tasksStore.get($form.data('originalTask').id);
+                if (taskInStore) { $(this).prop('checked', taskInStore.status === 'COMPLETED'); }
+            });
+        });
 
-            $button.prop('disabled', true);
+        $deleteBtn.on('click.editModal', function() {
+            const originalTask = $form.data('originalTask');
+            if (!window.confirm(`Вы уверены, что хотите удалить задачу "${originalTask.title}"?`)) return;
 
-            window.tasks.delete(taskId)
-                .done(() => {
-                    window.ui.showToastNotification("Задача успешно удалена.", "success");
-                    _closeEditModal(); // Закрываем окно после успешного удаления
-                })
-                .fail(() => {
-                    window.ui.showToastNotification("Не удалось удалить задачу.", "error");
-                    $button.prop('disabled', false);
-                });
+            $(this).prop('disabled', true);
+            window.tasks.delete(originalTask.id)
+                .done(() => { _closeEditModal(); window.ui.showToastNotification("Задача удалена.", "success"); })
+                .fail(() => { $(this).prop('disabled', false); window.ui.showToastNotification("Не удалось удалить задачу.", "error"); });
         });
     }
 

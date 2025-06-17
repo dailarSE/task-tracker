@@ -2,24 +2,33 @@ package com.example.tasktracker.backend.task.service;
 
 import com.example.tasktracker.backend.task.dto.TaskCreateRequest;
 import com.example.tasktracker.backend.task.dto.TaskResponse;
-import com.example.tasktracker.backend.task.dto.TaskStatusUpdateRequest;
 import com.example.tasktracker.backend.task.dto.TaskUpdateRequest;
 import com.example.tasktracker.backend.task.entity.Task;
 import com.example.tasktracker.backend.task.entity.TaskStatus;
 import com.example.tasktracker.backend.task.exception.TaskNotFoundException;
 import com.example.tasktracker.backend.task.repository.TaskRepository;
 import com.example.tasktracker.backend.user.repository.UserRepository;
+import com.example.tasktracker.backend.web.exception.ResourceConflictException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Validator;
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -30,19 +39,34 @@ import java.util.stream.Collectors;
  * и {@link UserRepository}.
  * </p>
  * <p>
- * Все публичные методы, изменяющие состояние данных (например, создание, обновление, удаление),
- * должны быть транзакционными.
+ * Транзакционная семантика класса по умолчанию {@code readOnly = true}.
+ * Методы, изменяющие состояние, аннотированы {@code @Transactional} отдельно.
+ * Публичные методы, изменяющие состояние, реализованы как не-транзакционные обертки,
+ * делегирующие выполнение в защищенные транзакционные методы для корректной
+ * обработки исключений, возникающих на этапе коммита (например, {@link ObjectOptimisticLockingFailureException}).
  * </p>
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 @Transactional(readOnly = true)
 public class TaskService {
 
+    private final TaskService self;
     private final TaskRepository taskRepository;
     private final UserRepository userRepository;
+    private final ObjectMapper objectMapper;
+    private final Validator validator;
     private final Clock clock;
+
+    public TaskService(@Lazy TaskService self, TaskRepository taskRepository, UserRepository userRepository,
+                       ObjectMapper objectMapper, Validator validator, Clock clock) {
+        this.self = self;
+        this.taskRepository = taskRepository;
+        this.userRepository = userRepository;
+        this.objectMapper = objectMapper;
+        this.validator = validator;
+        this.clock = clock;
+    }
 
     /**
      * Создает новую задачу для указанного пользователя.
@@ -127,27 +151,39 @@ public class TaskService {
     }
 
     /**
-     * Обновляет существующую задачу для текущего аутентифицированного пользователя.
-     * Позволяет изменить заголовок, описание и статус задачи.
+     * Публичный метод-обертка для полного обновления задачи.
      * <p>
-     * Если статус задачи меняется на {@link TaskStatus#COMPLETED}, поле {@code completedAt}
-     * устанавливается в текущее время. Если статус меняется с {@link TaskStatus#COMPLETED}
-     * на {@link TaskStatus#PENDING}, поле {@code completedAt} сбрасывается в {@code null}.
+     * Вызывает транзакционный метод и перехватывает {@link ObjectOptimisticLockingFailureException},
+     * преобразуя его в доменное исключение {@link ResourceConflictException}.
      * </p>
      *
-     * @param taskId        ID задачи, которую необходимо обновить. Не должен быть {@code null}.
-     * @param request       DTO {@link TaskUpdateRequest} с новыми данными для задачи. Не должен быть {@code null}.
-     *                      Все поля в DTO (title, description, status) будут применены к задаче.
-     * @param currentUserId ID текущего аутентифицированного пользователя, который должен быть владельцем задачи.
-     *                      Не должен быть {@code null}.
-     * @return {@link TaskResponse} DTO, представляющий обновленную задачу.
-     * @throws TaskNotFoundException если задача с указанным {@code taskId} не найдена для {@code currentUserId}
-     *                               или вообще не существует.
-     * @throws NullPointerException  если любой из аргументов {@code taskId}, {@code request},
-     *                               или {@code currentUserId} равен {@code null}.
+     * @param taskId        ID задачи для обновления.
+     * @param request       DTO с полным набором данных для обновления.
+     * @param currentUserId ID текущего пользователя.
+     * @return DTO с обновленными данными задачи.
+     */
+    @Transactional(propagation = Propagation.NEVER)
+    public TaskResponse updateTaskForCurrentUserOrThrow(@NonNull Long taskId,
+                                                        @NonNull TaskUpdateRequest request,
+                                                        @NonNull Long currentUserId) {
+        try {
+            return self.doUpdateTaskInTransaction(taskId, request, currentUserId);
+        } catch (ObjectOptimisticLockingFailureException e) {
+            log.warn("Optimistic lock conflict for task ID: {} during PUT. Triggered at commit time.", taskId, e);
+            throw new ResourceConflictException(taskId);
+        }
+    }
+
+    /**
+     * Внутренний транзакционный метод для полного обновления задачи.
+     *
+     * @param taskId        ID задачи.
+     * @param request       DTO с данными для обновления.
+     * @param currentUserId ID пользователя.
+     * @return DTO с обновленными данными.
      */
     @Transactional
-    public TaskResponse updateTaskForCurrentUserOrThrow(@NonNull Long taskId,
+    TaskResponse doUpdateTaskInTransaction(@NonNull Long taskId,
                                                         @NonNull TaskUpdateRequest request,
                                                         @NonNull Long currentUserId) {
         log.debug("Attempting to update task with ID: {} for user ID: {} with new title: '{}', status: {}",
@@ -160,9 +196,16 @@ public class TaskService {
                     return new TaskNotFoundException(taskId, currentUserId);
                 });
 
+        if (!taskToUpdate.getVersion().equals(request.getVersion())) {
+            log.warn("Optimistic lock conflict for task ID: {}. Persistent version: {}, request version: {}",
+                    taskId, taskToUpdate.getVersion(), request.getVersion());
+            throw new ResourceConflictException(taskId);
+        }
+
         // Обновляем поля
         taskToUpdate.setTitle(request.getTitle());
         taskToUpdate.setDescription(request.getDescription());
+        taskToUpdate.setVersion(request.getVersion());
 
         Instant now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
 
@@ -178,48 +221,86 @@ public class TaskService {
     }
 
     /**
-     * Обновляет статус существующей задачи для текущего аутентифицированного пользователя.
+     * Публичный метод-обертка для частичного обновления задачи.
      * <p>
-     * Если статус задачи меняется на {@link TaskStatus#COMPLETED}, поле {@code completedAt}
-     * устанавливается в текущее время (UTC, округленное до микросекунд). Если статус меняется
-     * с {@link TaskStatus#COMPLETED} на {@link TaskStatus#PENDING}, поле {@code completedAt} сбрасывается в {@code null}.
-     * Поле {@code updatedAt} также обновляется.
+     * Вызывает транзакционный метод и перехватывает {@link ObjectOptimisticLockingFailureException},
+     * преобразуя его в доменное исключение {@link ResourceConflictException}.
      * </p>
      *
-     * @param taskId             ID задачи, у которой необходимо обновить статус. Не должен быть {@code null}.
-     * @param request            DTO {@link TaskStatusUpdateRequest} с новым статусом для задачи. Не должен быть {@code null}.
-     * @param currentUserId      ID текущего аутентифицированного пользователя, который должен быть владельцем задачи.
-     *                           Не должен быть {@code null}.
-     * @return {@link TaskResponse} DTO, представляющий обновленную задачу.
-     * @throws TaskNotFoundException если задача с указанным {@code taskId} не найдена для {@code currentUserId}
-     *                               или вообще не существует.
-     * @throws NullPointerException  если любой из аргументов {@code taskId}, {@code request},
-     *                               или {@code currentUserId} равен {@code null}.
+     * @param taskId        ID задачи для обновления.
+     * @param patchNode     JsonNode, представляющий JSON Merge Patch.
+     * @param currentUserId ID текущего пользователя.
+     * @return DTO с обновленными данными задачи.
+     */
+    @Transactional(propagation = Propagation.NEVER)
+    public TaskResponse patchTask(@NonNull Long taskId, @NonNull JsonNode patchNode, @NonNull Long currentUserId) {
+        try {
+            return self.doPatchTaskInTransaction(taskId, patchNode, currentUserId);
+        } catch (ObjectOptimisticLockingFailureException e) {
+            log.warn("Optimistic lock conflict for task ID: {} during PATCH. Triggered at commit time.", taskId, e);
+            throw new ResourceConflictException(taskId);
+        }
+    }
+
+    /**
+     * Внутренний транзакционный метод для частичного обновления задачи.
+     *
+     * @param taskId        ID задачи.
+     * @param patchNode     JsonNode с изменениями.
+     * @param currentUserId ID пользователя.
+     * @return DTO с обновленными данными.
      */
     @Transactional
-    public TaskResponse updateTaskStatusForCurrentUserOrThrow(@NonNull Long taskId,
-                                                              @NonNull TaskStatusUpdateRequest request,
-                                                              @NonNull Long currentUserId) {
-        log.debug("Attempting to update status for task ID: {} for user ID: {} to new status: {}",
-                taskId, currentUserId, request.getStatus());
+    TaskResponse doPatchTaskInTransaction(@NonNull Long taskId, @NonNull JsonNode patchNode, @NonNull Long currentUserId) {
+        log.debug("Attempting to patch task with ID: {} for user ID: {}", taskId, currentUserId);
 
         Task taskToUpdate = taskRepository.findByIdAndUserId(taskId, currentUserId)
-                .orElseThrow(() -> {
-                    log.warn("Status update failed: Task not found or access denied for task ID: {} and user ID: {}",
-                            taskId, currentUserId);
-                    return new TaskNotFoundException(taskId, currentUserId);
-                });
+                .orElseThrow(() -> new TaskNotFoundException(taskId, currentUserId));
 
-        Instant now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
+        TaskStatus oldStatus = taskToUpdate.getStatus();
 
-        // Обновляем статус и completedAt
-        updateCompletedAtBasedOnStatus(taskToUpdate, request.getStatus(), now);
-        taskToUpdate.setStatus(request.getStatus());
-        taskToUpdate.setUpdatedAt(now); // Обновляем updatedAt, так как ресурс был изменен
+        try {
+            TaskUpdateRequest updateRequestDto = new TaskUpdateRequest(
+                    taskToUpdate.getTitle(),
+                    taskToUpdate.getDescription(),
+                    taskToUpdate.getStatus(),
+                    taskToUpdate.getVersion()
+            );
 
-        log.info("Task status updated for task ID: {} (user ID: {}). New status: {}. Pending transaction commit.",
-                taskToUpdate.getId(), currentUserId, taskToUpdate.getStatus());
-        return TaskResponse.fromEntity(taskToUpdate);
+            objectMapper.readerForUpdating(updateRequestDto).readValue(patchNode);
+
+            Set<ConstraintViolation<TaskUpdateRequest>> violations = validator.validate(updateRequestDto);
+            if (!violations.isEmpty()) {
+                throw new ConstraintViolationException(violations);
+            }
+
+            if (!taskToUpdate.getVersion().equals(updateRequestDto.getVersion())) {
+                log.warn("Optimistic lock conflict for task ID: {}. Persistent version: {}, request version: {}",
+                        taskId, taskToUpdate.getVersion(), updateRequestDto.getVersion());
+                throw new ResourceConflictException(taskId);
+            }
+
+            // Обновляем управляемую сущность из валидированного DTO
+            taskToUpdate.setTitle(updateRequestDto.getTitle());
+            taskToUpdate.setDescription(updateRequestDto.getDescription());
+
+            Instant now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
+
+            // Обрабатываем изменение статуса и completedAt
+            if (updateRequestDto.getStatus() != oldStatus) {
+                updateCompletedAtBasedOnStatus(taskToUpdate, updateRequestDto.getStatus(), now);
+                taskToUpdate.setStatus(updateRequestDto.getStatus());
+            }
+
+            taskToUpdate.setUpdatedAt(now);
+
+            log.info("Task ID: {} patched successfully for user ID: {}. Pending transaction commit.", taskId, currentUserId);
+            return TaskResponse.fromEntity(taskToUpdate);
+
+        } catch (IOException e) {
+            log.error("Failed to apply JSON merge patch to task ID: {}", taskId, e);
+            throw new IllegalStateException("Error processing patch for task " + taskId, e);
+        }
     }
 
     /**

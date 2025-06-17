@@ -63,6 +63,13 @@ public class TaskResponse {
     Instant completedAt;
 
     /**
+     * Версия сущности для оптимистической блокировки.
+     * Клиент должен передавать это значение при обновлении задачи.
+     */
+    @Schema(description = "Версия сущности для оптимистической блокировки.", example = "0")
+    private Integer version;
+
+    /**
      * Идентификатор пользователя, которому принадлежит задача.
      */
     @Schema(description = "Идентификатор пользователя, которому принадлежит задача.", example = "1")
@@ -104,6 +111,7 @@ public class TaskResponse {
                 task.getCreatedAt(),
                 task.getUpdatedAt(),
                 task.getCompletedAt(),
+                task.getVersion(),
                 task.getUser().getId()
         );
     }

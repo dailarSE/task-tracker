@@ -4,11 +4,11 @@ import com.example.tasktracker.backend.security.common.ControllerSecurityUtils;
 import com.example.tasktracker.backend.security.details.AppUserDetails;
 import com.example.tasktracker.backend.task.dto.TaskCreateRequest;
 import com.example.tasktracker.backend.task.dto.TaskResponse;
-import com.example.tasktracker.backend.task.dto.TaskStatusUpdateRequest;
 import com.example.tasktracker.backend.task.dto.TaskUpdateRequest;
 import com.example.tasktracker.backend.task.service.TaskService;
 import com.example.tasktracker.backend.web.ApiConstants;
 import com.example.tasktracker.backend.web.exception.GlobalExceptionHandler;
+import com.fasterxml.jackson.databind.JsonNode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.headers.Header;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
@@ -237,7 +237,8 @@ public class TaskController {
             ),
             @ApiResponse(responseCode = "400", ref = "#/components/responses/BadRequestGeneral"),
             @ApiResponse(responseCode = "401", ref = "#/components/responses/UnauthorizedGeneral"),
-            @ApiResponse(responseCode = "404", ref = "#/components/responses/NotFoundTask")
+            @ApiResponse(responseCode = "404", ref = "#/components/responses/NotFoundTask"),
+            @ApiResponse(responseCode = "409", ref = "#/components/responses/ConflictGeneral")
     })
     @PutMapping("/{taskId}")
     public ResponseEntity<TaskResponse> updateTask(
@@ -256,49 +257,51 @@ public class TaskController {
     }
 
     /**
-     * Частично обновляет существующую задачу, позволяя изменить только ее статус.
-     * <p>
-     * Эндпоинт: {@code PATCH /api/v1/tasks/{taskId}}
-     * </p>
-     * <p>
-     * Принимает {@link TaskStatusUpdateRequest} в теле запроса, содержащий новый статус.
-     * В случае успешного обновления возвращается HTTP статус 200 OK с {@link TaskResponse},
-     * содержащим обновленные данные задачи (включая новый статус и, возможно, обновленный
-     * {@code completedAt} и {@code updatedAt}).
-     * </p>
+     * Частично обновляет существующую задачу, используя стандарт JSON Merge Patch (RFC 7396).
+     * Этот метод позволяет клиенту отправлять только измененные поля.
+     * Реализует оптимистическую блокировку: для успешного обновления в теле запроса
+     * должно присутствовать поле 'version' с актуальным значением.
      *
-     * @param taskId             ID обновляемой задачи, извлекаемый из пути URL.
-     * @param request            DTO {@link TaskStatusUpdateRequest} с новым статусом для задачи.
+     * @param taskId             ID обновляемой задачи.
+     * @param patchNode          Тело запроса в формате JSON Merge Patch, представленное как JsonNode.
      * @param currentUserDetails Детали текущего аутентифицированного пользователя.
      * @return {@link ResponseEntity} с {@link TaskResponse} и статусом 200 OK.
-     * @throws com.example.tasktracker.backend.task.exception.TaskNotFoundException если задача не найдена.
-     * @throws IllegalStateException                                                если principal не может быть разрешен.
-     * @throws jakarta.validation.ValidationException                               если данные в {@code request} не проходят валидацию.
+     * @throws com.example.tasktracker.backend.web.exception.ResourceConflictException если обнаружен конфликт версий (HTTP 409).
+     * @throws jakarta.validation.ConstraintViolationException если состояние задачи после патча невалидно (HTTP 400).
      */
-    @Operation(summary = "Частичное обновление статуса задачи")
+    @Operation(summary = "Частичное обновление задачи (JSON Merge Patch)",
+            description = "Принимает Content-Type: application/merge-patch+json. " +
+                    "Требует поле 'version' в теле для оптимистической блокировки.")
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            description = "Тело запроса в формате JSON Merge Patch (RFC 7396). Отправляйте только измененные поля и обязательное поле 'version'.",
+            required = true,
+            content = @Content(
+                    mediaType = "application/merge-patch+json",
+                    schema = @Schema(ref = "#/components/schemas/TaskPatchRequest")
+            )
+    )
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200",
-                    description = "Статус задачи успешно обновлен",
+                    description = "Задача успешно обновлена",
                     content = @Content(mediaType = "application/json",
-                    schema = @Schema(implementation = TaskResponse.class))),
+                            schema = @Schema(implementation = TaskResponse.class))),
             @ApiResponse(responseCode = "400", ref = "#/components/responses/BadRequestGeneral"),
             @ApiResponse(responseCode = "401", ref = "#/components/responses/UnauthorizedGeneral"),
-            @ApiResponse(responseCode = "404", ref = "#/components/responses/NotFoundTask")
+            @ApiResponse(responseCode = "404", ref = "#/components/responses/NotFoundTask"),
+            @ApiResponse(responseCode = "409", ref = "#/components/responses/ConflictGeneral")
     })
-    @PatchMapping("/{taskId}")
-    public ResponseEntity<TaskResponse> updateTaskStatus(
+    @PatchMapping(path = "/{taskId}", consumes = "application/merge-patch+json")
+    public ResponseEntity<TaskResponse> patchTask(
             @PathVariable Long taskId,
-            @Valid @RequestBody TaskStatusUpdateRequest request,
+            @RequestBody JsonNode patchNode,
             @AuthenticationPrincipal AppUserDetails currentUserDetails) {
 
         Long currentUserId = ControllerSecurityUtils.getCurrentUserId(currentUserDetails);
-        log.info("Processing request to update status for task ID: {} for user ID: {} to new status: {}",
-                taskId, currentUserId, request.getStatus());
+        log.info("Processing PATCH request to update task ID: {} for user ID: {}", taskId, currentUserId);
 
-        TaskResponse updatedTaskResponse = taskService.updateTaskStatusForCurrentUserOrThrow(taskId, request, currentUserId);
+        TaskResponse updatedTaskResponse = taskService.patchTask(taskId, patchNode, currentUserId);
 
-        log.info("Task status for task ID: {} (user ID: {}) updated successfully to: {}. Pending transaction commit.",
-                updatedTaskResponse.getId(), currentUserId, updatedTaskResponse.getStatus());
+        log.info("Task ID: {} for user ID: {} patched successfully.", updatedTaskResponse.getId(), currentUserId);
         return ResponseEntity.ok(updatedTaskResponse);
     }
 

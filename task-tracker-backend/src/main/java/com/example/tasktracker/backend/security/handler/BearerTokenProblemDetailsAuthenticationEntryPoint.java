@@ -26,7 +26,7 @@ import java.io.IOException;
  * в {@link HandlerExceptionResolver}, чтобы {@code @ControllerAdvice}
  * мог сформировать ответ в формате RFC 9457 Problem Details.
  */
-@Component
+@Component("bearerTokenProblemDetailsAuthenticationEntryPoint")
 @Slf4j
 @RequiredArgsConstructor
 public class BearerTokenProblemDetailsAuthenticationEntryPoint implements AuthenticationEntryPoint {

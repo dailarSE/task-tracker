@@ -16,6 +16,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -83,7 +84,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     public JwtAuthenticationFilter(
             @NonNull JwtValidator jwtValidator,
             @NonNull JwtAuthenticationConverter jwtAuthenticationConverter,
-            @NonNull AuthenticationEntryPoint authenticationEntryPoint) {
+            @NonNull @Qualifier("bearerTokenProblemDetailsAuthenticationEntryPoint") AuthenticationEntryPoint
+                    authenticationEntryPoint) {
         this.jwtValidator = jwtValidator;
         this.jwtAuthenticationConverter = jwtAuthenticationConverter;
         this.authenticationEntryPoint = authenticationEntryPoint;

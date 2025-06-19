@@ -3,6 +3,7 @@ package com.example.tasktracker.backend.user.web;
 import com.example.tasktracker.backend.security.dto.AuthResponse;
 import com.example.tasktracker.backend.security.dto.RegisterRequest;
 import com.example.tasktracker.backend.security.exception.UserAlreadyExistsException;
+import com.example.tasktracker.backend.security.filter.ApiKeyAuthenticationFilter;
 import com.example.tasktracker.backend.security.jwt.JwtProperties;
 import com.example.tasktracker.backend.test.util.TestJwtUtil;
 import com.example.tasktracker.backend.user.dto.UserResponse;
@@ -14,6 +15,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -71,6 +73,8 @@ class UserControllerIT {
     private String baseUsersUrl;
     private TestJwtUtil testJwtUtil;
     private static final Locale TEST_LOCALE = Locale.ENGLISH;
+    @Value("${app.security.api-key.valid-keys[0]}")
+    private String validInternalApiKey;
 
 
     @BeforeEach
@@ -312,5 +316,25 @@ class UserControllerIT {
         ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
                 meUrl, HttpMethod.GET, entity, ProblemDetail.class);
         assertUnauthorizedProblemDetail(responseEntity, ApiConstants.USERS_API_BASE_URL + "/me", "EXPIRED");
+    }
+
+    @Test
+    @DisplayName("GET /users/me: Запрос с API ключом -> должен вернуть 401")
+    void getCurrentUser_whenRequestWithApiKey_shouldReturnUnauthorized() {
+        // Arrange
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(ApiKeyAuthenticationFilter.API_KEY_HEADER_NAME, validInternalApiKey);
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        String meUrl = baseUsersUrl + "/me";
+
+        // Act
+        ResponseEntity<ProblemDetail> responseEntity = testRestTemplate.exchange(
+                meUrl, HttpMethod.GET, entity, ProblemDetail.class);
+
+        // Assert
+        // Этот эндпоинт защищен JWT-цепочкой, которая не знает про API ключ.
+        // Она просто не найдет "Bearer" токен и вернет стандартную 401 ошибку.
+        assertGeneralUnauthorizedProblemDetail(responseEntity, "/api/v1/users/me");
     }
 }

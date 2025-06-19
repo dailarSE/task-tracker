@@ -43,7 +43,7 @@ class InternalApiSecurityIT {
 
     @Autowired private TestRestTemplate testRestTemplate;
     @Autowired private ApiKeyProperties apiKeyProperties;
-    @Autowired private UserRepository userRepository; // Для создания пользователя для JWT
+    @Autowired private UserRepository userRepository;
     @Autowired private PasswordEncoder passwordEncoder;
     @Autowired private JwtProperties jwtProperties;
     @Autowired private Clock clock;
@@ -126,6 +126,7 @@ class InternalApiSecurityIT {
 
         // Assert
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(response.getBody().getType().getPath()).contains("auth/invalid-api-key");
     }
 
     @Test
@@ -140,6 +141,7 @@ class InternalApiSecurityIT {
 
         // Assert
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(response.getBody().getType().getPath()).contains("auth/invalid-api-key");
     }
 
     @Test
@@ -158,8 +160,7 @@ class InternalApiSecurityIT {
         // Assert
         // Ожидаем ошибку от ApiKey-цепочки, так как она первая для этого пути
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-
-        assertThat(response.getBody().getProperties()).isNull();
+        assertThat(response.getBody().getType().getPath()).contains("auth/invalid-api-key");
     }
 
     @Test

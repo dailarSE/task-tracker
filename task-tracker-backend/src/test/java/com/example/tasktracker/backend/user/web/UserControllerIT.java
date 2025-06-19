@@ -1,5 +1,6 @@
 package com.example.tasktracker.backend.user.web;
 
+import com.example.tasktracker.backend.security.apikey.ApiKeyProperties;
 import com.example.tasktracker.backend.security.dto.AuthResponse;
 import com.example.tasktracker.backend.security.dto.RegisterRequest;
 import com.example.tasktracker.backend.security.exception.UserAlreadyExistsException;
@@ -15,7 +16,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -69,12 +69,12 @@ class UserControllerIT {
 
     @Autowired
     private Clock appClock;
+    @Autowired
+    private ApiKeyProperties apiKeyProperties;
 
     private String baseUsersUrl;
     private TestJwtUtil testJwtUtil;
     private static final Locale TEST_LOCALE = Locale.ENGLISH;
-    @Value("${app.security.api-key.valid-keys[0]}")
-    private String validInternalApiKey;
 
 
     @BeforeEach
@@ -322,6 +322,11 @@ class UserControllerIT {
     @DisplayName("GET /users/me: Запрос с API ключом -> должен вернуть 401")
     void getCurrentUser_whenRequestWithApiKey_shouldReturnUnauthorized() {
         // Arrange
+        String validInternalApiKey = apiKeyProperties.getKeysToServices().entrySet().stream()
+                .filter(entry -> "task-tracker-scheduler".equals(entry.getValue()))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("API Key for 'task-tracker-scheduler' not found in test configuration"));
 
         HttpHeaders headers = new HttpHeaders();
         headers.set(ApiKeyAuthenticationFilter.API_KEY_HEADER_NAME, validInternalApiKey);
@@ -336,5 +341,36 @@ class UserControllerIT {
         // Этот эндпоинт защищен JWT-цепочкой, которая не знает про API ключ.
         // Она просто не найдет "Bearer" токен и вернет стандартную 401 ошибку.
         assertGeneralUnauthorizedProblemDetail(responseEntity, "/api/v1/users/me");
+    }
+
+    @Test
+    @DisplayName("GET /users/me: Запрос с валидным JWT и валидным API ключом -> должен вернуть 200 OK (JWT имеет приоритет)")
+    void getCurrentUser_withValidJwtAndValidApiKey_shouldReturnOk() {
+        // Arrange
+        User user = createAndSaveTestUser("mixed-user@example.com", "password");
+        String validJwt = testJwtUtil.generateValidToken(user);
+
+        // Получаем валидный ключ для internal API
+        String validApiKey = apiKeyProperties.getKeysToServices().entrySet().stream()
+                .filter(entry -> "task-tracker-scheduler".equals(entry.getValue()))
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("API Key for 'task-tracker-scheduler' not found in test configuration"));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(validJwt); // Валидный JWT
+        headers.set(ApiKeyAuthenticationFilter.API_KEY_HEADER_NAME, validApiKey); // И валидный API ключ
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        String meUrl = baseUsersUrl + "/me";
+
+        // Act
+        ResponseEntity<UserResponse> responseEntity = testRestTemplate.exchange(
+                meUrl, HttpMethod.GET, entity, UserResponse.class);
+
+        // Assert
+        // JWT-цепочка должна сработать и пропустить запрос. API ключ должен быть проигнорирован.
+        assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(responseEntity.getBody()).isNotNull();
+        assertThat(responseEntity.getBody().getId()).isEqualTo(user.getId());
     }
 }

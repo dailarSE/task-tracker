@@ -9,52 +9,46 @@ import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Интеграционные тесты для {@link ApiKeyProperties}, проверяющие
- * корректность биндинга и валидации свойств из конфигурации.
- */
 @ActiveProfiles("ci")
 class ApiKeyPropertiesIT {
 
     @Configuration
     @EnableConfigurationProperties(ApiKeyProperties.class)
-    static class TestConfig {
-    }
+    static class TestConfig {}
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withUserConfiguration(TestConfig.class);
 
     @Test
-    @DisplayName("Конфигурация: валидные ключи -> контекст загружается, свойства корректны")
-    void properties_whenKeysAreValid_shouldLoadContextAndBindProperties() {
+    @DisplayName("Конфигурация: валидные ключи -> контекст загружается, карта корректна")
+    void properties_whenKeysAreValid_shouldLoadContextAndBindMap() {
         this.contextRunner
                 .withPropertyValues(
-                        "app.security.api-key.valid-keys[0]=key-for-scheduler",
-                        "app.security.api-key.valid-keys[1]=key-for-another-service"
+                        "app.security.api-key.keys-to-services.my-secret-key-1=scheduler-service",
+                        "app.security.api-key.keys-to-services.my-secret-key-2=testing-client"
                 )
                 .run(context -> {
                     assertThat(context).hasNotFailed();
-                    assertThat(context).hasSingleBean(ApiKeyProperties.class);
-
                     ApiKeyProperties props = context.getBean(ApiKeyProperties.class);
-                    assertThat(props.getValidKeys())
+                    assertThat(props.getKeysToServices())
                             .isNotNull()
                             .hasSize(2)
-                            .contains("key-for-scheduler", "key-for-another-service");
+                            .containsEntry("my-secret-key-1", "scheduler-service")
+                            .containsEntry("my-secret-key-2", "testing-client");
                 });
     }
 
     @Test
-    @DisplayName("Конфигурация: valid-keys отсутствует -> валидация должна упасть")
-    void properties_whenKeysAreMissing_shouldFailToLoadContext() {
+    @DisplayName("Конфигурация: keys-to-services отсутствует -> валидация должна упасть")
+    void properties_whenMapIsMissing_shouldFailToLoadContext() {
         this.contextRunner.run(context -> assertThat(context).hasFailed());
     }
 
     @Test
-    @DisplayName("Конфигурация: valid-keys пустой -> валидация (@NotEmpty) должна упасть")
-    void properties_whenKeysAreEmpty_shouldFailToLoadContext() {
+    @DisplayName("Конфигурация: keys-to-services пустой -> валидация (@NotEmpty) должна упасть")
+    void properties_whenMapIsEmpty_shouldFailToLoadContext() {
         this.contextRunner
-                .withPropertyValues("app.security.api-key.valid-keys=")
+                .withPropertyValues("app.security.api-key.keys-to-services=")
                 .run(context -> assertThat(context).hasFailed());
     }
 }

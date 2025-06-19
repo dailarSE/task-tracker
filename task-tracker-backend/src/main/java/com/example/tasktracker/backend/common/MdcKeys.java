@@ -24,5 +24,15 @@ public final class MdcKeys {
      */
     public static final String CORRELATION_ID = "correlation.id";
 
-    // Можно добавить другие общие ключи MDC по мере необходимости
+    /**
+     * Ключ MDC для хранения идентификатора внутреннего сервиса-клиента.
+     * Используется для корреляции логов с запросами от конкретного M2M клиента.
+     * Значение: {@value}.
+     */
+    public static final String SERVICE_ID = "service.id";
+
+    /**
+     * Ключ MDC для хранения уникального идентификатора экземпляра внутреннего сервиса-клиента (например, pod name).
+     */
+    public static final String SERVICE_INSTANCE_ID = "service.instance.id";
 }

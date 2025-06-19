@@ -9,17 +9,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Collections;
-import java.util.Set;
+import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatNullPointerException;
-import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
-
-/**
- * Юнит-тесты для {@link ApiKeyValidator}.
- */
 @ExtendWith(MockitoExtension.class)
 class ApiKeyValidatorTest {
 
@@ -29,50 +24,42 @@ class ApiKeyValidatorTest {
     @InjectMocks
     private ApiKeyValidator apiKeyValidator;
 
-    private final String validKey1 = "my-secret-key-1";
-    private final String validKey2 = "my-secret-key-2";
+    private final String validKey1 = "key-for-scheduler";
+    private final String serviceId1 = "scheduler-service";
 
     @BeforeEach
     void setUp() {
-        // Настраиваем мок по умолчанию для большинства тестов
-        lenient().when(mockApiKeyProperties.getValidKeys()).thenReturn(Set.of(validKey1, validKey2));
+        when(mockApiKeyProperties.getKeysToServices())
+                .thenReturn(Map.of(validKey1, serviceId1));
     }
 
     @Test
-    @DisplayName("isValid: предоставленный ключ совпадает с одним из валидных -> должен вернуть true")
-    void isValid_whenProvidedKeyMatches_shouldReturnTrue() {
-        assertThat(apiKeyValidator.isValid(validKey1)).isTrue();
-        assertThat(apiKeyValidator.isValid(validKey2)).isTrue();
+    @DisplayName("getServiceIdIfValid: валидный ключ -> должен вернуть Optional с ID сервиса")
+    void getServiceIdIfValid_whenKeyIsValid_shouldReturnOptionalWithServiceId() {
+        Optional<String> result = apiKeyValidator.getServiceIdIfValid(validKey1);
+        assertThat(result).isPresent().contains(serviceId1);
     }
 
     @Test
-    @DisplayName("isValid: предоставленный ключ не совпадает ни с одним из валидных -> должен вернуть false")
-    void isValid_whenProvidedKeyDoesNotMatch_shouldReturnFalse() {
-        assertThat(apiKeyValidator.isValid("invalid-key")).isFalse();
+    @DisplayName("getServiceIdIfValid: невалидный ключ -> должен вернуть пустой Optional")
+    void getServiceIdIfValid_whenKeyIsInvalid_shouldReturnEmptyOptional() {
+        Optional<String> result = apiKeyValidator.getServiceIdIfValid("invalid-key");
+        assertThat(result).isEmpty();
     }
 
     @Test
-    @DisplayName("isValid: предоставленный ключ null -> должен выбросить NullPointerException")
-    void isValid_whenProvidedKeyIsNull_shouldThrowNullPointerException() {
-        assertThatNullPointerException()
-                .isThrownBy(() -> apiKeyValidator.isValid(null))
-                .withMessageContaining("providedKey");
+    @DisplayName("getServiceIdIfValid: карта ключей пуста -> должен вернуть пустой Optional")
+    void getServiceIdIfValid_whenKeyMapIsEmpty_shouldReturnEmptyOptional() {
+        when(mockApiKeyProperties.getKeysToServices()).thenReturn(Collections.emptyMap());
+        Optional<String> result = apiKeyValidator.getServiceIdIfValid(validKey1);
+        assertThat(result).isEmpty();
     }
 
     @Test
-    @DisplayName("isValid: набор валидных ключей пуст -> должен всегда возвращать false")
-    void isValid_whenValidKeysSetIsEmpty_shouldAlwaysReturnFalse() {
-        when(mockApiKeyProperties.getValidKeys()).thenReturn(Collections.emptySet());
-        assertThat(apiKeyValidator.isValid(validKey1)).isFalse();
-        assertThat(apiKeyValidator.isValid("any-key")).isFalse();
-    }
-
-    @Test
-    @DisplayName("isValid: набор валидных ключей null -> должен вернуть false и залогировать ошибку")
-    void isValid_whenValidKeysSetIsNull_shouldReturnFalseAndLogCriticalError() {
-        // Этот тест важен для проверки защиты от неправильной конфигурации,
-        // хотя @NotEmpty в ApiKeyProperties должен предотвращать это на старте.
-        when(mockApiKeyProperties.getValidKeys()).thenReturn(null);
-        assertThat(apiKeyValidator.isValid(validKey1)).isFalse();
+    @DisplayName("getServiceIdIfValid: карта ключей null -> должен вернуть пустой Optional")
+    void getServiceIdIfValid_whenKeyMapIsNull_shouldReturnEmptyOptional() {
+        when(mockApiKeyProperties.getKeysToServices()).thenReturn(null);
+        Optional<String> result = apiKeyValidator.getServiceIdIfValid(validKey1);
+        assertThat(result).isEmpty();
     }
 }

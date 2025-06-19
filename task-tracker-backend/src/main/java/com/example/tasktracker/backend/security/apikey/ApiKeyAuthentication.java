@@ -2,10 +2,7 @@ package com.example.tasktracker.backend.security.apikey;
 
 import lombok.Getter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.AuthorityUtils;
-
-import java.util.Collection;
 
 /**
  * Реализация {@link org.springframework.security.core.Authentication} для представления
@@ -17,31 +14,20 @@ import java.util.Collection;
 @Getter
 public class ApiKeyAuthentication extends AbstractAuthenticationToken {
 
-    /**
-     * Principal для внутреннего сервиса. Может быть строкой, идентифицирующей сервис.
-     */
-    private final String principal;
+    private final String serviceId;
+    private final String instanceId;
 
     /**
-     * Создает аутентифицированный токен.
+     * Конструктор для создания аутентифицированного токена.
      *
-     * @param principal   Идентификатор аутентифицированного сервиса.
-     * @param authorities Полномочия (обычно пустые для M2M аутентификации по ключу).
+     * @param serviceId  Идентификатор типа сервиса (например, "task-tracker-scheduler").
+     * @param instanceId Уникальный идентификатор экземпляра сервиса.
      */
-    public ApiKeyAuthentication(String principal, Collection<? extends GrantedAuthority> authorities) {
-        super(authorities);
-        this.principal = principal;
+    public ApiKeyAuthentication(String serviceId, String instanceId) {
+        super(AuthorityUtils.NO_AUTHORITIES);
+        this.serviceId = serviceId;
+        this.instanceId = instanceId;
         setAuthenticated(true);
-    }
-
-    /**
-     * Создает аутентифицированный токен с пустыми полномочиями.
-     *
-     * @param principal Идентификатор аутентифицированного сервиса.
-     * @return Экземпляр ApiKeyAuthentication.
-     */
-    public static ApiKeyAuthentication authenticated(String principal) {
-        return new ApiKeyAuthentication(principal, AuthorityUtils.NO_AUTHORITIES);
     }
 
     /**
@@ -50,5 +36,10 @@ public class ApiKeyAuthentication extends AbstractAuthenticationToken {
     @Override
     public Object getCredentials() {
         return null;
+    }
+
+    @Override
+    public Object getPrincipal() {
+        return serviceId;
     }
 }

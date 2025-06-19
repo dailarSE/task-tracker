@@ -1,0 +1,38 @@
+spring:
+  application:
+    name:
+      task-tracker-scheduler
+logging:
+  structured:
+    format:
+      console: ecs
+  level:
+    root: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  jmx:
+    enabled: false
+
+otel:
+  service:
+    name: ${spring.application.name}
+  exporter:
+    otlp:
+      endpoint: http://otel-collector:4318 # OTLP/HTTP
+  instrumentation:
+    common:
+      default-enabled: true
+    micrometer:
+      enabled: true
+    logback-appender:
+      enabled: true
+      experimental:
+        capture-mdc-attributes: "*"
+  propagators: tracecontext,baggage
+  traces:
+    sampler:
+      arg: "0.1"

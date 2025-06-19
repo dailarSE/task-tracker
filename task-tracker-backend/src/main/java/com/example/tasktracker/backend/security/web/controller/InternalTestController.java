@@ -2,6 +2,7 @@ package com.example.tasktracker.backend.security.web.controller;
 
 import com.example.tasktracker.backend.security.apikey.ApiKeyAuthentication;
 import com.example.tasktracker.backend.web.ApiConstants;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,6 +16,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping(ApiConstants.API_V1_PREFIX + "/internal")
+@Slf4j
 public class InternalTestController {
 
     /**
@@ -30,6 +32,7 @@ public class InternalTestController {
             return ResponseEntity.status(500).body(Map.of("error", "Authentication object not found or not authenticated"));
         }
 
+        log.info("testInternalEndpoint called. ServiceId: {}, InstanceId: {}", apiKeyAuth.getServiceId(), apiKeyAuth.getInstanceId());
         return ResponseEntity.ok(Map.of(
                 "message", "Internal API endpoint reached successfully.",
                 "serviceId", apiKeyAuth.getServiceId(),

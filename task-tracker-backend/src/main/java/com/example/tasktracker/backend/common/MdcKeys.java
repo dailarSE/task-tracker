@@ -29,10 +29,10 @@ public final class MdcKeys {
      * Используется для корреляции логов с запросами от конкретного M2M клиента.
      * Значение: {@value}.
      */
-    public static final String SERVICE_ID = "service.id";
+    public static final String SERVICE_ID = "client.service.id";
 
     /**
      * Ключ MDC для хранения уникального идентификатора экземпляра внутреннего сервиса-клиента (например, pod name).
      */
-    public static final String SERVICE_INSTANCE_ID = "service.instance.id";
+    public static final String SERVICE_INSTANCE_ID = "client.service.instance.id";
 }

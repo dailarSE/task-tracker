@@ -1,5 +1,6 @@
 package com.example.tasktracker.backend.web.exception;
 
+import com.example.tasktracker.backend.security.apikey.InvalidApiKeyException;
 import com.example.tasktracker.backend.security.exception.BadJwtException;
 import com.example.tasktracker.backend.security.jwt.JwtValidator;
 import com.example.tasktracker.backend.web.ApiConstants;
@@ -192,6 +193,36 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         problemDetail.setTitle(title);
         problemDetail.setDetail(detail);
         problemDetail.setType(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "auth/invalid-credentials"));
+
+        setInstanceUriIfAbsent(problemDetail, request);
+        return problemDetail;
+    }
+
+    /**
+     * Обрабатывает {@link InvalidApiKeyException}, возникающее при сбое
+     * M2M аутентификации по API-ключу.
+     * <p>
+     * Возвращает {@link ProblemDetail} для ответа HTTP 401 Unauthorized,
+     * но, в отличие от ошибок пользовательской аутентификации,
+     * **не устанавливает** заголовок {@code WWW-Authenticate}.
+     * </p>
+     *
+     * @param ex      Исключение {@link InvalidApiKeyException}.
+     * @param request Текущий веб-запрос.
+     * @return Объект {@link ProblemDetail}, описывающий ошибку.
+     */
+    @ExceptionHandler(InvalidApiKeyException.class)
+    public ProblemDetail handleInvalidApiKeyException(InvalidApiKeyException ex, WebRequest request) {
+        log.warn("API Key authentication failure: {}", ex.getMessage());
+
+        String typeSuffix = "auth.invalidApiKey";
+        String title = messageSource.getMessage("problemDetail." + typeSuffix + ".title", null, request.getLocale());
+        String detail = messageSource.getMessage("problemDetail." + typeSuffix + ".detail", null, request.getLocale());
+
+        ProblemDetail problemDetail = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
+        problemDetail.setTitle(title);
+        problemDetail.setDetail(detail);
+        problemDetail.setType(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "auth/invalid-api-key"));
 
         setInstanceUriIfAbsent(problemDetail, request);
         return problemDetail;

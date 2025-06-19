@@ -3,6 +3,7 @@ package com.example.tasktracker.backend.security.filter;
 import com.example.tasktracker.backend.common.MdcKeys;
 import com.example.tasktracker.backend.security.apikey.ApiKeyAuthentication;
 import com.example.tasktracker.backend.security.apikey.ApiKeyValidator;
+import com.example.tasktracker.backend.security.apikey.InvalidApiKeyException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,7 +12,6 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.AuthenticationEntryPoint;
@@ -67,7 +67,7 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
         if (!StringUtils.hasText(providedKey)) {
             log.warn("Missing API Key in header '{}' for request to {}", API_KEY_HEADER_NAME, request.getRequestURI());
             this.authenticationEntryPoint.commence(request, response,
-                    new BadCredentialsException("API Key is missing."));
+                    new InvalidApiKeyException("API Key is missing."));
             return;
         }
 
@@ -95,7 +95,7 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
         } else {
             log.warn("Invalid API Key provided for request to {}", request.getRequestURI());
             this.authenticationEntryPoint.commence(request, response,
-                    new BadCredentialsException("Invalid API Key provided."));
+                    new InvalidApiKeyException("Invalid API Key provided."));
         }
     }
 }

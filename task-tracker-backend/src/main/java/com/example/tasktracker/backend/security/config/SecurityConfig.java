@@ -1,11 +1,13 @@
 package com.example.tasktracker.backend.security.config;
 
+import com.example.tasktracker.backend.security.filter.ApiKeyAuthenticationFilter;
 import com.example.tasktracker.backend.security.filter.JwtAuthenticationFilter;
 
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -21,6 +23,7 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -32,21 +35,51 @@ import static com.example.tasktracker.backend.web.ApiConstants.*;
 
 /**
  * Основная конфигурация Spring Security для приложения Task Tracker.
- * Определяет цепочку фильтров безопасности, правила доступа к эндпоинтам,
- * обработчики ошибок аутентификации/авторизации и другие ключевые бины безопасности.
+ * <p>
+ * Определяет несколько бинов {@link SecurityFilterChain}, каждый из которых
+ * отвечает за свой набор путей (URL-паттернов). Порядок их применения
+ * определяется аннотацией {@link Order}.
+ * </p>
+ * <p>
+ * 1. {@code internalApiSecurityFilterChain} (@Order(1)): Защищает внутренние
+ * M2M (machine-to-machine) эндпоинты по пути {@code /api/v1/internal/**}.
+ * Использует аутентификацию по API-ключу.
+ * </p>
+ * <p>
+ * 2. {@code publicApiSecurityFilterChain} (@Order(2)): Защищает публичные и
+ * пользовательские API. Использует JWT-аутентификацию для защищенных
+ * ресурсов и разрешает анонимный доступ к публичным эндпоинтам.
+ * </p>
  */
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
-@RequiredArgsConstructor
 public class SecurityConfig {
+    private static final String[] PUBLIC_SWAGGER_PATHS = {"/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**"};
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
-    private final AuthenticationEntryPoint bearerTokenProblemDetailsAuthenticationEntryPoint;
+    private final ApiKeyAuthenticationFilter apiKeyAuthenticationFilter;
+    private final AuthenticationEntryPoint bearerTokenAuthenticationEntryPoint;
+    private final AuthenticationEntryPoint apiKeyAuthenticationEntryPoint;
     private final AccessDeniedHandler problemDetailsAccessDeniedHandler;
+    private final String errorPath;
 
-    @Value("${server.error.path:${error.path:/error}}")
-    private String errorPath;
+    public SecurityConfig(
+            JwtAuthenticationFilter jwtAuthenticationFilter,
+            ApiKeyAuthenticationFilter apiKeyAuthenticationFilter,
+            @Qualifier("bearerTokenProblemDetailsAuthenticationEntryPoint") AuthenticationEntryPoint
+                    bearerTokenAuthenticationEntryPoint,
+            @Qualifier("apiKeyAuthenticationEntryPoint") AuthenticationEntryPoint apiKeyAuthenticationEntryPoint,
+            AccessDeniedHandler problemDetailsAccessDeniedHandler,
+            @Value("${server.error.path:${error.path:/error}}") String errorPath) {
+        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.apiKeyAuthenticationFilter = apiKeyAuthenticationFilter;
+        this.bearerTokenAuthenticationEntryPoint = bearerTokenAuthenticationEntryPoint;
+        this.apiKeyAuthenticationEntryPoint = apiKeyAuthenticationEntryPoint;
+        this.problemDetailsAccessDeniedHandler = problemDetailsAccessDeniedHandler;
+        this.errorPath = errorPath;
+    }
+
 
     /**
      * Определяет бин {@link PasswordEncoder} для хеширования паролей.
@@ -74,13 +107,42 @@ public class SecurityConfig {
     }
 
     /**
-     * Определяет и конфигурирует основную цепочку фильтров безопасности {@link SecurityFilterChain}.
+     * Цепочка фильтров для внутренних M2M API, защищенных API-ключом.
+     * Применяется к путям, начинающимся с {@code /api/v1/internal/**}.
      *
-     * @param http Конфигуратор {@link HttpSecurity}.
-     * @return Сконфигурированный {@link SecurityFilterChain}.
-     * @throws Exception если возникает ошибка при конфигурации.
+     * @param http Конфигуратор HttpSecurity.
+     * @return Сконфигурированный SecurityFilterChain.
+     * @throws Exception при ошибке конфигурации.
      */
     @Bean
+    @Order(1)
+    public SecurityFilterChain internalApiSecurityFilterChain(HttpSecurity http) throws Exception {
+        return http
+                .securityMatcher(new AntPathRequestMatcher("/api/v1/internal/**"))
+                .csrf(AbstractHttpConfigurer::disable)
+                .sessionManagement(session ->
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(authorize ->
+                        authorize.anyRequest().authenticated()
+                )
+                .addFilterBefore(apiKeyAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint(apiKeyAuthenticationEntryPoint)
+                        .accessDeniedHandler(problemDetailsAccessDeniedHandler)
+                )
+                .build();
+    }
+
+    /**
+     * Основная цепочка фильтров для публичных и пользовательских API.
+     * Защищает все остальные пути, используя JWT-аутентификацию.
+     *
+     * @param http Конфигуратор HttpSecurity.
+     * @return Сконфигурированный SecurityFilterChain.
+     * @throws Exception при ошибке конфигурации.
+     */
+    @Bean
+    @Order(2)
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
@@ -89,7 +151,7 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
                 .exceptionHandling(exceptions -> exceptions
-                        .authenticationEntryPoint(bearerTokenProblemDetailsAuthenticationEntryPoint)
+                        .authenticationEntryPoint(bearerTokenAuthenticationEntryPoint)
                         .accessDeniedHandler(problemDetailsAccessDeniedHandler)
                 )
                 // Определяем правила авторизации для HTTP-запросов
@@ -100,11 +162,7 @@ public class SecurityConfig {
                         .requestMatchers(errorPath).permitAll()
                         // TODO: Разрешить доступ к эндпоинтам Spring Boot Actuator (если они включены и нужны публично/защищенно)
                         // .requestMatchers("/actuator/**").permitAll() // или .hasRole("ADMIN") и т.д.
-                        .requestMatchers(
-                                "/swagger-ui.html",         // Сам HTML-файл UI
-                                "/swagger-ui/**",           // Статические ресурсы UI (JS, CSS, и т.д.)
-                                "/v3/api-docs/**" // Конфигурационный файл, который запрашивает UI
-                        ).permitAll() // В продакшн-среде swagger отключен, поэтому можно разрешить доступ
+                        .requestMatchers(PUBLIC_SWAGGER_PATHS).permitAll() // В продакшн-среде swagger отключен, поэтому можно разрешить доступ
 
                         .anyRequest().authenticated()
                 )

@@ -1,6 +1,5 @@
-package com.example.tasktracker.backend.config;
+package com.example.tasktracker.backend.kafka.config;
 
-import com.example.tasktracker.backend.kafka.config.KafkaConfig;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

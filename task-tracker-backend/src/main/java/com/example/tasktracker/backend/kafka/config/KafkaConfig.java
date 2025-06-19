@@ -1,6 +1,5 @@
 package com.example.tasktracker.backend.kafka.config;
 
-import com.example.tasktracker.backend.config.KafkaTopicVerifier;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;

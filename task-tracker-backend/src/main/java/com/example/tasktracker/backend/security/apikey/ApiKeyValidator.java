@@ -7,13 +7,11 @@ import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Map;
+import java.util.Optional;
 
 /**
- * Сервис, ответственный за валидацию предоставленного API-ключа.
- * <p>
- * Сравнивает полученный ключ с набором валидных ключей, определенных
- * в {@link ApiKeyProperties}, используя метод, устойчивый к атакам по времени.
- * </p>
+ * Сервис, ответственный за валидацию предоставленного API-ключа и идентификацию сервиса.
  */
 @Service
 @RequiredArgsConstructor
@@ -23,34 +21,32 @@ public class ApiKeyValidator {
     private final ApiKeyProperties apiKeyProperties;
 
     /**
-     * Проверяет, является ли предоставленный API-ключ валидным.
-     * <p>
-     * Сравнение производится с каждым ключом из сконфигурированного набора
-     * с использованием {@link MessageDigest#isEqual(byte[], byte[])}, чтобы
-     * предотвратить "timing attacks".
-     * </p>
+     * Проверяет, является ли предоставленный API-ключ валидным, и возвращает
+     * идентификатор связанного с ним сервиса.
      *
      * @param providedKey API-ключ, полученный из запроса. Не должен быть null.
-     * @throws NullPointerException если {@code providedKey} равен null.
-     * @return {@code true}, если ключ найден в наборе валидных ключей, иначе {@code false}.
+     * @return {@link Optional} с идентификатором сервиса, если ключ валиден.
+     *         В противном случае, возвращает {@link Optional#empty()}.
      */
-    public boolean isValid(@NonNull String providedKey) {
-        if (apiKeyProperties.getValidKeys() == null) {
-            log.error("CRITICAL: Set of valid API keys is null. Check configuration 'app.security.api-key.valid-keys'.");
-            return false;
+    public Optional<String> getServiceIdIfValid(@NonNull String providedKey) {
+        final Map<String, String> keysToServices = apiKeyProperties.getKeysToServices();
+        if (keysToServices == null || keysToServices.isEmpty()) {
+            log.error("CRITICAL: Map of valid API keys is null or empty. Check configuration.");
+            return Optional.empty();
         }
 
         byte[] providedKeyBytes = providedKey.getBytes(StandardCharsets.UTF_8);
 
-        for (String validKey : apiKeyProperties.getValidKeys()) {
-            byte[] validKeyBytes = validKey.getBytes(StandardCharsets.UTF_8);
+        for (Map.Entry<String, String> entry : keysToServices.entrySet()) {
+            byte[] validKeyBytes = entry.getKey().getBytes(StandardCharsets.UTF_8);
             if (MessageDigest.isEqual(providedKeyBytes, validKeyBytes)) {
-                log.trace("Provided API key matched a configured valid key.");
-                return true;
+                String serviceId = entry.getValue();
+                log.trace("Provided API key matched. Identified service: '{}'", serviceId);
+                return Optional.of(serviceId);
             }
         }
 
         log.warn("Provided API key did not match any of the configured valid keys.");
-        return false;
+        return Optional.empty();
     }
 }

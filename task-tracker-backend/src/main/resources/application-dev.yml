@@ -52,5 +52,6 @@ app:
       # Это "myVerySecretKeyForTaskTrackerApplicationWhichMustBeVeryLongAndSecure" в Base64
       secret-key: "bXlWZXJ5U2VjcmV0S2V5Rm9yVGFza1RyYWNrZXJBcHBsaWNhdGlvbldoaWNoTXVzdEJlVmVyeUxvbmdBbmRTZWN1cmU="
     api-key:
-      valid-keys:
-        - "dev-api-key-for-internal-services"
+      keys-to-services:
+        "key-for-scheduler": "task-tracker-scheduler"
+        "key-for-testing": "test-client"

@@ -21,7 +21,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.AuthenticationEntryPoint;
-import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -64,7 +63,6 @@ import java.util.Optional;
  * В случаях, когда {@link AuthenticationEntryPoint} не вызывается (успешная аутентификация по JWT или отсутствие JWT),
  * запрос всегда передается дальше по цепочке фильтров.
  */
-@Component
 @Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 

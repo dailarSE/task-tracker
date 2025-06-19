@@ -7,7 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 import org.springframework.validation.annotation.Validated;
 
-import java.util.Set;
+import java.util.Map;
 
 /**
  * Конфигурационные свойства для аутентификации по API-ключам.
@@ -24,16 +24,15 @@ import java.util.Set;
 public class ApiKeyProperties {
 
     /**
-     * Набор валидных API-ключей для доступа к внутренним эндпоинтам.
+     * Карта, сопоставляющая API-ключи с идентификаторами сервисов-клиентов.
      * <p>
-     * Ключи должны быть криптографически случайными строками, содержащими
-     * только символы, безопасные для использования в HTTP-заголовках
-     * (например, из набора [A-Za-z0-9_-]).
+     * Ключ карты - это сам API-ключ.
+     * Значение карты - строковый идентификатор сервиса (например, "task-tracker-scheduler").
      * </p>
      * <p>
      * Это свойство является обязательным и не может быть пустым.
      * </p>
      */
-    @NotEmpty(message = "{security.apiKey.validKeys.notEmpty}")
-    private Set<String> validKeys;
+    @NotEmpty(message = "{security.apiKey.keysToServices.notEmpty}")
+    private Map<String, String> keysToServices;
 }

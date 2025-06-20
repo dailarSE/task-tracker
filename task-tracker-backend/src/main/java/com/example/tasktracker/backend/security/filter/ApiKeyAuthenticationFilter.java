@@ -9,12 +9,11 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -22,31 +21,33 @@ import java.io.IOException;
 import java.util.Optional;
 
 /**
- * Фильтр Spring Security для аутентификации по статическому API-ключу.
+ * Фильтр Spring Security для аутентификации M2M (machine-to-machine) запросов
+ * по статическому API-ключу.
  * <p>
- * Извлекает ключ из заголовка "X-API-Key" и валидирует его с помощью
- * {@link ApiKeyValidator}. В случае успеха, устанавливает в SecurityContext
- * объект {@link ApiKeyAuthentication}. В случае неудачи, делегирует обработку
- * ошибки в {@link AuthenticationEntryPoint}.
+ * Для каждого входящего запроса, предназначенного для внутреннего API,
+ * этот фильтр выполняет следующие действия:
+ * <ol>
+ *     <li>Извлекает API-ключ из заголовка {@value #API_KEY_HEADER_NAME}.</li>
+ *     <li>Извлекает идентификатор экземпляра сервиса из заголовка {@value #SERVICE_INSTANCE_ID_HEADER_NAME}.</li>
+ *     <li>Если ключ найден, валидирует его с помощью {@link ApiKeyValidator} и получает ID сервиса.</li>
+ *     <li>При успехе, создает объект {@link ApiKeyAuthentication},
+ *         устанавливает его в {@code SecurityContextHolder} и помещает {@code serviceId} и
+ *         {@code instanceId} в MDC для логирования.</li>
+ *     <li>В случае ошибки (отсутствующий или невалидный ключ), выбрасывает
+ *         {@link InvalidApiKeyException},
+ *         которая обрабатывается глобально для формирования ответа 401 Unauthorized.</li>
+ * </ol>
  * </p>
  */
 @Slf4j
+@RequiredArgsConstructor
 public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
 
     public static final String API_KEY_HEADER_NAME = "X-API-Key";
     public static final String SERVICE_INSTANCE_ID_HEADER_NAME = "X-Service-Instance-Id";
     public static final String UNKNOWN_INSTANCE_ID = "[unknown-instance]";
-
+    @NonNull
     private final ApiKeyValidator apiKeyValidator;
-
-    private final AuthenticationEntryPoint authenticationEntryPoint;
-
-    public ApiKeyAuthenticationFilter(
-            ApiKeyValidator apiKeyValidator,
-            @Qualifier("apiKeyAuthenticationEntryPoint") AuthenticationEntryPoint authenticationEntryPoint) {
-        this.apiKeyValidator = apiKeyValidator;
-        this.authenticationEntryPoint = authenticationEntryPoint;
-    }
 
     @Override
     protected void doFilterInternal(
@@ -54,34 +55,18 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
             @NonNull HttpServletResponse response,
             @NonNull FilterChain filterChain) throws ServletException, IOException {
 
-        if (SecurityContextHolder.getContext().getAuthentication() != null &&
-                SecurityContextHolder.getContext().getAuthentication().isAuthenticated()) {
-            log.trace("SecurityContext already contains an authenticated principal for [{}].",
-                    request.getRequestURI());
-            filterChain.doFilter(request, response);
-            return;
-        }
-
         String providedKey = request.getHeader(API_KEY_HEADER_NAME);
 
         if (!StringUtils.hasText(providedKey)) {
             log.warn("Missing API Key in header '{}' for request to {}", API_KEY_HEADER_NAME, request.getRequestURI());
-            this.authenticationEntryPoint.commence(request, response,
-                    new InvalidApiKeyException("API Key is missing."));
-            return;
+            throw new InvalidApiKeyException("API Key is missing.");
         }
 
         Optional<String> serviceIdOptional = apiKeyValidator.getServiceIdIfValid(providedKey);
 
         if (serviceIdOptional.isPresent()) {
             String serviceId = serviceIdOptional.get();
-            String instanceId = Optional.ofNullable(request.getHeader(SERVICE_INSTANCE_ID_HEADER_NAME))
-                    .filter(StringUtils::hasText)
-                    .orElseGet(() -> {
-                        log.warn("Missing or blank '{}' header for an authenticated request from service '{}'. " +
-                                "Using default placeholder.", SERVICE_INSTANCE_ID_HEADER_NAME, serviceId);
-                        return UNKNOWN_INSTANCE_ID;
-                    });
+            String instanceId = extractInstanceId(request, serviceId);
 
             try (
                     MDC.MDCCloseable ignoredSrv = MDC.putCloseable(MdcKeys.SERVICE_ID, serviceId);
@@ -94,8 +79,17 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
             }
         } else {
             log.warn("Invalid API Key provided for request to {}", request.getRequestURI());
-            this.authenticationEntryPoint.commence(request, response,
-                    new InvalidApiKeyException("Invalid API Key provided."));
+            throw new InvalidApiKeyException("Invalid API Key provided.");
         }
+    }
+
+    private static String extractInstanceId(HttpServletRequest request, String serviceId) {
+        return Optional.ofNullable(request.getHeader(SERVICE_INSTANCE_ID_HEADER_NAME))
+                .filter(StringUtils::hasText)
+                .orElseGet(() -> {
+                    log.warn("Missing or blank '{}' header for an authenticated request from service '{}'. " +
+                            "Using default placeholder.", SERVICE_INSTANCE_ID_HEADER_NAME, serviceId);
+                    return UNKNOWN_INSTANCE_ID;
+                });
     }
 }

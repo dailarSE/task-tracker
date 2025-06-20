@@ -14,13 +14,12 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -29,119 +28,42 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Фильтр Spring Security, ответственный за обработку JWT (JSON Web Token) аутентификации.
+ * Фильтр Spring Security для обработки JWT (JSON Web Token) аутентификации.
  * <p>
- * Для каждого входящего запроса этот фильтр выполняет следующие действия:
+ * Для каждого входящего запроса, не предназначенного для внутреннего API,
+ * этот фильтр выполняет следующие действия:
  * <ol>
- *     <li>Проверяет, не был ли пользователь уже аутентифицирован ранее в цепочке фильтров. Если да, JWT не обрабатывается, и запрос передается дальше.</li>
- *     <li>Пытается извлечь JWT из заголовка {@code Authorization} (ожидая префикс "Bearer ").</li>
- *     <li>Если токен отсутствует, запрос передается дальше по цепочке фильтров без установления аутентификации.
- *         Если ресурс требует аутентификации, это будет обработано стандартными механизмами Spring Security (например, {@link AuthenticationEntryPoint}).</li>
- *     <li>Если токен присутствует, он валидируется с помощью {@link JwtValidator}.</li>
- *     <li>Если токен валиден:
- *         <ul>
- *             <li>Извлекаются claims.</li>
- *             <li>{@link JwtAuthenticationConverter} используется для преобразования claims в объект {@link Authentication}.</li>
- *             <li>Объект {@link Authentication} устанавливается в {@link SecurityContextHolder}, делая пользователя аутентифицированным для текущего запроса. Запрос передается дальше по цепочке фильтров.</li>
- *             <li>Если во время конвертации claims возникает ошибка (например, {@link IllegalArgumentException}),
- *                 инициируется обработка ошибки через {@link AuthenticationEntryPoint} с {@link BadJwtException},
- *                 и дальнейшая обработка запроса в цепочке фильтров для данного запроса прерывается.</li>
- *             <li>При успешной аутентификации и установке {@link Authentication} в {@link SecurityContextHolder},
- *                 идентификаторы пользователя (такие как ID и email) помещаются в {@code MDC} (Mapped Diagnostic Context)
- *                 для обогащения логов. Фильтр также обеспечивает очистку этих MDC-значений
- *                 после завершения обработки запроса в цепочке фильтров.</li>
- *         </ul>
- *     </li>
- *     <li>Если токен невалиден (согласно {@link JwtValidator}):
- *         <ul>
- *             <li>Инициируется обработка ошибки через {@link AuthenticationEntryPoint} с {@link BadJwtException},
- *                 содержащим детали ошибки валидации JWT. Дальнейшая обработка запроса в цепочке фильтров
- *                 для данного запроса прерывается.</li>
- *         </ul>
+ *     <li>Извлекает "Bearer" токен из заголовка {@code Authorization}.</li>
+ *     <li>Если токен найден, валидирует его с помощью {@link JwtValidator}.</li>
+ *     <li>При успешной валидации, преобразует claims токена в объект
+ *         {@link Authentication} и устанавливает его в {@code SecurityContextHolder},
+ *         а также помещает ID пользователя в MDC для логирования.</li>
+ *     <li>В случае любой ошибки (невалидный токен, ошибка конвертации claims),
+ *         выбрасывает {@link com.example.tasktracker.backend.security.exception.BadJwtException}.
+ *         Это исключение перехватывается стандартными механизмами Spring Security
+ *         для формирования ответа 401 Unauthorized. Любые другие непредвиденные
+ *         RuntimeException будут проброшены дальше и обработаны глобальными
+ *         механизмами Spring Boot (как правило, приводя к ответу 500 Internal Server Error).
  *     </li>
  * </ol>
- * В случаях, когда {@link AuthenticationEntryPoint} не вызывается (успешная аутентификация по JWT или отсутствие JWT),
- * запрос всегда передается дальше по цепочке фильтров.
+ * Если токен в запросе отсутствует, фильтр передает управление дальше по цепочке.
+ * </p>
  */
 @Slf4j
+@RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
 
+    @NonNull
     private final JwtValidator jwtValidator;
+    @NonNull
     private final JwtAuthenticationConverter jwtAuthenticationConverter;
-    private final AuthenticationEntryPoint authenticationEntryPoint;
 
-    /**
-     * Конструктор для {@link JwtAuthenticationFilter}.
-     *
-     * @param jwtValidator               Сервис для валидации JWT. Не должен быть null.
-     * @param jwtAuthenticationConverter Сервис для конвертации JWT Claims в {@link Authentication}. Не должен быть null.
-     * @param authenticationEntryPoint   Точка входа для обработки ошибок аутентификации. Не должна быть null.
-     */
-    public JwtAuthenticationFilter(
-            @NonNull JwtValidator jwtValidator,
-            @NonNull JwtAuthenticationConverter jwtAuthenticationConverter,
-            @NonNull @Qualifier("bearerTokenProblemDetailsAuthenticationEntryPoint") AuthenticationEntryPoint
-                    authenticationEntryPoint) {
-        this.jwtValidator = jwtValidator;
-        this.jwtAuthenticationConverter = jwtAuthenticationConverter;
-        this.authenticationEntryPoint = authenticationEntryPoint;
-    }
-
-    /**
-     * Основной метод фильтра, выполняемый для каждого запроса для обработки JWT аутентификации.
-     * <p>
-     * При успешной аутентификации через JWT, этот метод:
-     * <ul>
-     *     <li>Устанавливает объект {@link Authentication} в {@link SecurityContextHolder}.</li>
-     *     <li>Помещает идентификатор аутентифицированного пользователя (ID)
-     *         в {@code MDC} (Mapped Diagnostic Context) для последующего использования в логах.</li>
-     *     <li>Обеспечивает очистку значений {@code MDC}, установленных этим фильтром,
-     *         после того, как запрос обработан далее по цепочке фильтров.</li>
-     * </ul>
-     * </p>
-     * <p>
-     * В случае, если JWT невалиден или происходит ошибка при конвертации его содержимого
-     * в объект {@code Authentication} (например, из-за неверных claims), этот фильтр
-     * **не передает запрос дальше по цепочке**. Вместо этого, он инициирует стандартный
-     * механизм обработки ошибок аутентификации Spring Security, вызывая
-     * {@link AuthenticationEntryPoint#commence(HttpServletRequest, HttpServletResponse, org.springframework.security.core.AuthenticationException)}
-     * с соответствующим исключением {@link com.example.tasktracker.backend.security.exception.BadJwtException}.
-     * Это позволяет централизованно формировать HTTP-ответ об ошибке (например, 401 Unauthorized
-     * с телом в формате Problem Details).
-     * </p>
-     * <p>
-     * В случае непредвиденных внутренних ошибок при обработке аутентификации или MDC
-     * (например, {@link NullPointerException} или {@link IllegalStateException}), эти
-     * исключения будут проброшены дальше и, как правило, приведут к ответу HTTP 500 Internal Server Error,
-     * формируемому вышестоящими обработчиками ошибок (например, {@link com.example.tasktracker.backend.web.exception.GlobalExceptionHandler}
-     * или стандартными механизмами Spring Boot).
-     * </p>
-     *
-     * @param request     HTTP запрос. Не должен быть null.
-     * @param response    HTTP ответ. Не должен быть null.
-     * @param filterChain Цепочка фильтров. Не должна быть null.
-     * @throws ServletException если она возникает при вызове {@code filterChain.doFilter}
-     *                          или при обработке ошибки в {@code AuthenticationEntryPoint}.
-     * @throws IOException      если она возникает при вызове {@code filterChain.doFilter}
-     *                          или при обработке ошибки в {@code AuthenticationEntryPoint}.
-     * @throws RuntimeException (например, {@link NullPointerException}, {@link IllegalStateException})
-     *                          в случае серьезных внутренних ошибок конфигурации или состояния,
-     *                          не связанных напрямую с валидностью самого JWT.
-     */
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                     @NonNull HttpServletResponse response,
                                     @NonNull FilterChain filterChain) throws ServletException, IOException {
-
-        if (SecurityContextHolder.getContext().getAuthentication() != null &&
-                SecurityContextHolder.getContext().getAuthentication().isAuthenticated()) {
-            log.trace("SecurityContext already contains an authenticated principal for [{}]. Skipping JWT processing.",
-                    request.getRequestURI());
-            filterChain.doFilter(request, response);
-            return;
-        }
 
         Optional<String> jwtOptional = extractTokenFromRequest(request);
 
@@ -183,49 +105,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 log.warn("Could not set user authentication from JWT: Claims conversion failed. Token: [{}], Error: {}",
                         JwtValidator.truncateTokenForLogging(jwt), e.getMessage(), e);
                 // Ошибка конвертации claims после валидного токена - это специфичная ошибка JWT.
-                this.authenticationEntryPoint.commence(request, response,
-                        new BadJwtException(
-                                "JWT claims conversion error: " + e.getMessage(),
-                                JwtErrorType.OTHER_JWT_EXCEPTION,
-                                e
-                        ));
-                // Ответ формируется EntryPoint
+                throw new BadJwtException("JWT claims conversion error: " + e.getMessage(),
+                        JwtErrorType.OTHER_JWT_EXCEPTION, e);
             }
         } else {
             // Токен был, но не прошел валидацию. JwtValidator уже залогировал причину.
             log.debug("JWT validation failed for request to [{}]. ErrorType: {}, Message: {}",
                     request.getRequestURI(), validationResult.getErrorType(), validationResult.getErrorMessage());
-            this.authenticationEntryPoint.commence(request, response,
-                    new BadJwtException(
-                            validationResult.getErrorMessage(),
-                            validationResult.getErrorType(),
-                            validationResult.getCause()
-                    ));
-            // Ответ формируется EntryPoint
+            throw new BadJwtException(validationResult.getErrorMessage(), validationResult.getErrorType(),
+                    validationResult.getCause());
         }
-
     }
 
     /**
      * Готовит строковый идентификатор пользователя для помещения в MDC.
-     * <p>
-     * Если principal является экземпляром {@link AppUserDetails}, этот метод пытается
-     * вернуть ID пользователя в виде строки. Если ID пользователя в {@code AppUserDetails}
-     * по какой-то причине равен {@code null} (что является неожиданным состоянием после
-     * успешной аутентификации), будет возвращен email пользователя в качестве фолбэка,
-     * и будет зарегистрировано предупреждение.
-     * </p>
-     * <p>
-     * Для текущей реализации ожидается, что после успешной JWT-аутентификации
-     * principal всегда будет {@link AppUserDetails}. Если это не так,
-     * будет выброшено {@link IllegalStateException}, указывая на возможное нарушение
-     * контракта в цепочке аутентификации.
-     * </p>
      *
-     * @param principal объект principal из {@link Authentication}. Не должен быть null.
-     * @return Строковый идентификатор пользователя (ID или email). Никогда не возвращает {@code null}.
-     * @throws IllegalStateException если principal не является {@link AppUserDetails}.
-     * @throws NullPointerException  если principal равен {@code null}.
+     * @param principal объект principal из {@link Authentication}.
+     * @return Строковый идентификатор пользователя (ID или email в качестве fallback).
      */
     String prepareMdcUserIdentifier(@NonNull Object principal) {
         if (principal instanceof AppUserDetails appUserDetails) {
@@ -244,11 +140,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     /**
      * Извлекает JWT из заголовка "Authorization".
-     * Токен должен иметь префикс "Bearer ".
-     *
-     * @param request HTTP запрос.
-     * @return {@link Optional<String>} содержащий токен, если он найден и корректно оформлен,
-     * иначе {@link Optional#empty()}.
      */
     private Optional<String> extractTokenFromRequest(HttpServletRequest request) {
         String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);

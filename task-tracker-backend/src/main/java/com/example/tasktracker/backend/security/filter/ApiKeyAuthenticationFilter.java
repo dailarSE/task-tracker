@@ -72,9 +72,10 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
                     MDC.MDCCloseable ignoredSrv = MDC.putCloseable(MdcKeys.SERVICE_ID, serviceId);
                     MDC.MDCCloseable ignoredInst = MDC.putCloseable(MdcKeys.SERVICE_INSTANCE_ID, instanceId)
             ) {
-                log.trace("Valid API Key. Service '{}', Instance '{}' authenticated.", serviceId, instanceId);
                 Authentication authentication = new ApiKeyAuthentication(serviceId, instanceId);
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+                log.debug("Valid API Key. Service '{}', Instance '{}' authenticated.", serviceId, instanceId);
+
                 filterChain.doFilter(request, response);
             }
         } else {

@@ -46,14 +46,14 @@ import static com.example.tasktracker.backend.web.ApiConstants.*;
  * определяется аннотацией {@link Order}.
  * </p>
  * <p>
- * 1. {@code internalApiSecurityFilterChain} (@Order(1)): Защищает внутренние
- * M2M (machine-to-machine) эндпоинты по пути {@code /api/v1/internal/**}.
- * Использует аутентификацию по API-ключу.
- * </p>
- * <p>
- * 2. {@code publicApiSecurityFilterChain} (@Order(2)): Защищает публичные и
+ * 1. {@code publicApiSecurityFilterChain} (@Order(1)): Защищает публичные и
  * пользовательские API. Использует JWT-аутентификацию для защищенных
  * ресурсов и разрешает анонимный доступ к публичным эндпоинтам.
+ * </p>
+ * <p>
+ * 2. {@code internalApiSecurityFilterChain} (@Order(2)): Защищает внутренние
+ * M2M (machine-to-machine) эндпоинты по пути {@code /api/v1/internal/**}.
+ * Использует аутентификацию по API-ключу.
  * </p>
  */
 @Configuration
@@ -69,9 +69,9 @@ public class SecurityConfig {
     private final String errorPath;
 
     public SecurityConfig(
+            ApiKeyValidator apiKeyValidator,
             JwtValidator jwtValidator,
             JwtAuthenticationConverter jwtAuthenticationConverter,
-            ApiKeyValidator apiKeyValidator,
             @Qualifier("bearerTokenProblemDetailsAuthenticationEntryPoint") AuthenticationEntryPoint
                     bearerTokenAuthenticationEntryPoint,
             @Qualifier("apiKeyAuthenticationEntryPoint") AuthenticationEntryPoint apiKeyAuthenticationEntryPoint,
@@ -86,16 +86,20 @@ public class SecurityConfig {
         this.errorPath = errorPath;
     }
 
-    /** Матчер для внутренних M2M API эндпоинтов. */
+    /**
+     * Матчер для внутренних M2M API эндпоинтов.
+     */
     private final RequestMatcher internalApiMatcher = new AntPathRequestMatcher("/api/v1/internal/**");
 
     /**
      * Матчер для всех путей, КРОМЕ внутренних API.
      * Используется NegatedRequestMatcher для обеспечения 100% изоляции от internalApiMatcher.
      */
-    private final RequestMatcher publicAndUserApiMatcher = new NegatedRequestMatcher(internalApiMatcher);
+    private final RequestMatcher publicAndTaskApiMatcher = new NegatedRequestMatcher(internalApiMatcher);
 
-    /** Матчер для публичных эндпоинтов, не требующих аутентификации. */
+    /**
+     * Матчер для публичных эндпоинтов, не требующих аутентификации.
+     */
     private final RequestMatcher publicEndpointsMatcher = new OrRequestMatcher(
             new AntPathRequestMatcher(REGISTER_ENDPOINT, HttpMethod.POST.name()),
             new AntPathRequestMatcher(LOGIN_ENDPOINT, HttpMethod.POST.name()),
@@ -103,7 +107,6 @@ public class SecurityConfig {
             new AntPathRequestMatcher("/swagger-ui/**"),
             new AntPathRequestMatcher("/v3/api-docs/**")
     );
-
 
     /**
      * Определяет бин {@link PasswordEncoder} для хеширования паролей.
@@ -140,32 +143,27 @@ public class SecurityConfig {
      */
     @Bean
     @Order(1)
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain publicAndTaskApiFilterChain(HttpSecurity http) throws Exception {
         JwtAuthenticationFilter jwtAuthenticationFilter =
                 new JwtAuthenticationFilter(jwtValidator, jwtAuthenticationConverter);
-        http
-                .securityMatcher(publicAndUserApiMatcher)
+        return http
+                .securityMatcher(publicAndTaskApiMatcher)
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session ->
-                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-                )
+                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(bearerTokenAuthenticationEntryPoint)
-                        .accessDeniedHandler(problemDetailsAccessDeniedHandler)
-                )
-                // Определяем правила авторизации для HTTP-запросов
+                        .accessDeniedHandler(problemDetailsAccessDeniedHandler))
                 .authorizeHttpRequests(authorize -> authorize
                         // Разрешаем публичный доступ к эндпоинтам регистрации и логина
                         .requestMatchers(publicEndpointsMatcher).permitAll()
                         .requestMatchers(errorPath).permitAll()
                         // TODO: Разрешить доступ к эндпоинтам Spring Boot Actuator (если они включены и нужны публично/защищенно)
                         // .requestMatchers("/actuator/**").permitAll() // или .hasRole("ADMIN") и т.д.
-                        .anyRequest().authenticated()
-                )
-                .addFilterAfter(jwtAuthenticationFilter, ExceptionTranslationFilter.class);
-
-        return http.build();
+                        .anyRequest().authenticated())
+                .addFilterAfter(jwtAuthenticationFilter, ExceptionTranslationFilter.class)
+                .build();
     }
 
     /**
@@ -185,14 +183,12 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(authorize ->
-                        authorize.anyRequest().authenticated()
-                )
-                .addFilterAfter(apiKeyAuthenticationFilter, ExceptionTranslationFilter.class)
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(apiKeyAuthenticationEntryPoint)
-                        .accessDeniedHandler(problemDetailsAccessDeniedHandler)
-                )
+                        .accessDeniedHandler(problemDetailsAccessDeniedHandler))
+                .authorizeHttpRequests(authorize ->
+                        authorize.anyRequest().authenticated())
+                .addFilterAfter(apiKeyAuthenticationFilter, ExceptionTranslationFilter.class)
                 .build();
     }
 

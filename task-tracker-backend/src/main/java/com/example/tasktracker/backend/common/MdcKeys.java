@@ -33,6 +33,7 @@ public final class MdcKeys {
 
     /**
      * Ключ MDC для хранения уникального идентификатора экземпляра внутреннего сервиса-клиента (например, pod name).
+     * Значение: {@value}.
      */
     public static final String SERVICE_INSTANCE_ID = "client.service.instance.id";
 }

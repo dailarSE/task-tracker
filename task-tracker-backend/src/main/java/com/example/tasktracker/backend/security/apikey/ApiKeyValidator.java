@@ -12,6 +12,7 @@ import java.util.Optional;
 
 /**
  * Сервис, ответственный за валидацию предоставленного API-ключа и идентификацию сервиса.
+ * Использует timing-attack-safe метод сравнения для обеспечения безопасности.
  */
 @Service
 @RequiredArgsConstructor
@@ -26,7 +27,7 @@ public class ApiKeyValidator {
      *
      * @param providedKey API-ключ, полученный из запроса. Не должен быть null.
      * @return {@link Optional} с идентификатором сервиса, если ключ валиден.
-     *         В противном случае, возвращает {@link Optional#empty()}.
+     * В противном случае, возвращает {@link Optional#empty()}.
      */
     public Optional<String> getServiceIdIfValid(@NonNull String providedKey) {
         final Map<String, String> keysToServices = apiKeyProperties.getKeysToServices();
@@ -41,7 +42,7 @@ public class ApiKeyValidator {
             byte[] validKeyBytes = entry.getKey().getBytes(StandardCharsets.UTF_8);
             if (MessageDigest.isEqual(providedKeyBytes, validKeyBytes)) {
                 String serviceId = entry.getValue();
-                log.trace("Provided API key matched. Identified service: '{}'", serviceId);
+                log.debug("Provided API key matched. Identified service: '{}'", serviceId);
                 return Optional.of(serviceId);
             }
         }

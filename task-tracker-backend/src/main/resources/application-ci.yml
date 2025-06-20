@@ -34,4 +34,3 @@ app:
     api-key:
       keys-to-services:
         "key-for-scheduler": "task-tracker-scheduler"
-        "key-for-testing": "test-client"

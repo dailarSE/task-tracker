@@ -3,7 +3,6 @@ package com.example.tasktracker.backend.security.config;
 import com.example.tasktracker.backend.security.apikey.ApiKeyValidator;
 import com.example.tasktracker.backend.security.filter.ApiKeyAuthenticationFilter;
 import com.example.tasktracker.backend.security.filter.JwtAuthenticationFilter;
-
 import com.example.tasktracker.backend.security.jwt.JwtAuthenticationConverter;
 import com.example.tasktracker.backend.security.jwt.JwtValidator;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -25,7 +24,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.access.ExceptionTranslationFilter;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.security.web.util.matcher.NegatedRequestMatcher;
 import org.springframework.security.web.util.matcher.OrRequestMatcher;
@@ -87,9 +86,7 @@ public class SecurityConfig {
         this.errorPath = errorPath;
     }
 
-    /**
-     * Матчер для внутренних M2M API эндпоинтов.
-     */
+    /** Матчер для внутренних M2M API эндпоинтов. */
     private final RequestMatcher internalApiMatcher = new AntPathRequestMatcher("/api/v1/internal/**");
 
     /**
@@ -98,9 +95,7 @@ public class SecurityConfig {
      */
     private final RequestMatcher publicAndUserApiMatcher = new NegatedRequestMatcher(internalApiMatcher);
 
-    /**
-     * Матчер для публичных эндпоинтов, не требующих аутентификации.
-     */
+    /** Матчер для публичных эндпоинтов, не требующих аутентификации. */
     private final RequestMatcher publicEndpointsMatcher = new OrRequestMatcher(
             new AntPathRequestMatcher(REGISTER_ENDPOINT, HttpMethod.POST.name()),
             new AntPathRequestMatcher(LOGIN_ENDPOINT, HttpMethod.POST.name()),
@@ -147,7 +142,7 @@ public class SecurityConfig {
     @Order(1)
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         JwtAuthenticationFilter jwtAuthenticationFilter =
-                new JwtAuthenticationFilter(jwtValidator, jwtAuthenticationConverter,bearerTokenAuthenticationEntryPoint);
+                new JwtAuthenticationFilter(jwtValidator, jwtAuthenticationConverter);
         http
                 .securityMatcher(publicAndUserApiMatcher)
                 .csrf(AbstractHttpConfigurer::disable)
@@ -168,7 +163,7 @@ public class SecurityConfig {
                         // .requestMatchers("/actuator/**").permitAll() // или .hasRole("ADMIN") и т.д.
                         .anyRequest().authenticated()
                 )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterAfter(jwtAuthenticationFilter, ExceptionTranslationFilter.class);
 
         return http.build();
     }
@@ -184,8 +179,7 @@ public class SecurityConfig {
     @Bean
     @Order(2)
     public SecurityFilterChain internalApiSecurityFilterChain(HttpSecurity http) throws Exception {
-        ApiKeyAuthenticationFilter apiKeyAuthenticationFilter =
-                new ApiKeyAuthenticationFilter(apiKeyValidator, apiKeyAuthenticationEntryPoint);
+        ApiKeyAuthenticationFilter apiKeyAuthenticationFilter = new ApiKeyAuthenticationFilter(apiKeyValidator);
         return http
                 .securityMatcher(internalApiMatcher)
                 .csrf(AbstractHttpConfigurer::disable)
@@ -194,7 +188,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize ->
                         authorize.anyRequest().authenticated()
                 )
-                .addFilterBefore(apiKeyAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(apiKeyAuthenticationFilter, ExceptionTranslationFilter.class)
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(apiKeyAuthenticationEntryPoint)
                         .accessDeniedHandler(problemDetailsAccessDeniedHandler)

@@ -21,7 +21,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -29,9 +28,7 @@ import org.mockito.quality.Strictness;
 import org.slf4j.MDC;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.AuthenticationEntryPoint;
 
 import java.io.IOException;
 
@@ -48,93 +45,26 @@ import static org.mockito.Mockito.*;
 @MockitoSettings(strictness = Strictness.LENIENT)
 class JwtAuthenticationFilterTest {
 
-    @Mock
-    private JwtValidator mockJwtValidator;
-    @Mock
-    private JwtAuthenticationConverter mockJwtAuthenticationConverter;
-    @Mock
-    private AuthenticationEntryPoint mockAuthenticationEntryPoint;
-    @Mock
-    private HttpServletRequest mockRequest;
-    @Mock
-    private HttpServletResponse mockResponse;
-    @Mock
-    private FilterChain mockFilterChain;
-    @Mock
-    private Authentication mockAuthentication;
-    @Mock
-    private Jws<Claims> mockJwsClaims;
-    @Mock
-    private Claims mockClaimsBody;
+    @Mock private JwtValidator mockJwtValidator;
+    @Mock private JwtAuthenticationConverter mockJwtAuthenticationConverter;
+    @Mock private HttpServletRequest mockRequest;
+    @Mock private HttpServletResponse mockResponse;
+    @Mock private FilterChain mockFilterChain;
+    @Mock private Jws<Claims> mockJwsClaims;
+    @Mock private Claims mockClaimsBody;
 
-
-    // Тестируемый объект
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @BeforeEach
     void setUp() {
         SecurityContextHolder.clearContext();
-        // Создаем экземпляр фильтра вручную с моками
-        jwtAuthenticationFilter = new JwtAuthenticationFilter(
-                mockJwtValidator,
-                mockJwtAuthenticationConverter,
-                mockAuthenticationEntryPoint
-        );
-        // Настройка для Jws<Claims> и его payload
+        jwtAuthenticationFilter = new JwtAuthenticationFilter(mockJwtValidator, mockJwtAuthenticationConverter);
         when(mockJwsClaims.getPayload()).thenReturn(mockClaimsBody);
     }
 
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
-    }
-
-    @Test
-    @DisplayName("Конструктор: JwtValidator null -> должен выбросить NullPointerException")
-    void constructor_whenJwtValidatorIsNull_shouldThrowNullPointerException() {
-        assertThatNullPointerException()
-                .isThrownBy(() -> new JwtAuthenticationFilter(null, mockJwtAuthenticationConverter, mockAuthenticationEntryPoint))
-                .withMessageContaining("jwtValidator is marked non-null but is null");
-    }
-
-    @Test
-    @DisplayName("Конструктор: JwtAuthenticationConverter null -> должен выбросить NullPointerException")
-    void constructor_whenJwtAuthenticationConverterIsNull_shouldThrowNullPointerException() {
-        assertThatNullPointerException()
-                .isThrownBy(() -> new JwtAuthenticationFilter(mockJwtValidator, null, mockAuthenticationEntryPoint))
-                .withMessageContaining("jwtAuthenticationConverter is marked non-null but is null");
-    }
-
-    @Test
-    @DisplayName("Конструктор: AuthenticationEntryPoint null -> должен выбросить NullPointerException")
-    void constructor_whenAuthenticationEntryPointIsNull_shouldThrowNullPointerException() {
-        assertThatNullPointerException()
-                .isThrownBy(() -> new JwtAuthenticationFilter(mockJwtValidator, mockJwtAuthenticationConverter, null))
-                .withMessageContaining("authenticationEntryPoint is marked non-null but is null");
-    }
-
-    // Тесты на @NonNull параметров doFilterInternal (как мы обсуждали)
-    @Test
-    @DisplayName("doFilterInternal: HttpServletRequest null -> должен выбросить NullPointerException")
-    void doFilterInternal_whenRequestIsNull_shouldThrowNullPointerException() {
-        assertThatNullPointerException()
-                .isThrownBy(() -> jwtAuthenticationFilter.doFilterInternal(null, mockResponse, mockFilterChain))
-                .withMessageContaining("request is marked non-null but is null");
-    }
-    // ... (аналогичные тесты для response и filterChain) ...
-
-    @Test
-    @DisplayName("doFilterInternal: Authentication уже есть в контексте -> JWT не обрабатывается, цепочка продолжается")
-    void doFilterInternal_whenAuthenticationAlreadyPresentInContext_shouldNotProcessJwtAndProceedChain() throws ServletException, IOException {
-        when(mockAuthentication.isAuthenticated()).thenReturn(true);
-        SecurityContextHolder.getContext().setAuthentication(mockAuthentication);
-        when(mockRequest.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer some.jwt.token");
-
-        jwtAuthenticationFilter.doFilterInternal(mockRequest, mockResponse, mockFilterChain);
-
-        assertThat(SecurityContextHolder.getContext().getAuthentication()).isSameAs(mockAuthentication);
-        verifyNoInteractions(mockJwtValidator, mockJwtAuthenticationConverter, mockAuthenticationEntryPoint);
-        verify(mockFilterChain).doFilter(mockRequest, mockResponse);
     }
 
     @Test
@@ -146,154 +76,154 @@ class JwtAuthenticationFilterTest {
 
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
         verify(mockFilterChain).doFilter(mockRequest, mockResponse);
-        verifyNoInteractions(mockJwtValidator, mockJwtAuthenticationConverter, mockAuthenticationEntryPoint);
+        verifyNoInteractions(mockJwtValidator, mockJwtAuthenticationConverter);
     }
 
     @Test
     @DisplayName("doFilterInternal: Валидный JWT -> Authentication устанавливается, цепочка продолжается")
     void doFilterInternal_whenJwtTokenIsValid_shouldSetAuthenticationAndProceedChain() throws ServletException, IOException {
+        // Arrange
         String token = "valid.jwt.token";
         JwtValidationResult validResult = JwtValidationResult.success(mockJwsClaims);
 
         AppUserDetails mockUserDetails = mock(AppUserDetails.class);
         when(mockUserDetails.getId()).thenReturn(1L);
-        when(mockUserDetails.getUsername()).thenReturn("test@example.com"); // Для лога
+        when(mockUserDetails.getUsername()).thenReturn("test@example.com");
 
-        // Настраиваем конвертер, чтобы он возвращал Authentication с этим UserDetails
         Authentication mockAuthWithUserDetails = mock(Authentication.class);
         when(mockAuthWithUserDetails.getPrincipal()).thenReturn(mockUserDetails);
 
         when(mockRequest.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer " + token);
         when(mockJwtValidator.validateAndParseToken(token)).thenReturn(validResult);
-        // Используем mockClaimsBody, так как getJwsClaimsOptional().get().getPayload() вернет его
         when(mockJwtAuthenticationConverter.convert(mockClaimsBody, token)).thenReturn(mockAuthWithUserDetails);
 
+        // Act
         jwtAuthenticationFilter.doFilterInternal(mockRequest, mockResponse, mockFilterChain);
 
+        // Assert
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isEqualTo(mockAuthWithUserDetails);
         verify(mockFilterChain).doFilter(mockRequest, mockResponse);
-        verifyNoInteractions(mockAuthenticationEntryPoint); // EntryPoint не должен вызываться при успехе
     }
 
     @Test
-    @DisplayName("doFilterInternal: Невалидный JWT (ошибка валидатора) -> AuthenticationEntryPoint вызывается, цепочка прерывается")
-    void doFilterInternal_whenJwtIsInvalidByValidator_shouldCallEntryPointAndReturn() throws ServletException, IOException {
+    @DisplayName("doFilterInternal: Невалидный JWT (ошибка валидатора) -> должен выбросить BadJwtException")
+    void doFilterInternal_whenJwtIsInvalidByValidator_shouldThrowBadJwtException() {
+        // Arrange
         String token = "invalid.jwt.token";
         JwtValidationResult invalidResult = JwtValidationResult.failure(JwtErrorType.INVALID_SIGNATURE, "Bad signature");
 
         when(mockRequest.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer " + token);
         when(mockJwtValidator.validateAndParseToken(token)).thenReturn(invalidResult);
 
-        jwtAuthenticationFilter.doFilterInternal(mockRequest, mockResponse, mockFilterChain);
+        // Act & Assert
+        assertThatExceptionOfType(BadJwtException.class)
+                .isThrownBy(() -> jwtAuthenticationFilter.doFilterInternal(mockRequest, mockResponse, mockFilterChain))
+                .satisfies(ex -> {
+                    assertThat(ex.getErrorType()).isEqualTo(JwtErrorType.INVALID_SIGNATURE);
+                    assertThat(ex.getMessage()).isEqualTo("Bad signature");
+                });
 
-        verify(mockAuthenticationEntryPoint).commence(eq(mockRequest), eq(mockResponse), any(BadJwtException.class));
-        verify(mockFilterChain, never()).doFilter(mockRequest, mockResponse); // Цепочка не должна продолжаться
-        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull(); // Контекст не должен быть установлен
+        verifyNoInteractions(mockFilterChain); // Цепочка не должна продолжаться
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
     @Test
-    @DisplayName("doFilterInternal: Ошибка конвертации Claims -> AuthenticationEntryPoint вызывается, цепочка прерывается")
-    void doFilterInternal_whenClaimsConversionFails_shouldCallEntryPointAndReturn() throws ServletException, IOException {
+    @DisplayName("doFilterInternal: Ошибка конвертации Claims -> должен выбросить BadJwtException")
+    void doFilterInternal_whenClaimsConversionFails_shouldThrowBadJwtException() {
+        // Arrange
         String token = "valid.token.but.bad.claims";
-        // JwtValidator возвращает успех
         JwtValidationResult validResult = JwtValidationResult.success(mockJwsClaims);
-        // Но JwtAuthenticationConverter выбрасывает исключение
         IllegalArgumentException conversionException = new IllegalArgumentException("Bad claims content");
 
         when(mockRequest.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer " + token);
         when(mockJwtValidator.validateAndParseToken(token)).thenReturn(validResult);
         when(mockJwtAuthenticationConverter.convert(mockClaimsBody, token)).thenThrow(conversionException);
 
-        jwtAuthenticationFilter.doFilterInternal(mockRequest, mockResponse, mockFilterChain);
+        // Act & Assert
+        assertThatExceptionOfType(BadJwtException.class)
+                .isThrownBy(() -> jwtAuthenticationFilter.doFilterInternal(mockRequest, mockResponse, mockFilterChain))
+                .satisfies(ex -> {
+                    assertThat(ex.getErrorType()).isEqualTo(JwtErrorType.OTHER_JWT_EXCEPTION);
+                    assertThat(ex.getCause()).isSameAs(conversionException);
+                });
 
-        // Проверяем, что AuthenticationEntryPoint был вызван с BadJwtException, содержащим исходную причину
-        ArgumentCaptor<AuthenticationException> authExCaptor = ArgumentCaptor.forClass(AuthenticationException.class);
-        verify(mockAuthenticationEntryPoint).commence(eq(mockRequest), eq(mockResponse), authExCaptor.capture());
-
-        assertThat(authExCaptor.getValue()).isInstanceOf(BadJwtException.class);
-        BadJwtException badJwtEx = (BadJwtException) authExCaptor.getValue();
-        assertThat(badJwtEx.getErrorType()).isEqualTo(JwtErrorType.OTHER_JWT_EXCEPTION); // Как мы определили в фильтре
-        assertThat(badJwtEx.getCause()).isSameAs(conversionException);
-
-        verify(mockFilterChain, never()).doFilter(mockRequest, mockResponse); // Цепочка не должна продолжаться
+        verifyNoInteractions(mockFilterChain);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
-    @DisplayName("doFilterInternal: Заголовок Authorization без префикса 'Bearer ' -> Authentication не устанавливается, цепочка продолжается")
     @ParameterizedTest(name = "Для заголовка: \"{0}\"")
     @ValueSource(strings = {"NotBearer valid.jwt.token", "Bearer", "Token only"})
-    void doFilterInternal_whenAuthorizationHeaderIsMissingBearerPrefix_shouldNotSetAuthenticationAndProceedChain(String invalidAuthHeader) throws ServletException, IOException {
+    @DisplayName("doFilterInternal: Заголовок Authorization без префикса 'Bearer ' -> цепочка продолжается")
+    void doFilterInternal_whenAuthorizationHeaderIsMissingBearerPrefix_shouldProceedChain(String invalidAuthHeader) throws ServletException, IOException {
+        // Arrange
         when(mockRequest.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn(invalidAuthHeader);
 
+        // Act
         jwtAuthenticationFilter.doFilterInternal(mockRequest, mockResponse, mockFilterChain);
 
+        // Assert
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
         verify(mockFilterChain).doFilter(mockRequest, mockResponse);
-        verifyNoInteractions(mockJwtValidator, mockJwtAuthenticationConverter, mockAuthenticationEntryPoint);
+        verifyNoInteractions(mockJwtValidator);
     }
 
     @Test
-    @DisplayName("doFilterInternal: Валидный JWT -> MDC должен быть установлен во время doFilter и очищен после")
+    @DisplayName("doFilterInternal: Валидный JWT -> MDC должен быть установлен и очищен")
     void doFilterInternal_whenJwtTokenIsValid_shouldSetAndClearMdc() throws ServletException, IOException {
+        // Arrange
         String token = "valid.jwt.token";
         Long expectedUserId = 123L;
         String expectedUserIdStr = String.valueOf(expectedUserId);
 
-        // Мокаем AppUserDetails, который будет возвращен конвертером
         AppUserDetails mockUserDetails = mock(AppUserDetails.class);
         when(mockUserDetails.getId()).thenReturn(expectedUserId);
-        when(mockUserDetails.getUsername()).thenReturn("test@example.com"); // Для лога
 
-        // Настраиваем конвертер, чтобы он возвращал Authentication с этим UserDetails
         Authentication mockAuthWithUserDetails = mock(Authentication.class);
         when(mockAuthWithUserDetails.getPrincipal()).thenReturn(mockUserDetails);
 
         when(mockJwtAuthenticationConverter.convert(any(Claims.class), eq(token))).thenReturn(mockAuthWithUserDetails);
 
-        // Настраиваем валидатор
-        JwtValidationResult validResult = JwtValidationResult.success(mockJwsClaims); // mockJwsClaims из setUp
-        when(mockJwsClaims.getPayload()).thenReturn(mock(Claims.class)); // Сам payload не важен для этого теста
+        JwtValidationResult validResult = JwtValidationResult.success(mockJwsClaims);
+        when(mockJwsClaims.getPayload()).thenReturn(mock(Claims.class));
         when(mockJwtValidator.validateAndParseToken(token)).thenReturn(validResult);
         when(mockRequest.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer " + token);
 
-        // Используем Answer для проверки MDC *внутри* вызова doFilter
         doAnswer(invocation -> {
-            // В этот момент MDC должен быть установлен
-            assertThat(MDC.get(MdcKeys.USER_ID)) // Используйте реальное имя константы
-                    .isEqualTo(expectedUserIdStr);
-            return null; // doFilter у FilterChain обычно void
+            assertThat(MDC.get(MdcKeys.USER_ID)).isEqualTo(expectedUserIdStr);
+            return null;
         }).when(mockFilterChain).doFilter(mockRequest, mockResponse);
 
         // Act
-        // Очищаем MDC перед вызовом, чтобы убедиться, что именно наш фильтр его ставит и чистит
-        MDC.remove(MdcKeys.USER_ID);
+        MDC.clear();
         jwtAuthenticationFilter.doFilterInternal(mockRequest, mockResponse, mockFilterChain);
 
         // Assert
-        // После того, как doFilterInternal отработал, MDC должен быть очищен
         assertThat(MDC.get(MdcKeys.USER_ID)).isNull();
-
-        // Убедимся, что SecurityContext был установлен
-        assertThat(SecurityContextHolder.getContext().getAuthentication()).isSameAs(mockAuthWithUserDetails);
-        verify(mockFilterChain).doFilter(mockRequest, mockResponse); // Убедимся, что цепочка была вызвана
-        verifyNoInteractions(mockAuthenticationEntryPoint);
+        verify(mockFilterChain).doFilter(mockRequest, mockResponse);
     }
 
     @Test
-    @DisplayName("doFilterInternal: Невалидный JWT -> MDC не должен быть установлен")
-    void doFilterInternal_whenJwtIsInvalid_shouldNotSetMdc() throws ServletException, IOException {
-        String token = "invalid.jwt.token";
-        JwtValidationResult invalidResult = JwtValidationResult.failure(JwtErrorType.INVALID_SIGNATURE, "Bad signature");
+    @DisplayName("doFilterInternal: Непредвиденный RuntimeException из зависимостей -> должен быть проброшен дальше")
+    void doFilterInternal_whenDependencyThrowsRuntimeException_shouldPropagateException() {
+        // Arrange
+        String token = "valid.jwt.token";
+        JwtValidationResult validResult = JwtValidationResult.success(mockJwsClaims);
+        IllegalStateException unexpectedException = new IllegalStateException("Unexpected internal error!");
 
         when(mockRequest.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer " + token);
-        when(mockJwtValidator.validateAndParseToken(token)).thenReturn(invalidResult);
+        when(mockJwtValidator.validateAndParseToken(token)).thenReturn(validResult);
+        // Симулируем, что конвертер выбрасывает непредвиденную ошибку
+        when(mockJwtAuthenticationConverter.convert(mockClaimsBody, token)).thenThrow(unexpectedException);
 
-        MDC.remove(MdcKeys.USER_ID); // Очищаем перед тестом
-        jwtAuthenticationFilter.doFilterInternal(mockRequest, mockResponse, mockFilterChain);
+        // Act & Assert
+        // Проверяем, что именно это исключение "вылетает" из фильтра
+        assertThatExceptionOfType(IllegalStateException.class)
+                .isThrownBy(() -> jwtAuthenticationFilter.doFilterInternal(mockRequest, mockResponse, mockFilterChain))
+                .isSameAs(unexpectedException);
 
-        assertThat(MDC.get(MdcKeys.USER_ID)).isNull();
-        verify(mockAuthenticationEntryPoint).commence(any(), any(), any(BadJwtException.class));
-        verify(mockFilterChain, never()).doFilter(any(), any());
+        // Убеждаемся, что цепочка не продолжилась и контекст не был установлен
+        verifyNoInteractions(mockFilterChain);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
     @Test
@@ -347,5 +277,29 @@ class JwtAuthenticationFilterTest {
         assertThatNullPointerException()
                 .isThrownBy(() -> jwtAuthenticationFilter.prepareMdcUserIdentifier(null))
                 .withMessageContaining("principal is marked non-null but is null");
+    }
+
+    @Test
+    @DisplayName("Конструктор: JwtValidator null -> должен выбросить NullPointerException")
+    void constructor_whenJwtValidatorIsNull_shouldThrowNullPointerException() {
+        assertThatNullPointerException()
+                .isThrownBy(() -> new JwtAuthenticationFilter(null, mockJwtAuthenticationConverter))
+                .withMessageContaining("jwtValidator is marked non-null but is null");
+    }
+
+    @Test
+    @DisplayName("Конструктор: JwtAuthenticationConverter null -> должен выбросить NullPointerException")
+    void constructor_whenJwtAuthenticationConverterIsNull_shouldThrowNullPointerException() {
+        assertThatNullPointerException()
+                .isThrownBy(() -> new JwtAuthenticationFilter(mockJwtValidator, null))
+                .withMessageContaining("jwtAuthenticationConverter is marked non-null but is null");
+    }
+
+    @Test
+    @DisplayName("doFilterInternal: HttpServletRequest null -> должен выбросить NullPointerException")
+    void doFilterInternal_whenRequestIsNull_shouldThrowNullPointerException() {
+        assertThatNullPointerException()
+                .isThrownBy(() -> jwtAuthenticationFilter.doFilterInternal(null, mockResponse, mockFilterChain))
+                .withMessageContaining("request is marked non-null but is null");
     }
 }

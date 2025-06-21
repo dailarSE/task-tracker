@@ -1,4 +1,3 @@
-// file: src/main/java/com/example/tasktracker/backend/internal/scheduler/validation/ValidReportIntervalValidator.java
 package com.example.tasktracker.backend.internal.scheduler.validation;
 
 import com.example.tasktracker.backend.internal.scheduler.config.SchedulerSupportApiProperties;
@@ -6,6 +5,7 @@ import com.example.tasktracker.backend.internal.scheduler.dto.UserTaskReportRequ
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.validator.constraintvalidation.HibernateConstraintValidatorContext;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
@@ -23,42 +23,64 @@ public class ValidReportIntervalValidator implements ConstraintValidator<ValidRe
     @Override
     public boolean isValid(UserTaskReportRequest request, ConstraintValidatorContext context) {
         if (request == null || request.getFrom() == null || request.getTo() == null) {
-            return true; // Проверку на null делают @NotNull на полях
+            return true;
         }
 
         boolean isValid = true;
         Instant from = request.getFrom();
         Instant to = request.getTo();
 
+        HibernateConstraintValidatorContext hibernateContext = context.unwrap(HibernateConstraintValidatorContext.class);
+
         if (!from.isBefore(to)) {
             isValid = false;
-            addConstraintViolation(context, "{internal.report.validation.fromBeforeTo}");
+            addConstraintViolation(hibernateContext, "{internal.report.validation.fromBeforeTo}", "from");
         }
 
         long maxIntervalDays = properties.getUserTaskReport().getMaxIntervalDays();
         if (Duration.between(from, to).toDays() > maxIntervalDays) {
             isValid = false;
-            addConstraintViolation(context, "{internal.report.validation.intervalTooLarge}", "to", maxIntervalDays);
+            addConstraintViolationWithParameter(
+                    hibernateContext,
+                    "{internal.report.validation.intervalTooLarge}",
+                    "to",
+                    "maxDays",
+                    maxIntervalDays
+            );
         }
 
         long maxAgeDays = properties.getUserTaskReport().getMaxAgeDays();
         if (to.isBefore(clock.instant().minus(maxAgeDays, ChronoUnit.DAYS))) {
             isValid = false;
-            addConstraintViolation(context, "{internal.report.validation.intervalTooOld}", "to", maxAgeDays);
+            addConstraintViolationWithParameter(
+                    hibernateContext,
+                    "{internal.report.validation.intervalTooOld}",
+                    "to",
+                    "maxAge",
+                    maxAgeDays
+            );
         }
 
         return isValid;
     }
 
-    private void addConstraintViolation(ConstraintValidatorContext context, String messageTemplate, Object... args) {
+    private void addConstraintViolation(ConstraintValidatorContext context, String messageTemplate, String propertyNode) {
         context.disableDefaultConstraintViolation();
-        context.buildConstraintViolationWithTemplate(String.format(messageTemplate, args))
+        context.buildConstraintViolationWithTemplate(messageTemplate)
+                .addPropertyNode(propertyNode)
                 .addConstraintViolation();
     }
 
-    private void addConstraintViolation(ConstraintValidatorContext context, String messageTemplate, String propertyNode, Object... args) {
+    private void addConstraintViolationWithParameter(
+            HibernateConstraintValidatorContext context,
+            String messageTemplate,
+            String propertyNode,
+            String paramName,
+            Object paramValue) {
+
         context.disableDefaultConstraintViolation();
-        context.buildConstraintViolationWithTemplate(String.format(messageTemplate, args))
+        context.addMessageParameter(paramName, paramValue)
+                .buildConstraintViolationWithTemplate(messageTemplate)
                 .addPropertyNode(propertyNode)
                 .addConstraintViolation();
     }

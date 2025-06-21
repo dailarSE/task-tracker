@@ -26,6 +26,12 @@ public class SchedulerSupportApiProperties {
     @Valid
     private UserProcessingIdsEndpoint userProcessingIds = new UserProcessingIdsEndpoint();
 
+    /**
+     * Конфигурация для эндпоинта, предоставляющего отчеты по задачам.
+     */
+    @Valid
+    private UserTaskReportEndpoint userTaskReport = new UserTaskReportEndpoint();
+
     @Getter
     @Setter
     public static class UserProcessingIdsEndpoint {
@@ -49,5 +55,21 @@ public class SchedulerSupportApiProperties {
         public boolean isDefaultSizeLessThanOrEqualToMaxSize() {
             return defaultPageSize <= maxPageSize;
         }
+    }
+
+    @Getter
+    @Setter
+    public static class UserTaskReportEndpoint {
+        /**
+         * Максимальная длительность интервала отчета в днях.
+         */
+        @Positive(message = "{config.validation.positive}")
+        private int maxIntervalDays = 3;
+
+        /**
+         * Максимальный возраст отчета в днях (насколько "в прошлое" можно запрашивать отчет).
+         */
+        @Positive(message = "{config.validation.positive}")
+        private int maxAgeDays = 30;
     }
 }

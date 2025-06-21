@@ -1,0 +1,31 @@
+databaseChangeLog:
+  - changeSet:
+      id: 7
+      author: dailar401@gmail.com
+      comment: "Drop old, less efficient index on tasks(user_id) for pending status"
+      changes:
+        - dropIndex:
+            indexName: "idx_tasks_user_id_where_status_pending"
+            tableName: "tasks"
+
+  - changeSet:
+      id: 8
+      author: dailar401@gmail.com
+      comment: "Add partial composite index for pending tasks report"
+      changes:
+        - sql:
+            comment: "Create covering partial index on (user_id, created_at) for PENDING tasks"
+            dbms: "postgresql"
+            endDelimiter: ";"
+            sql: "CREATE INDEX idx_tasks_user_id_created_at_pending ON tasks (user_id, created_at ASC) WHERE status = 'PENDING';"
+
+  - changeSet:
+      id: 9
+      author: dailar401@gmail.com
+      comment: "Add partial composite index for completed tasks report"
+      changes:
+        - sql:
+            comment: "Create covering partial index on (user_id, completed_at) for COMPLETED tasks"
+            dbms: "postgresql"
+            endDelimiter: ";"
+            sql: "CREATE INDEX idx_tasks_user_id_completed_at_completed ON tasks (user_id, completed_at DESC) WHERE status = 'COMPLETED';"

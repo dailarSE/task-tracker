@@ -2,6 +2,9 @@ package com.example.tasktracker.backend.internal.scheduler.service;
 
 import com.example.tasktracker.backend.internal.scheduler.config.SchedulerSupportApiProperties;
 import com.example.tasktracker.backend.internal.scheduler.dto.PaginatedUserIdsResponse;
+import com.example.tasktracker.backend.internal.scheduler.dto.UserTaskReport;
+import com.example.tasktracker.backend.internal.scheduler.dto.UserTaskReportRequest;
+import com.example.tasktracker.backend.task.repository.TaskQueryRepository;
 import com.example.tasktracker.backend.user.repository.UserQueryRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,21 +18,27 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.domain.SliceImpl;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Unit-тесты для SystemDataProvisionService")
 class SystemDataProvisionServiceTest {
 
-    @Mock private UserQueryRepository mockUserQueryRepository;
-    @Mock private SchedulerSupportApiProperties mockProperties;
+    @Mock
+    private UserQueryRepository mockUserQueryRepository;
+    @Mock
+    private SchedulerSupportApiProperties mockProperties;
+    @Mock
+    private TaskQueryRepository mockTaskQueryRepository;
     private final ObjectMapper realObjectMapper = new ObjectMapper();
 
     private SystemDataProvisionService service;
@@ -39,15 +48,15 @@ class SystemDataProvisionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new SystemDataProvisionService(mockUserQueryRepository, mockProperties, realObjectMapper);
+        service = new SystemDataProvisionService(mockUserQueryRepository, mockTaskQueryRepository, mockProperties, realObjectMapper);
 
         SchedulerSupportApiProperties.UserProcessingIdsEndpoint endpointProps = new SchedulerSupportApiProperties.UserProcessingIdsEndpoint();
         endpointProps.setDefaultPageSize(DEFAULT_PAGE_SIZE);
         endpointProps.setMaxPageSize(MAX_PAGE_SIZE);
-        when(mockProperties.getUserProcessingIds()).thenReturn(endpointProps);
+        lenient().when(mockProperties.getUserProcessingIds()).thenReturn(endpointProps);
 
         // Общая настройка для всех тестов, где репозиторий может быть вызван
-        when(mockUserQueryRepository.findUserIds(anyLong(), anyInt())).thenReturn(new SliceImpl<>(List.of()));
+        lenient().when(mockUserQueryRepository.findUserIds(anyLong(), anyInt())).thenReturn(new SliceImpl<>(List.of()));
     }
 
     @Nested
@@ -191,6 +200,48 @@ class SystemDataProvisionServiceTest {
             assertThat(response.getData()).isEmpty();
             assertThat(response.getPageInfo().isHasNextPage()).isFalse();
             assertThat(response.getPageInfo().getNextPageCursor()).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("Метод getTaskReportsForUsers")
+    class GetTaskReportsForUsersTests {
+
+        @Test
+        @DisplayName("При валидном запросе должен вызывать репозиторий и возвращать его результат")
+        void whenRequestIsValid_shouldCallRepositoryAndReturnItsResult() {
+            // Arrange
+            Instant from = Instant.now().minus(1, ChronoUnit.DAYS);
+            Instant to = Instant.now();
+            UserTaskReportRequest request = new UserTaskReportRequest(List.of(1L, 2L), from, to);
+
+            List<UserTaskReport> expectedReports = List.of(new UserTaskReport(1L, "user1@test.com"));
+            when(mockTaskQueryRepository.findTaskReportsForUsers(request.getUserIds(), from, to))
+                    .thenReturn(expectedReports);
+
+            // Act
+            List<UserTaskReport> actualReports = service.getTaskReportsForUsers(request);
+
+            // Assert
+            assertThat(actualReports).isSameAs(expectedReports);
+            verify(mockTaskQueryRepository).findTaskReportsForUsers(request.getUserIds(), from, to);
+        }
+
+        @Test
+        @DisplayName("Когда список ID в запросе пуст, должен вернуть пустой список без вызова репозитория")
+        void whenIdListIsEmpty_shouldReturnEmptyListWithoutCallingRepo() {
+            // Arrange
+            Instant from = Instant.now().minus(1, ChronoUnit.DAYS);
+            Instant to = Instant.now();
+            UserTaskReportRequest request = new UserTaskReportRequest(Collections.emptyList(), from, to);
+
+            // Act
+            List<UserTaskReport> actualReports = service.getTaskReportsForUsers(request);
+
+            // Assert
+            assertThat(actualReports).isNotNull().isEmpty();
+            // Проверяем, что взаимодействия с репозиторием не было
+            verifyNoInteractions(mockTaskQueryRepository);
         }
     }
 }

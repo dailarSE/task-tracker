@@ -3,6 +3,9 @@ package com.example.tasktracker.backend.internal.scheduler.service;
 import com.example.tasktracker.backend.internal.scheduler.config.SchedulerSupportApiProperties;
 import com.example.tasktracker.backend.internal.scheduler.dto.PageInfo;
 import com.example.tasktracker.backend.internal.scheduler.dto.PaginatedUserIdsResponse;
+import com.example.tasktracker.backend.internal.scheduler.dto.UserTaskReport;
+import com.example.tasktracker.backend.internal.scheduler.dto.UserTaskReportRequest;
+import com.example.tasktracker.backend.task.repository.TaskQueryRepository;
 import com.example.tasktracker.backend.user.repository.UserQueryRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -17,6 +20,7 @@ import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -27,10 +31,28 @@ import java.util.Optional;
 public class SystemDataProvisionService {
 
     private final UserQueryRepository userQueryRepository;
+    private final TaskQueryRepository taskQueryRepository;
     private final SchedulerSupportApiProperties properties;
     private final ObjectMapper objectMapper;
 
     private record UserKeysetCursor(long lastId) {
+    }
+
+    /**
+     * Получает агрегированные отчеты по задачам для указанного списка ID пользователей
+     * за заданный временной интервал.
+     * @param request DTO с параметрами запроса (ID пользователей, 'from', 'to'). Не должен быть null.
+     * @return Список объектов {@link UserTaskReport}.
+     */
+    public List<UserTaskReport> getTaskReportsForUsers(@NonNull UserTaskReportRequest request) {
+        if (request.getUserIds().isEmpty()) {
+            return Collections.emptyList();
+        }
+        log.debug("Fetching task reports for {} user(s).", request.getUserIds().size());
+
+        List<UserTaskReport> reports = taskQueryRepository.findTaskReportsForUsers(request.getUserIds(), request.getFrom(), request.getTo());
+        log.info("Successfully fetched {} task reports.", reports.size());
+        return reports;
     }
 
     /**

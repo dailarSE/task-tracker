@@ -9,3 +9,5 @@ databaseChangeLog:
       file: db/changelog/changesets/2025-05-31-create-undelivered-email-commands-table.yaml
   - include:
       file: db/changelog/changesets/2025-06-17-09-00-add-version-to-tasks-table.yaml
+  - include:
+      file: db/changelog/changesets/2025-06-21-14-00-add-indexes-for-task-reports.yaml

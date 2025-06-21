@@ -2,8 +2,10 @@ package com.example.tasktracker.backend.internal.scheduler.dto;
 
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.AllArgsConstructor;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.ToString;
 
 import java.util.List;
 
@@ -12,13 +14,15 @@ import java.util.List;
  */
 @Schema(description = "Пагинированный ответ со списком ID пользователей")
 @Getter
-@AllArgsConstructor
+@RequiredArgsConstructor
+@ToString
+@EqualsAndHashCode
 public class PaginatedUserIdsResponse {
 
     @ArraySchema(schema = @Schema(description = "Список ID пользователей на текущей странице.",
             type = "integer", format = "int64", example = "101"))
-    private List<Long> data;
+    private final List<Long> data;
 
     @Schema(description = "Информация о пагинации для запроса следующей страницы.")
-    private PageInfo pageInfo;
+    private final PageInfo pageInfo;
 }

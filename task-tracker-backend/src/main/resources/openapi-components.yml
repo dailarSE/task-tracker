@@ -281,6 +281,19 @@ components:
             detail: "The email or password provided is incorrect."
             instance: "/api/v1/auth/login"
 
+    UnauthorizedApiKey:
+      description: "API-ключ отсутствует, невалиден или не имеет прав на доступ к этому ресурсу."
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/BaseProblemDetail'
+          example:
+            type: "https://task-tracker.example.com/probs/auth/invalid-api-key"
+            title: "Invalid API Key"
+            status: 401
+            detail: "The provided X-API-Key is missing or invalid."
+            instance: "/api/v1/internal/scheduler-support/user-ids"
+
     # ---------------------------------------------------------
     # 404 - NOT FOUND
     # ---------------------------------------------------------

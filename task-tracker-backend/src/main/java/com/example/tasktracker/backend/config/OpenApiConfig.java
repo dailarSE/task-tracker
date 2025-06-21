@@ -3,6 +3,7 @@ package com.example.tasktracker.backend.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import io.swagger.v3.oas.annotations.OpenAPIDefinition;
+import io.swagger.v3.oas.annotations.enums.SecuritySchemeIn;
 import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
 import io.swagger.v3.oas.annotations.info.Info;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -20,6 +21,8 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import java.io.IOException;
 import java.io.InputStream;
 
+import static com.example.tasktracker.backend.security.filter.ApiKeyAuthenticationFilter.API_KEY_HEADER_NAME;
+
 @Configuration
 @Slf4j
 @OpenAPIDefinition(
@@ -36,6 +39,13 @@ import java.io.InputStream;
         type = SecuritySchemeType.HTTP,
         scheme = "bearer",
         bearerFormat = "JWT"
+)
+@SecurityScheme(
+        name = "apiKeyAuth",
+        type = SecuritySchemeType.APIKEY,
+        in = SecuritySchemeIn.HEADER,
+        paramName = API_KEY_HEADER_NAME,
+        description = "API-ключ для межсервисного взаимодействия (M2M)."
 )
 public class OpenApiConfig {
 

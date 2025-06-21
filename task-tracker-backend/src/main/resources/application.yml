@@ -16,7 +16,7 @@ spring:
     enabled: true
     change-log: classpath:/db/changelog/db.changelog-master.yaml
   messages:
-    basename: i18n/common/messages,i18n/security/messages, i18n/user/messages, i18n/task/messages
+    basename: i18n/config/validation,i18n/common/messages,i18n/security/messages, i18n/user/messages, i18n/task/messages
     encoding: UTF-8
     fallback-to-system-locale: false
   jackson:
@@ -105,3 +105,8 @@ app:
   security:
     jwt:
       expiration-ms: 3600000 # 1 час
+  internal-api:
+    scheduler-support:
+      user-processing-ids:
+        default-page-size: 1000
+        max-page-size: 5000

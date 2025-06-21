@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
@@ -270,6 +271,46 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         problemDetail.setProperty("invalidParams", errors);
         setInstanceUriIfAbsent(problemDetail, request);
         return problemDetail;
+    }
+
+    /**
+     * Переопределяет стандартный обработчик для HandlerMethodValidationException,
+     * чтобы предоставить кастомное тело ответа в формате ProblemDetail.
+     */
+    @Override
+    protected ResponseEntity<Object> handleHandlerMethodValidationException(
+            @NonNull HandlerMethodValidationException ex,
+            @NonNull HttpHeaders headers,
+            @NonNull HttpStatusCode status,
+            @NonNull WebRequest request) {
+
+        log.warn("Method validation failed for request to [{}]: {}",
+                (request instanceof ServletWebRequest swr ? swr.getRequest().getRequestURI() : "N/A"),
+                ex.getMessage());
+
+        List<Map<String, Object>> errors = ex.getParameterValidationResults().stream()
+                .flatMap(result -> result.getResolvableErrors().stream()
+                        .map(error -> Map.<String, Object>of(
+                                "field", Optional.ofNullable(result.getMethodParameter().getParameterName()).orElse("unknown"),
+                                "rejectedValue", Optional.ofNullable(result.getArgument()).map(Object::toString).orElse("null"),
+                                "message", Optional.ofNullable(error.getDefaultMessage()).orElse("Invalid value")
+                        )))
+                .toList();
+
+        String typeSuffix = "validation.constraintViolation";
+        String title = messageSource.getMessage(
+                "problemDetail." + typeSuffix + ".title", null, request.getLocale());
+        String detail = messageSource.getMessage(
+                "problemDetail." + typeSuffix + ".detail", new Object[]{errors.size()}, request.getLocale());
+
+        ProblemDetail problemDetail = ProblemDetail.forStatus(status);
+        problemDetail.setTitle(title);
+        problemDetail.setDetail(detail);
+        problemDetail.setType(URI.create(ApiConstants.PROBLEM_TYPE_BASE_URI + "validation/constraint-violation"));
+        problemDetail.setProperty("invalidParams", errors);
+        setInstanceUriIfAbsent(problemDetail, request);
+
+        return handleExceptionInternal(ex, problemDetail, headers, status, request);
     }
 
     /**

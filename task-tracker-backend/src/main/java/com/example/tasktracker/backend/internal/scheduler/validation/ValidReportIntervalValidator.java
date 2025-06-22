@@ -14,6 +14,19 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
+/**
+ * Валидатор для кастомного ограничения {@link ValidReportInterval}.
+ * <p>
+ * Выполняет следующие проверки:
+ * <ul>
+ *     <li>Начало интервала (`from`) должно быть строго раньше его конца (`to`).</li>
+ *     <li>Размер списка `userIds` не должен превышать сконфигурированный максимум.</li>
+ *     <li>Длительность интервала (`to` - `from`) не должна превышать сконфигурированный максимум.</li>
+ *     <li>Конечная дата интервала (`to`) не должна быть слишком "старой" относительно текущего времени.</li>
+ * </ul>
+ * Реализует принцип "полной валидации", сообщая обо всех нарушениях за один проход.
+ * </p>
+ */
 @Component
 @RequiredArgsConstructor
 public class ValidReportIntervalValidator implements ConstraintValidator<ValidReportInterval, UserTaskReportRequest> {
@@ -37,7 +50,7 @@ public class ValidReportIntervalValidator implements ConstraintValidator<ValidRe
         if (!CollectionUtils.isEmpty(request.getUserIds()) && request.getUserIds().size() > maxBatchSize) {
             isValid = false;
             addConstraintViolationWithParameter(
-                    context.unwrap(HibernateConstraintValidatorContext.class),
+                    hibernateContext,
                     "{internal.report.validation.batchTooLarge}",
                     "userIds", // Привязываем ошибку к полю userIds
                     "maxSize",

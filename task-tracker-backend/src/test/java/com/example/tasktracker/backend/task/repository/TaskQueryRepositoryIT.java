@@ -99,10 +99,10 @@ class TaskQueryRepositoryIT {
             Instant from = clock.instant().minus(24, ChronoUnit.HOURS);
             Instant to = clock.instant().plus(1, ChronoUnit.MINUTES); // +1 минута для захвата now()
 
-            List<UserTaskReport> reports = taskQueryRepository.findTaskReportsForUsers(List.of(user1_mixed.getId()), from, to);
+            List<UserTaskReport> reports = taskQueryRepository.generateTaskReportsForUsers(List.of(user1_mixed.getId()), from, to);
 
             assertThat(reports).hasSize(1);
-            UserTaskReport report = reports.get(0);
+            UserTaskReport report = reports.getFirst();
 
             assertThat(report.getUserId()).isEqualTo(user1_mixed.getId());
             assertThat(report.getEmail()).isEqualTo(user1_mixed.getEmail());
@@ -124,10 +124,10 @@ class TaskQueryRepositoryIT {
             Instant from = clock.instant().minus(24, ChronoUnit.HOURS);
             Instant to = clock.instant().plus(1, ChronoUnit.MINUTES);
 
-            List<UserTaskReport> reports = taskQueryRepository.findTaskReportsForUsers(List.of(user2_pendingOnly.getId()), from, to);
+            List<UserTaskReport> reports = taskQueryRepository.generateTaskReportsForUsers(List.of(user2_pendingOnly.getId()), from, to);
 
             assertThat(reports).hasSize(1);
-            UserTaskReport report = reports.get(0);
+            UserTaskReport report = reports.getFirst();
             assertThat(report.getEmail()).isEqualTo(user2_pendingOnly.getEmail());
             assertThat(report.getTasksPending()).extracting(TaskInfo::getTitle).containsExactlyInAnyOrder("U2-Pending-Old", "U2-Pending-New");
             assertThat(report.getTasksCompleted()).isEmpty();
@@ -139,7 +139,7 @@ class TaskQueryRepositoryIT {
             Instant from = clock.instant().minus(24, ChronoUnit.HOURS);
             Instant to = clock.instant().plus(1, ChronoUnit.MINUTES);
 
-            List<UserTaskReport> reports = taskQueryRepository.findTaskReportsForUsers(List.of(user1_mixed.getId()), from, to);
+            List<UserTaskReport> reports = taskQueryRepository.generateTaskReportsForUsers(List.of(user1_mixed.getId()), from, to);
 
             // Проверяем, что отчет по user1 содержит выполненные задачи
             UserTaskReport report1 = findReportForUser(reports, user1_mixed.getId());
@@ -158,7 +158,7 @@ class TaskQueryRepositoryIT {
             Instant from = clock.instant().minus(24, ChronoUnit.HOURS);
             Instant to = clock.instant().plus(1, ChronoUnit.MINUTES);
 
-            List<UserTaskReport> reports = taskQueryRepository.findTaskReportsForUsers(
+            List<UserTaskReport> reports = taskQueryRepository.generateTaskReportsForUsers(
                     List.of(user3_noRelevantTasks.getId()), from, to
             );
 
@@ -168,7 +168,7 @@ class TaskQueryRepositoryIT {
         @Test
         @DisplayName("TC-6: Пустой список ID на входе должен вернуть пустой список")
         void findTaskReports_whenUserIdsListIsEmpty_shouldReturnEmptyList() {
-            List<UserTaskReport> reports = taskQueryRepository.findTaskReportsForUsers(Collections.emptyList(), clock.instant(), clock.instant());
+            List<UserTaskReport> reports = taskQueryRepository.generateTaskReportsForUsers(Collections.emptyList(), clock.instant(), clock.instant());
             assertThat(reports).isNotNull().isEmpty();
         }
     }

@@ -1,18 +1,18 @@
 package com.example.tasktracker.backend.internal.scheduler.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import lombok.ToString;
 
 /**
- * Упрощенное DTO для представления информации о задаче в отчетах планировщика.
- * Является неизменяемым (immutable).
+ * Содержит минимальный набор данных, достаточный для ссылки на задачу или ее отображения в списках,
+ * отчетах и других агрегированных представлениях, где полная детализация не требуется.
  */
 @Schema(description = "Упрощенная информация о задаче для отчетов")
 @Getter
-@RequiredArgsConstructor
+@AllArgsConstructor
 @ToString
 @EqualsAndHashCode
 public final class TaskInfo {

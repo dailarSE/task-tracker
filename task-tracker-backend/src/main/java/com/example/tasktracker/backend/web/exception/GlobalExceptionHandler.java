@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.TypeMismatchException;
 import org.springframework.context.MessageSource;
 import org.springframework.context.NoSuchMessageException;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.*;
 import org.springframework.http.converter.HttpMessageConversionException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -618,6 +619,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(IllegalStateException.class)
     public ProblemDetail handleIllegalStateException(IllegalStateException ex, WebRequest request) {
         return handleInternalServerError(ex, request, "internal.illegalState", null);
+    }
+
+    /**
+     * Обрабатывает все исключения доступа к данным (наследники DataAccessException),
+     * которые не были перехвачены более специфичными обработчиками.
+     * Предотвращает утечку деталей БД в ответе.
+     */
+    @ExceptionHandler(DataAccessException.class)
+    public ProblemDetail handleDataAccessException(DataAccessException ex, WebRequest request) {
+        return handleInternalServerError(ex, request, "internal.dataAccessError", null);
     }
 
     /**

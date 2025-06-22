@@ -6,7 +6,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -20,18 +19,39 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
+/**
+ * JDBC-реализация {@link TaskQueryRepository}.
+ * <p>
+ * Использует {@link org.springframework.jdbc.core.simple.JdbcClient} и нативный,
+ * оптимизированный для PostgreSQL SQL-запрос для эффективной агрегации данных.
+ * </p>
+ */
 @Repository
-@RequiredArgsConstructor
 @Slf4j
 public class JdbcTaskQueryRepository implements TaskQueryRepository {
 
     private final JdbcClient jdbcClient;
-    private final ObjectMapper objectMapper;
+    private final RowMapper<UserTaskReport> userTaskReportRowMapper;
 
+    public JdbcTaskQueryRepository(JdbcClient jdbcClient, ObjectMapper objectMapper) {
+        this.jdbcClient = jdbcClient;
+        this.userTaskReportRowMapper = new UserTaskReportRowMapper(objectMapper);
+    }
+
+    /**
+     * <p>
+     * **Логика агрегации, заложенная в SQL-запросе:**
+     * <ul>
+     *     <li>Для невыполненных задач (PENDING): выбираются до 5 самых старых (по дате создания).</li>
+     *     <li>Для выполненных задач (COMPLETED): выбираются все задачи, завершенные в интервале [from, to).</li>
+     * </ul>
+     * Вся агрегация происходит на стороне БД с использованием {@code jsonb_agg} для
+     * минимизации нагрузки на приложение и количества запросов.
+     * </p>
+     */
     @Override
-    public List<UserTaskReport> findTaskReportsForUsers(@NonNull List<Long> userIds, @NonNull Instant from, @NonNull Instant to) {
+    public List<UserTaskReport> generateTaskReportsForUsers(@NonNull List<Long> userIds, @NonNull Instant from, @NonNull Instant to) {
         if (CollectionUtils.isEmpty(userIds)) {
             return Collections.emptyList();
         }
@@ -79,19 +99,17 @@ public class JdbcTaskQueryRepository implements TaskQueryRepository {
                     users u ON ar.user_id = u.id
                 """;
 
-        String idsArray = userIds.stream().map(String::valueOf).collect(Collectors.joining(",","{","}"));
-
         return jdbcClient.sql(sql)
-                .param("userIdsArray", idsArray)
+                .param("userIdsArray", userIds.toArray(new Long[0]))
                 .param("from", OffsetDateTime.ofInstant(from, ZoneOffset.UTC))
                 .param("to", OffsetDateTime.ofInstant(to, ZoneOffset.UTC))
-                .query(new UserTaskReportRowMapper(objectMapper))
+                .query(userTaskReportRowMapper)
                 .list();
     }
 
     private static class UserTaskReportRowMapper implements RowMapper<UserTaskReport> {
         private final ObjectMapper objectMapper;
-        private final TypeReference<List<TaskInfo>> taskInfoListTypeRef = new TypeReference<>() {};
+        private static final TypeReference<List<TaskInfo>> TASK_INFO_LIST_TYPE_REF = new TypeReference<>() {};
 
         public UserTaskReportRowMapper(ObjectMapper objectMapper) {
             this.objectMapper = objectMapper;
@@ -101,24 +119,26 @@ public class JdbcTaskQueryRepository implements TaskQueryRepository {
         public UserTaskReport mapRow(@NonNull ResultSet rs, int rowNum) throws SQLException {
             Long userId = rs.getLong("user_id");
             String email = rs.getString("email");
-
-            UserTaskReport report = new UserTaskReport(userId,email);
+            String pendingJson = rs.getString("pendingTasks");
+            String completedJson = rs.getString("completedTasks");
 
             try {
-                List<TaskInfo> pending = objectMapper.readValue(rs.getString("pendingTasks"), taskInfoListTypeRef);
-                List<TaskInfo> completed = objectMapper.readValue(rs.getString("completedTasks"), taskInfoListTypeRef);
-
-                if (pending != null) {
-                    report.getTasksPending().addAll(pending);
-                }
-                if (completed != null) {
-                    report.getTasksCompleted().addAll(completed);
-                }
+                List<TaskInfo> pendingTasks = parseTasks(userId, pendingJson, "pendingTasks");
+                List<TaskInfo> completedTasks = parseTasks(userId, completedJson, "completedTasks");
+                return new UserTaskReport(userId, email, completedTasks, pendingTasks);
             } catch (JsonProcessingException e) {
                 log.error("Failed to parse TaskInfo JSON from database for user ID: {}. Invalid JSON in ResultSet.", userId, e);
                 throw new SQLException("Failed to parse TaskInfo JSON from database for user ID: " + userId, e);
             }
-            return report;
+        }
+
+        private List<TaskInfo> parseTasks(Long userId, String json, String fieldName) throws JsonProcessingException {
+            if (json == null) {
+                log.warn("Unexpected null value for JSON field '{}' for user ID: {}. " +
+                        "Expected '[]' due to COALESCE in SQL. Defaulting to empty list.", fieldName, userId);
+                return Collections.emptyList();
+            }
+            return objectMapper.readValue(json, TASK_INFO_LIST_TYPE_REF);
         }
     }
 }

@@ -178,7 +178,7 @@ class SchedulerSupportControllerIT {
         assertThat(response1.getStatusCode()).isEqualTo(HttpStatus.OK);
         PaginatedUserIdsResponse body1 = response1.getBody();
         assertThat(body1).isNotNull();
-        assertThat(body1.getData()).hasSize(2); // ID могут быть не 1 и 2 из-за sequence
+        assertThat(body1.getUserIds()).hasSize(2); // ID могут быть не 1 и 2 из-за sequence
         assertThat(body1.getPageInfo().isHasNextPage()).isTrue();
         assertThat(body1.getPageInfo().getNextPageCursor()).isNotBlank();
         String cursor2 = body1.getPageInfo().getNextPageCursor();
@@ -195,7 +195,7 @@ class SchedulerSupportControllerIT {
         assertThat(response2.getStatusCode()).isEqualTo(HttpStatus.OK);
         PaginatedUserIdsResponse body2 = response2.getBody();
         assertThat(body2).isNotNull();
-        assertThat(body2.getData()).hasSize(2);
+        assertThat(body2.getUserIds()).hasSize(2);
         assertThat(body2.getPageInfo().isHasNextPage()).isTrue();
         assertThat(body2.getPageInfo().getNextPageCursor()).isNotBlank();
         String cursor3 = body2.getPageInfo().getNextPageCursor();
@@ -212,7 +212,7 @@ class SchedulerSupportControllerIT {
         assertThat(response3.getStatusCode()).isEqualTo(HttpStatus.OK);
         PaginatedUserIdsResponse body3 = response3.getBody();
         assertThat(body3).isNotNull();
-        assertThat(body3.getData()).hasSize(1);
+        assertThat(body3.getUserIds()).hasSize(1);
         assertThat(body3.getPageInfo().isHasNextPage()).isFalse();
         assertThat(body3.getPageInfo().getNextPageCursor()).isNull();
     }

@@ -33,8 +33,8 @@ public class SchedulerSupportController {
     private final SystemDataProvisionService provisionService;
 
     @Operation(
-            summary = "Получить пагинированный список ID пользователей для обработки",
-            description = "Возвращает порцию ID пользователей с использованием keyset-пагинации на основе непрозрачного курсора."
+            summary = "Получить постраничный список ID пользователей для обработки",
+            description = "Возвращает порцию ID пользователей."
     )
     @ApiResponse(
             responseCode = "200", description = "Список ID успешно получен.",
@@ -44,7 +44,7 @@ public class SchedulerSupportController {
     @ApiResponse(responseCode = "400", ref = "#/components/responses/BadRequestGeneral")
     @GetMapping("/user-ids")
     public ResponseEntity<PaginatedUserIdsResponse> getUserIdsForProcessing(
-            @Parameter(description = "Непрозрачный курсор для получения следующей страницы. " +
+            @Parameter(description = "Курсор для получения следующей страницы. " +
                                      "Для первого запроса не передается.")
             @RequestParam(required = false) String cursor,
 
@@ -52,17 +52,25 @@ public class SchedulerSupportController {
             @Positive(message = "{config.validation.positive}")
             @RequestParam(required = false) Integer limit
     ) {
-        log.info("Processing request for user IDs. Cursor is {}, requested limit is {}.",
-                cursor != null ? "present" : "absent", limit);
+        log.info("Processing request for user IDs. Cursor: [{}], Limit: [{}]", cursor, limit);
+
         PaginatedUserIdsResponse response = provisionService.getUserIdsForProcessing(cursor, limit);
+
         log.info("Successfully returned {} user IDs. HasNextPage: {}.",
-                response.getData().size(), response.getPageInfo().isHasNextPage());
+                response.getUserIds().size(), response.getPageInfo().isHasNextPage());
         return ResponseEntity.ok(response);
     }
 
     @Operation(
             summary = "Получить отчеты по задачам для списка пользователей",
-            description = "Принимает список ID пользователей и временной интервал, возвращает агрегированные отчеты."
+            description = """
+                Принимает список ID пользователей и временной интервал, возвращает агрегированные отчеты.
+            
+                **Логика формирования отчета:**
+                - **Невыполненные задачи (`tasksPending`):** Включаются до 5 самых старых задач со статусом PENDING.
+                - **Выполненные задачи (`tasksCompleted`):** Включаются все задачи, выполненные в заданном интервале `[from, to)`.
+            """
+
     )
     @ApiResponses(value = {
             @ApiResponse(

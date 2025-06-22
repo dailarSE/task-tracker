@@ -71,5 +71,11 @@ public class SchedulerSupportApiProperties {
          */
         @Positive(message = "{config.validation.positive}")
         private int maxAgeDays = 30;
+
+        /**
+         * Максимальный размер пачки ID пользователей в одном запросе на отчет.
+         */
+        @Positive(message = "{config.validation.positive}")
+        private int maxBatchSize = 1000;
     }
 }

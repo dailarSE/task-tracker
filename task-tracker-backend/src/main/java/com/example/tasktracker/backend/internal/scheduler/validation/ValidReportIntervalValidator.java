@@ -7,6 +7,7 @@ import jakarta.validation.ConstraintValidatorContext;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.validator.constraintvalidation.HibernateConstraintValidatorContext;
 import org.springframework.stereotype.Component;
+import org.springframework.util.CollectionUtils;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -31,6 +32,18 @@ public class ValidReportIntervalValidator implements ConstraintValidator<ValidRe
         Instant to = request.getTo();
 
         HibernateConstraintValidatorContext hibernateContext = context.unwrap(HibernateConstraintValidatorContext.class);
+
+        int maxBatchSize = properties.getUserTaskReport().getMaxBatchSize();
+        if (!CollectionUtils.isEmpty(request.getUserIds()) && request.getUserIds().size() > maxBatchSize) {
+            isValid = false;
+            addConstraintViolationWithParameter(
+                    context.unwrap(HibernateConstraintValidatorContext.class),
+                    "{internal.report.validation.batchTooLarge}",
+                    "userIds", // Привязываем ошибку к полю userIds
+                    "maxSize",
+                    maxBatchSize
+            );
+        }
 
         if (!from.isBefore(to)) {
             isValid = false;

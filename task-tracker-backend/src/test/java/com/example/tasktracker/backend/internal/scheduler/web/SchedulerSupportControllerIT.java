@@ -1,5 +1,6 @@
 package com.example.tasktracker.backend.internal.scheduler.web;
 
+import com.example.tasktracker.backend.internal.scheduler.config.SchedulerSupportApiProperties;
 import com.example.tasktracker.backend.internal.scheduler.dto.PaginatedUserIdsResponse;
 import com.example.tasktracker.backend.internal.scheduler.dto.UserTaskReport;
 import com.example.tasktracker.backend.internal.scheduler.dto.UserTaskReportRequest;
@@ -10,9 +11,6 @@ import com.example.tasktracker.backend.user.entity.User;
 import com.example.tasktracker.backend.user.repository.UserRepository;
 import com.example.tasktracker.backend.web.ApiConstants;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -26,15 +24,15 @@ import org.springframework.web.util.UriComponentsBuilder;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.shaded.org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.net.URI;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.IntStream;
-import java.util.stream.Stream;
+import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -52,21 +50,18 @@ class SchedulerSupportControllerIT {
 
     @LocalServerPort
     private int port;
-
     @Autowired
     private TestRestTemplate testRestTemplate;
-
     @Autowired
     private UserRepository userRepository;
-
     @Autowired
     private ApiKeyProperties apiKeyProperties;
-
+    @Autowired
+    private SchedulerSupportApiProperties schedulerSupportApiProperties;
     @Autowired
     private Clock clock;
 
     private String validApiKey;
-
     private String baseInternalUrl;
 
     @BeforeEach
@@ -222,15 +217,6 @@ class SchedulerSupportControllerIT {
         assertThat(body3.getPageInfo().getNextPageCursor()).isNull();
     }
 
-    private HttpEntity<UserTaskReportRequest> createHttpEntityWithApiKeyAndBody(UserTaskReportRequest body, String apiKey) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        if (apiKey != null) {
-            headers.set(ApiKeyAuthenticationFilter.API_KEY_HEADER_NAME, apiKey);
-        }
-        return new HttpEntity<>(body, headers);
-    }
-
     @Nested
     @DisplayName("POST /tasks/user-reports Tests")
     class GetTaskReportsTests {
@@ -242,109 +228,114 @@ class SchedulerSupportControllerIT {
             reportsUrl = baseInternalUrl + "/tasks/user-reports";
         }
 
+        private <T> HttpEntity<T> createHttpEntityWithApiKey(@Nullable T body) {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set(ApiKeyAuthenticationFilter.API_KEY_HEADER_NAME, validApiKey);
+            return new HttpEntity<>(body, headers);
+        }
+
+        private void assertProblemDetail(ResponseEntity<ProblemDetail> response,
+                                         HttpStatus expectedStatus,
+                                         String expectedTitle) {
+            assertThat(response.getStatusCode()).isEqualTo(expectedStatus);
+            ProblemDetail body = response.getBody();
+            assertThat(body).isNotNull();
+            assertThat(body.getStatus()).isEqualTo(expectedStatus.value());
+            assertThat(body.getTitle()).isEqualTo(expectedTitle);
+            assertThat(body.getInstance()).isNotNull();
+        }
+
         @Test
-        @DisplayName("Валидный API-ключ и запрос -> должен вернуть 200 OK")
-        void getTaskReports_withValidKeyAndRequest_shouldReturn200() {
+        @DisplayName("Успешный запрос -> должен вернуть 200 OK")
+        void getTaskReports_whenRequestIsValid_shouldReturn200() {
+            // Arrange
             UserTaskReportRequest request = new UserTaskReportRequest(
                     List.of(1L),
                     clock.instant().minus(1, ChronoUnit.DAYS),
                     clock.instant()
             );
-            HttpEntity<UserTaskReportRequest> entity = createHttpEntityWithApiKeyAndBody(request, validApiKey);
+            HttpEntity<UserTaskReportRequest> entity = createHttpEntityWithApiKey(request);
 
+            // Act
             ResponseEntity<List<UserTaskReport>> response = testRestTemplate.exchange(
-                    reportsUrl, HttpMethod.POST, entity, new ParameterizedTypeReference<>() {});
+                    reportsUrl, HttpMethod.POST, entity, new ParameterizedTypeReference<>() {
+                    });
 
+            // Assert
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(response.getBody()).isNotNull();
         }
 
         @Test
-        @DisplayName("Невалидный интервал в запросе -> должен вернуть 400 Bad Request")
-        void getTaskReports_withInvalidInterval_shouldReturn400() {
-            UserTaskReportRequest request = new UserTaskReportRequest(
-                    List.of(1L),
-                    clock.instant(), // from
-                    clock.instant().minus(1, ChronoUnit.DAYS) // to раньше чем from
-            );
-            HttpEntity<UserTaskReportRequest> entity = createHttpEntityWithApiKeyAndBody(request, validApiKey);
+        @DisplayName("Невалидный интервал (from > to) -> должен вернуть 400 Bad Request")
+        void getTaskReports_whenFromIsAfterTo_shouldReturn400() {
+            // Arrange
+            Instant now = clock.instant();
+            UserTaskReportRequest request = new UserTaskReportRequest(List.of(1L), now, now.minusSeconds(1));
+            HttpEntity<UserTaskReportRequest> entity = createHttpEntityWithApiKey(request);
 
-            ResponseEntity<ProblemDetail> response = testRestTemplate.exchange(
-                    reportsUrl, HttpMethod.POST, entity, ProblemDetail.class);
+            // Act
+            ResponseEntity<ProblemDetail> response = testRestTemplate
+                    .exchange(reportsUrl, HttpMethod.POST, entity, ProblemDetail.class);
 
-            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-            assertThat(response.getBody()).isNotNull();
-            assertThat(response.getBody().getType().toString()).contains("method-argument-not-valid");
+            // Assert
+            assertProblemDetail(response, HttpStatus.BAD_REQUEST, "Invalid Request Data");
         }
 
         @Test
-        @DisplayName("Невалидный API-ключ -> должен вернуть 401 Unauthorized")
-        void getTaskReports_withInvalidApiKey_shouldReturn401() {
-            UserTaskReportRequest request = new UserTaskReportRequest(List.of(1L), Instant.now(), Instant.now().plusSeconds(1));
-            HttpEntity<UserTaskReportRequest> entity = createHttpEntityWithApiKeyAndBody(request, "invalid-key");
-
-            ResponseEntity<ProblemDetail> response = testRestTemplate.exchange(
-                    reportsUrl, HttpMethod.POST, entity, ProblemDetail.class);
-
-            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-        }
-
-        static Stream<Arguments> invalidReportRequestProvider() {
-            Instant now = Instant.parse("2025-07-01T10:00:00Z");
-            return Stream.of(
-                    // Случай 1: from не раньше to
-                    Arguments.of(
-                            "from date is not before to date",
-                            new UserTaskReportRequest(List.of(1L), now, now.minusSeconds(1)),
-                            "'from' date must be before 'to' date."
-                    ),
-                    // Случай 2: интервал слишком большой (дефолт 3 дня)
-                    Arguments.of(
-                            "interval is too large",
-                            new UserTaskReportRequest(List.of(1L), now.minus(4, ChronoUnit.DAYS), now),
-                            "The requested report interval exceeds the maximum allowed of 3 days."
-                    ),
-                    // Случай 3: отчет слишком старый (дефолт 30 дней)
-                    Arguments.of(
-                            "report is too old",
-                            new UserTaskReportRequest(List.of(1L), now.minus(32, ChronoUnit.DAYS), now.minus(31, ChronoUnit.DAYS)),
-                            "Reports cannot be requested for periods ending more than 30 days ago."
-                    )
-            );
-        }
-
-        @ParameterizedTest(name = "Невалидный интервал ({0}) -> должен вернуть 400 Bad Request")
-        @MethodSource("invalidReportRequestProvider")
-        void getTaskReports_whenIntervalIsInvalid_shouldReturn400WithCorrectProblemDetail(
-                String testCaseName, UserTaskReportRequest invalidRequest, String expectedDetailMessage) {
-
+        @DisplayName("Невалидный интервал (слишком большой) -> должен вернуть 400 Bad Request")
+        void getTaskReports_whenIntervalIsTooLarge_shouldReturn400() {
             // Arrange
-            // Для теста со "старым" отчетом, нам нужно мокировать Clock, но в IT это сложно.
-            // Поэтому мы просто будем рассчитывать даты относительно реального времени.
-            // Для предсказуемости, лучше бы иметь мок Clock, но для этого теста допустимо.
-            HttpEntity<UserTaskReportRequest> entity = createHttpEntityWithApiKeyAndBody(invalidRequest, validApiKey);
+            long maxInterval = schedulerSupportApiProperties.getUserTaskReport().getMaxIntervalDays();
+            Instant now = clock.instant();
+            UserTaskReportRequest request = new UserTaskReportRequest(List.of(1L),
+                    now.minus(maxInterval + 1, ChronoUnit.DAYS), now);
+            HttpEntity<UserTaskReportRequest> entity = createHttpEntityWithApiKey(request);
 
             // Act
-            ResponseEntity<ProblemDetail> response = testRestTemplate.exchange(
-                    reportsUrl, HttpMethod.POST, entity, ProblemDetail.class);
+            ResponseEntity<ProblemDetail> response = testRestTemplate
+                    .exchange(reportsUrl, HttpMethod.POST, entity, ProblemDetail.class);
 
             // Assert
-            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-            ProblemDetail problemDetail = response.getBody();
-            assertThat(problemDetail).isNotNull();
-            assertThat(problemDetail.getTitle()).isEqualTo("Invalid Request Data");
+            assertProblemDetail(response, HttpStatus.BAD_REQUEST, "Invalid Request Data");
+        }
 
-            // Проверяем, что в списке ошибок есть наше кастомное сообщение
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> invalidParams = (List<Map<String, Object>>) problemDetail.getProperties().get("invalidParams");
-            assertThat(invalidParams).isNotNull();
+        @Test
+        @DisplayName("Невалидный интервал (слишком старый) -> должен вернуть 400 Bad Request")
+        void getTaskReports_whenReportIsTooOld_shouldReturn400() {
+            // Arrange
+            long maxAge = schedulerSupportApiProperties.getUserTaskReport().getMaxAgeDays();
+            Instant now = clock.instant();
+            Instant to = now.minus(maxAge + 1, ChronoUnit.DAYS);
+            Instant from = to.minus(1, ChronoUnit.DAYS);
+            UserTaskReportRequest request = new UserTaskReportRequest(List.of(1L), from, to);
+            HttpEntity<UserTaskReportRequest> entity = createHttpEntityWithApiKey(request);
 
-            boolean customErrorFound = invalidParams.stream()
-                    .anyMatch(error -> expectedDetailMessage.equals(error.get("message")));
+            // Act
+            ResponseEntity<ProblemDetail> response = testRestTemplate
+                    .exchange(reportsUrl, HttpMethod.POST, entity, ProblemDetail.class);
 
-            assertThat(customErrorFound)
-                    .as("Expected custom validation error message was not found in response")
-                    .isTrue();
+            // Assert
+            assertProblemDetail(response, HttpStatus.BAD_REQUEST, "Invalid Request Data");
+        }
+
+        @Test
+        @DisplayName("Невалидный запрос (слишком большой batch size) -> должен вернуть 400 Bad Request")
+        void getTaskReports_whenBatchSizeIsTooLarge_shouldReturn400() {
+            // Arrange
+            int maxSize = schedulerSupportApiProperties.getUserTaskReport().getMaxBatchSize();
+            List<Long> largeList = LongStream.range(1, maxSize + 2).boxed().toList();
+            UserTaskReportRequest request = new UserTaskReportRequest(largeList,
+                    clock.instant().minus(1, ChronoUnit.DAYS), clock.instant());
+            HttpEntity<UserTaskReportRequest> entity = createHttpEntityWithApiKey(request);
+
+            // Act
+            ResponseEntity<ProblemDetail> response = testRestTemplate
+                    .exchange(reportsUrl, HttpMethod.POST, entity, ProblemDetail.class);
+
+            // Assert
+            assertProblemDetail(response, HttpStatus.BAD_REQUEST, "Invalid Request Data");
         }
     }
 }

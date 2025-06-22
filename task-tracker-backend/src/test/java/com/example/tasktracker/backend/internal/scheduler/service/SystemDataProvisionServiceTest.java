@@ -116,7 +116,7 @@ class SystemDataProvisionServiceTest {
             PaginatedUserIdsResponse response = service.getUserIdsForProcessing(null, 3);
 
             // Assert
-            assertThat(response.getData()).isEqualTo(ids);
+            assertThat(response.getUserIds()).isEqualTo(ids);
             assertThat(response.getPageInfo().isHasNextPage()).isTrue();
 
             String expectedCursorJson = "{\"lastId\":3}";
@@ -138,7 +138,7 @@ class SystemDataProvisionServiceTest {
             PaginatedUserIdsResponse response = service.getUserIdsForProcessing(encodedCursor, 2);
 
             // Assert
-            assertThat(response.getData()).isEqualTo(ids);
+            assertThat(response.getUserIds()).isEqualTo(ids);
             assertThat(response.getPageInfo().isHasNextPage()).isTrue();
             String expectedNextCursorJson = "{\"lastId\":12}";
             String expectedEncodedNextCursor = Base64.getEncoder().encodeToString(expectedNextCursorJson.getBytes());
@@ -159,7 +159,7 @@ class SystemDataProvisionServiceTest {
             PaginatedUserIdsResponse response = service.getUserIdsForProcessing(encodedCursor, 2);
 
             // Assert
-            assertThat(response.getData()).isEqualTo(ids);
+            assertThat(response.getUserIds()).isEqualTo(ids);
             assertThat(response.getPageInfo().isHasNextPage()).isFalse();
             assertThat(response.getPageInfo().getNextPageCursor()).isNull();
         }
@@ -183,7 +183,7 @@ class SystemDataProvisionServiceTest {
 
             // Assert
             verify(mockUserQueryRepository).findUserIds(0L, 2);
-            assertThat(response.getData()).isEqualTo(firstPageIds);
+            assertThat(response.getUserIds()).isEqualTo(firstPageIds);
         }
 
         @Test
@@ -197,7 +197,7 @@ class SystemDataProvisionServiceTest {
             PaginatedUserIdsResponse response = service.getUserIdsForProcessing(null, 10);
 
             // Assert
-            assertThat(response.getData()).isEmpty();
+            assertThat(response.getUserIds()).isEmpty();
             assertThat(response.getPageInfo().isHasNextPage()).isFalse();
             assertThat(response.getPageInfo().getNextPageCursor()).isNull();
         }
@@ -215,8 +215,9 @@ class SystemDataProvisionServiceTest {
             Instant to = Instant.now();
             UserTaskReportRequest request = new UserTaskReportRequest(List.of(1L, 2L), from, to);
 
-            List<UserTaskReport> expectedReports = List.of(new UserTaskReport(1L, "user1@test.com"));
-            when(mockTaskQueryRepository.findTaskReportsForUsers(request.getUserIds(), from, to))
+            List<UserTaskReport> expectedReports = List.of(new UserTaskReport(
+                    1L, "user1@test.com",Collections.emptyList(), Collections.emptyList()));
+            when(mockTaskQueryRepository.generateTaskReportsForUsers(request.getUserIds(), from, to))
                     .thenReturn(expectedReports);
 
             // Act
@@ -224,7 +225,7 @@ class SystemDataProvisionServiceTest {
 
             // Assert
             assertThat(actualReports).isSameAs(expectedReports);
-            verify(mockTaskQueryRepository).findTaskReportsForUsers(request.getUserIds(), from, to);
+            verify(mockTaskQueryRepository).generateTaskReportsForUsers(request.getUserIds(), from, to);
         }
 
         @Test

@@ -2,23 +2,22 @@ package com.example.tasktracker.backend.internal.scheduler.dto;
 
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import lombok.ToString;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
- * DTO, представляющий отчет по задачам для одного пользователя,
- * сгенерированный для сервиса-планировщика.
+ * Представляет собой агрегированный отчет по задачам для пользователя.
+ * Задачи группируются пользователя по их статусу (выполненные и невыполненные)
  */
 @Schema(description = "Отчет по задачам для одного пользователя")
 @Getter
 @ToString
 @EqualsAndHashCode
-@RequiredArgsConstructor
+@AllArgsConstructor
 public final class UserTaskReport {
 
     @Schema(description = "ID пользователя", example = "42", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -28,12 +27,12 @@ public final class UserTaskReport {
     private final String email;
 
     @ArraySchema(schema = @Schema(implementation = TaskInfo.class,
-            description = "Список недавно выполненных задач (отсортированы по времени завершения)."))
-    private final List<TaskInfo> tasksCompleted = new ArrayList<>();
+            description = "Список выполненных задач, релевантных для отчета."))
+    private final List<TaskInfo> tasksCompleted;
 
     @ArraySchema(schema = @Schema(implementation = TaskInfo.class,
-            description = "Список самых старых невыполненных задач (не более 5, отсортированы по времени создания)."))
-    private final List<TaskInfo> tasksPending = new ArrayList<>();
+            description = "Список невыполненных задач, релевантных для отчета."))
+    private final List<TaskInfo> tasksPending;
 
 
 }

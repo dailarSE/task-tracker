@@ -24,6 +24,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Сервис, предоставляющий агрегированные данные из основной системы
+ * для внутренних потребителей. Инкапсулирует логику вызова сложных запросов
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -41,16 +45,21 @@ public class SystemDataProvisionService {
     /**
      * Получает агрегированные отчеты по задачам для указанного списка ID пользователей
      * за заданный временной интервал.
+     * <p>
+     * <strong>Важно:</strong> Этот метод предполагает, что входящий объект {@code request}
+     * уже прошел полную валидацию ранее (например, в REST-контроллере).
+     * </p>
      * @param request DTO с параметрами запроса (ID пользователей, 'from', 'to'). Не должен быть null.
      * @return Список объектов {@link UserTaskReport}.
      */
     public List<UserTaskReport> getTaskReportsForUsers(@NonNull UserTaskReportRequest request) {
         if (request.getUserIds().isEmpty()) {
+            log.info("Received request for task reports with an empty user ID list. Returning empty list immediately.");
             return Collections.emptyList();
         }
         log.debug("Fetching task reports for {} user(s).", request.getUserIds().size());
 
-        List<UserTaskReport> reports = taskQueryRepository.findTaskReportsForUsers(request.getUserIds(), request.getFrom(), request.getTo());
+        List<UserTaskReport> reports = taskQueryRepository.generateTaskReportsForUsers(request.getUserIds(), request.getFrom(), request.getTo());
         log.info("Successfully fetched {} task reports.", reports.size());
         return reports;
     }
@@ -85,7 +94,7 @@ public class SystemDataProvisionService {
         final PaginatedUserIdsResponse response = new PaginatedUserIdsResponse(userIdsSlice.getContent(), pageInfo);
 
         log.info("Successfully provisioned {} user IDs. HasNextPage: {}.",
-                response.getData().size(), response.getPageInfo().isHasNextPage());
+                response.getUserIds().size(), response.getPageInfo().isHasNextPage());
 
         return response;
     }

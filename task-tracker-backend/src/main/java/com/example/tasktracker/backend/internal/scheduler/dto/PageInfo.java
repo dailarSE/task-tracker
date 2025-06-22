@@ -1,22 +1,29 @@
 package com.example.tasktracker.backend.internal.scheduler.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.ToString;
 
 /**
- * DTO для метаданных пагинации, используемых в ответах API.
+ * Инкапсулирует метаданные для навигации по страницам в пагинированном ответе.
+ * <p>
+ * Предоставляет информацию о том, есть ли следующая страница данных,
+ * и значение курсора, которое необходимо использовать для ее получения.
+ * </p>
  */
-@Schema(description = "Информация о пагинации")
+@Schema(description = "Метаданные для навигации по страницам.")
 @Getter
-@RequiredArgsConstructor
+@AllArgsConstructor
 @ToString
 @EqualsAndHashCode
-public class PageInfo {
+public final class PageInfo {
 
-    @Schema(description = "Признак наличия следующей страницы данных.", example = "true")
+    @Schema(description = "Указывает, существует ли следующая страница данных.", example = "true")
     private final boolean hasNextPage;
 
-    @Schema(description = "Непрозрачный курсор для запроса следующей страницы. Null, если следующей страницы нет.",
+    @Schema(description = "Значение для запроса следующей страницы. Равно null, если следующей страницы нет.",
             nullable = true, example = "eyJsYXN0X2lkIjo1NDMyMX0=")
     private final String nextPageCursor;
 }

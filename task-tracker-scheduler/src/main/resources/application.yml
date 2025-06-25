@@ -14,8 +14,6 @@ management:
     web:
       exposure:
         include: health, info
-  jmx:
-    enabled: false
 
 otel:
   service:
@@ -36,3 +34,45 @@ otel:
   traces:
     sampler:
       arg: "0.1"
+
+app:
+  scheduler:
+    # --- Backend HTTP Client ---
+    backend-client:
+      url: "stub"
+      api-key: "stub" # ${BACKEND_API_KEY}
+      connect-timeout: 5s # Дефолт
+      read-timeout: 30s   # Дефолт
+      retry:
+        enabled: true
+        max-attempts: 3
+        initial-interval-ms: 2000
+        multiplier: 2.0
+        max-interval-ms: 10000
+
+    scheduled-job:
+      cron: "stub" # Например, "0 0 0 * * *" - каждый день в полночь.
+      page-size: 1000 # Дефолт
+
+    shedlock:
+      lock-name: "task_report_producer_job" # Дефолт
+      lock-at-most-for: 30m                # Дефолт
+      lock-at-least-for: 1m                 # Дефолт
+
+    kafka:
+      producer:
+        topic-name: "stub" # Например, "task_tracker.notifications.user_reports"
+      consumer:
+        topic-name: "stub" # Например, "task_tracker.commands.process_user"
+        group-id: "stub" # Например, "scheduler-consumers"
+        max-poll-records: 100  # Дефолт
+        poll-timeout: 3000ms   # Дефолт
+        concurrency: 3         # Дефолт
+        retry-and-dlt:
+          enabled: true
+          max-attempts: 3
+          initial-interval-ms: 2000
+          multiplier: 2.0
+          max-interval-ms: 10000
+          dlt:
+            enabled: true

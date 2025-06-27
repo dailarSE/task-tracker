@@ -2,6 +2,40 @@ spring:
   application:
     name:
       task-tracker-scheduler
+  data:
+    redis:
+      host: redis
+      port: 6379
+  kafka:
+    bootstrap-servers: kafka:9092
+    properties:
+      request.timeout.ms: 30000
+    producer:
+      acks: "all"
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      retries: 3
+      properties:
+        spring.json.add.type.headers: false
+        # Общий таймаут на доставку сообщения, включая все ретраи.
+        # Должен быть больше, чем request.timeout.ms * (retries + 1)
+        delivery.timeout.ms: 121000 # 2 минуты + dt
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: latest
+      properties:
+        # Максимальное время между вызовами poll().
+        max.poll.interval.ms: 300000 # 5 минут
+        # Таймаут сессии для consumer group.
+        session.timeout.ms: 30000
+        # Частота отправки "heartbeat" для поддержания сессии.
+        # Обычно ~1/3 от session.timeout.ms.
+        heartbeat.interval.ms: 10000 # 10 секунд
+    listener:
+      missing-topics-fatal: true
+    admin:
+      fail-fast: true
+
 logging:
   structured:
     format:
@@ -61,9 +95,9 @@ app:
 
     kafka:
       producer:
-        topic-name: "stub" # Например, "task_tracker.notifications.user_reports"
+        topic-name: "task_tracker.commands.process_user" # Например, "task_tracker.notifications.user_reports"
       consumer:
-        topic-name: "stub" # Например, "task_tracker.commands.process_user"
+        topic-name: "task_tracker.commands.process_user" # Например, "task_tracker.commands.process_user"
         group-id: "stub" # Например, "scheduler-consumers"
         max-poll-records: 100  # Дефолт
         poll-timeout: 3000ms   # Дефолт

@@ -112,6 +112,15 @@ services:
     # Не требуется сложная 'command' секция как у Confluent.
     restart: unless-stopped
 
+  redis:
+    image: redis:8-alpine
+    container_name: task-tracker-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - task-tracker-net
+    restart: unless-stopped
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.123.0
     container_name: otel-collector

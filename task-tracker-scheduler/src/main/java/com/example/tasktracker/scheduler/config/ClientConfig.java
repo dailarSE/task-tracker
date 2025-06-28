@@ -4,7 +4,6 @@ import com.example.tasktracker.scheduler.client.interceptor.ApiKeyHeaderIntercep
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.client.NoOpResponseErrorHandler;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestTemplate;
 
@@ -26,7 +25,6 @@ public class ClientConfig {
                 .connectTimeout(properties.getBackendClient().getConnectTimeout())
                 .readTimeout(properties.getBackendClient().getReadTimeout())
                 .additionalInterceptors(apiKeyHeaderInterceptor)
-                .errorHandler(new NoOpResponseErrorHandler())
                 .build();
 
         return RestClient.create(restTemplate);

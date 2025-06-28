@@ -72,18 +72,26 @@ public class SchedulerAppProperties {
     @Getter @Setter
     public static class KafkaProperties {
         @Valid
-        private ProducerProperties producer = new ProducerProperties();
+        private InternalProducerProperties internalProducer = new InternalProducerProperties();
         @Valid
-        private ConsumerProperties consumer = new ConsumerProperties();
+        private InternalConsumerProperties internalConsumer = new InternalConsumerProperties();
+        @Valid
+        private ReportsProducerProperties reportsProducer = new ReportsProducerProperties();
 
         @Getter @Setter
-        public static class ProducerProperties {
+        public static class InternalProducerProperties {
             @NotBlank
             private String topicName;
         }
 
         @Getter @Setter
-        public static class ConsumerProperties {
+        public static class ReportsProducerProperties {
+            @NotBlank
+            private String topicName;
+        }
+
+        @Getter @Setter
+        public static class InternalConsumerProperties {
             @NotBlank
             private String topicName;
             @NotBlank

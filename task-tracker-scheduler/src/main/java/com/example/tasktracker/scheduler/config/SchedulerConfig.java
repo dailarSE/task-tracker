@@ -44,7 +44,7 @@ public class SchedulerConfig {
     }
 
     /**
-     * Базовая ConsumerFactory. Наследует все общие настройки из spring.kafka.consumer.*
+     * Базовая ConsumerFactory. Настроена, в том числе, базовыми параметрами KafkaProperties.
      */
     @Bean
     public ConsumerFactory<String, UserIdForProcessingCommand> batchConsumerFactory(
@@ -52,7 +52,7 @@ public class SchedulerConfig {
             SchedulerAppProperties appProperties) {
 
         Map<String, Object> props = kafkaProperties.buildConsumerProperties(null);
-        props.put(ConsumerConfig.GROUP_ID_CONFIG, appProperties.getKafka().getConsumer().getGroupId());
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, appProperties.getKafka().getInternalConsumer().getGroupId());
 
         JsonDeserializer<UserIdForProcessingCommand> valueDeserializer =
                 new JsonDeserializer<>(UserIdForProcessingCommand.class, false);
@@ -75,9 +75,9 @@ public class SchedulerConfig {
 
         factory.setBatchListener(true);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.BATCH);
-        factory.setConcurrency(properties.getKafka().getConsumer().getConcurrency());
+        factory.setConcurrency(properties.getKafka().getInternalConsumer().getConcurrency());
 
-        SchedulerAppProperties.RetryAndDltProperties retryProps = properties.getKafka().getConsumer().getRetryAndDlt();
+        SchedulerAppProperties.RetryAndDltProperties retryProps = properties.getKafka().getInternalConsumer().getRetryAndDlt();
         if (retryProps.isEnabled()) {
 
             ExponentialBackOff backOff = new ExponentialBackOff(retryProps.getInitialIntervalMs(), retryProps.getMultiplier());

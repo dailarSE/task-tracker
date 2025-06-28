@@ -73,8 +73,8 @@ app:
   scheduler:
     # --- Backend HTTP Client ---
     backend-client:
-      url: "stub"
-      api-key: "stub" # ${BACKEND_API_KEY}
+      url: "task-tracker-backend:8080"
+      api-key: "${BACKEND_API_KEY:key-for-scheduler}"
       connect-timeout: 5s # Дефолт
       read-timeout: 30s   # Дефолт
       retry:
@@ -94,11 +94,13 @@ app:
       lock-at-least-for: 1m                 # Дефолт
 
     kafka:
-      producer:
-        topic-name: "task_tracker.commands.process_user" # Например, "task_tracker.notifications.user_reports"
-      consumer:
-        topic-name: "task_tracker.commands.process_user" # Например, "task_tracker.commands.process_user"
-        group-id: "stub" # Например, "scheduler-consumers"
+      internal-producer:
+        topic-name: "task_tracker.scheduler.internal.user_ids_to_process"
+      reports-producer:
+        topic-name: "task_tracker.notifications.commands.send_email"
+      internal-consumer:
+        topic-name: "task_tracker.commands.process_user"
+        group-id: "scheduler-consumers"
         max-poll-records: 100  # Дефолт
         poll-timeout: 3000ms   # Дефолт
         concurrency: 3         # Дефолт

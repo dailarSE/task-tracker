@@ -41,8 +41,9 @@ services:
       - "log_min_duration_statement=0"
    
   kafka:
-    image: bitnami/kafka:4.0.0 # Используем образ с поддержкой KRaft
+    image: apache/kafka:4.0.0
     container_name: task-tracker-kafka
+    hostname: kafka
 
     ports:
       # Пробрасываем порт 9092 на хост для доступа с localhost:9092.
@@ -56,15 +57,15 @@ services:
       - task-tracker-net
     volumes:
       # Том для сохранения данных и метаданных KRaft между запусками
-      - kafkadata:/opt/bitnami/kafka/data
+      - kafkadata:/tmp/kafka-logs
 
     environment:
       # --- Настройки KRaft ---
-      KAFKA_ENABLE_KRAFT: 'yes' # Включаем режим KRaft
       KAFKA_BROKER_ID: 1        # Уникальный ID брокера
       KAFKA_NODE_ID: 1          # Уникальный ID узла KRaft (совпадает с Broker ID для одного узла)
       # Роль процесса KRaft: этот узел является и брокером, и контроллером
-      KAFKA_CFG_PROCESS_ROLES: broker,controller
+      KAFKA_PROCESS_ROLES: broker,controller
+      CLUSTER_ID: '5dab7f5e-62be-4ea8-a502-9c202f75d710'
 
       # --- Настройка слушателей и рекламируемых адресов ---
       # Настройка слушателей ВНУТРИ контейнера, привязанных к РАЗНЫМ портам
@@ -85,7 +86,7 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
 
       # Имя слушателя контроллера
-      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
 
       # Информация о кворуме контроллеров (для 1 узла - он сам).
       # Формат: <NodeId>@<Hostname>:<Port>
@@ -93,23 +94,19 @@ services:
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
 
       # --- Прочее ---
+
+      # Фактор репликации для топика смещений консьюмеров (важно для стабильности в 1-узловом кластере)
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      # Задержка ребалансировки групп консьюмеров при старте (для dev ускоряем)
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1 # _ -> __
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1 # _ -> __
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+
       # Разрешаем нешифрованный трафик для простоты в dev (специфично для Bitnami)
       #TODO принять решение о TLS в продакш реди среде
       ALLOW_PLAINTEXT_LISTENER: 'yes'
 
-      # Задержка ребалансировки групп консьюмеров при старте (для dev ускоряем)
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-
-      # Директория, где Kafka будет хранить данные. Должна совпадать с маппингом тома.
-      KAFKA_STORAGE_DIRS: /opt/bitnami/kafka/data
-
-      # Фактор репликации для топика смещений консьюмеров (важно для стабильности в 1-узловом кластере)
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-
-      # Автоматическое создание топика email_commands при старте (имя:партиции:репликации) - удобно для dev
-      KAFKA_CREATE_TOPICS_EXTRA: "task_tracker.notifications.email_commands:1:1"
-    # Bitnami образ сам форматирует хранилище KRaft при первом запуске, если директория пуста.
-    # Не требуется сложная 'command' секция как у Confluent.
     restart: unless-stopped
 
   redis:

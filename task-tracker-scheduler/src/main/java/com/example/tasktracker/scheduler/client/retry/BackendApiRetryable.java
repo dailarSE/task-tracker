@@ -20,11 +20,11 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @Retryable(
         retryFor = {HttpServerErrorException.class, ResourceAccessException.class},
-        maxAttemptsExpression = "${app.scheduler.backend-client.retry.max-attempts}",
+        maxAttemptsExpression = "#{@schedulerAppProperties.backendClient.retry.maxAttempts}",
         backoff = @Backoff(
-                delayExpression = "${app.scheduler.backend-client.retry.initial-interval-ms}",
-                maxDelayExpression = "${app.scheduler.backend-client.retry.max-interval-ms}",
-                multiplierExpression = "${app.scheduler.backend-client.retry.multiplier}"
+                delayExpression = "#{@schedulerAppProperties.backendClient.retry.initialIntervalMs}",
+                maxDelayExpression = "#{@schedulerAppProperties.backendClient.retry.maxIntervalMs}",
+                multiplierExpression = "#{@schedulerAppProperties.backendClient.retry.multiplier}"
         )
 )
 public @interface BackendApiRetryable {

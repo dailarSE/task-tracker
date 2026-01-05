@@ -9,6 +9,7 @@ import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 import org.springframework.validation.annotation.Validated;
+
 import java.time.Duration;
 
 @Component
@@ -22,10 +23,6 @@ public class SchedulerAppProperties {
     @Valid
     private BackendClientProperties backendClient = new BackendClientProperties();
 
-    /** Настройки для основной задачи, запускаемой по расписанию. */
-    @Valid
-    private ScheduledJobProperties scheduledJob = new ScheduledJobProperties();
-
     /** Настройки для ShedLock. */
     @Valid
     private ShedLockProperties shedlock = new ShedLockProperties();
@@ -33,6 +30,15 @@ public class SchedulerAppProperties {
     /** Все настройки, связанные с Kafka. */
     @Valid
     private KafkaProperties kafka = new KafkaProperties();
+
+    @Getter
+    @Setter
+    public static class ShedLockProperties {
+        @DurationMin(seconds = 30)
+        private Duration lockAtMostFor = Duration.ofMinutes(5);
+        @DurationMin(seconds = 30)
+        private Duration lockAtLeastFor = Duration.ofSeconds(30);
+    }
 
     // ================== Вложенные классы для группировки ==================
 
@@ -52,37 +58,11 @@ public class SchedulerAppProperties {
     }
 
     @Getter @Setter
-    public static class ScheduledJobProperties {
-        @NotBlank
-        private String cron;
-        @Positive
-        private int pageSize = 1000;
-    }
-
-    @Getter @Setter
-    public static class ShedLockProperties {
-        @NotBlank
-        private String lockName = "task_report_producer_job";
-        @DurationMin(nanos = 1)
-        private Duration lockAtMostFor = Duration.ofMinutes(30);
-        @DurationMin(nanos = 1)
-        private Duration lockAtLeastFor = Duration.ofMinutes(1);
-    }
-
-    @Getter @Setter
     public static class KafkaProperties {
-        @Valid
-        private InternalProducerProperties internalProducer = new InternalProducerProperties();
         @Valid
         private InternalConsumerProperties internalConsumer = new InternalConsumerProperties();
         @Valid
         private ReportsProducerProperties reportsProducer = new ReportsProducerProperties();
-
-        @Getter @Setter
-        public static class InternalProducerProperties {
-            @NotBlank
-            private String topicName;
-        }
 
         @Getter @Setter
         public static class ReportsProducerProperties {

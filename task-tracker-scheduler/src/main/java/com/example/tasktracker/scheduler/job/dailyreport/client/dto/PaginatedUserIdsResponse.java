@@ -1,4 +1,6 @@
-package com.example.tasktracker.scheduler.client.dto;
+package com.example.tasktracker.scheduler.job.dailyreport.client.dto;
+
+import com.example.tasktracker.scheduler.client.dto.PageInfo;
 
 import java.util.List;
 

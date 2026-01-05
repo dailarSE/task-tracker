@@ -1,4 +1,4 @@
-package com.example.tasktracker.scheduler.client.dto;
+package com.example.tasktracker.scheduler.consumer.dailyreport.client.dto;
 
 import jakarta.validation.constraints.NotNull;
 

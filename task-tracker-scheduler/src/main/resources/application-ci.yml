@@ -1,0 +1,8 @@
+otel:
+  sdk:
+    disabled: true
+
+app:
+    jobs:
+      daily-task-reports:
+        enabled: false

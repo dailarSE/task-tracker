@@ -122,6 +122,10 @@
                             -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar
                             ${argLine}
                         </argLine>
+                        <!-- https://github.com/testcontainers/testcontainers-java/issues/11212#issuecomment-3516573631-->
+                        <systemPropertyVariables>
+                            <api.version>1.44</api.version>
+                        </systemPropertyVariables>
                     </configuration>
                 </plugin>
 

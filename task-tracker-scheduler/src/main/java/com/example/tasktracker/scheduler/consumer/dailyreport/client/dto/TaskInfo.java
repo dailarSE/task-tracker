@@ -1,4 +1,4 @@
-package com.example.tasktracker.scheduler.client.dto;
+package com.example.tasktracker.scheduler.consumer.dailyreport.client.dto;
 
 /**
  * Содержит минимальный набор данных, достаточный для ссылки на задачу или ее отображения в списках,

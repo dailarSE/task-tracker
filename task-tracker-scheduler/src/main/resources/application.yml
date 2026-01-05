@@ -84,22 +84,22 @@ app:
         multiplier: 2.0
         max-interval-ms: 10000
 
-    scheduled-job:
-      cron: "stub" # Например, "0 0 0 * * *" - каждый день в полночь.
-      page-size: 1000 # Дефолт
-
-    shedlock:
-      lock-name: "task_report_producer_job" # Дефолт
-      lock-at-most-for: 30m                # Дефолт
-      lock-at-least-for: 1m                 # Дефолт
+    jobs:
+      daily-task-reports:
+        enabled: true
+        job-name: "daily-task-reports-v1"
+        cron: "0 */15 * * * *"
+        page-size: 1000
+        kafka-topic-name: "task_tracker.scheduler.events.user_selected_for_report"
+        shedlock:
+          lock-at-least-for: "30s"
+          lock-at-most-for: "5m"
 
     kafka:
-      internal-producer:
-        topic-name: "task_tracker.scheduler.internal.user_ids_to_process"
       reports-producer:
-        topic-name: "task_tracker.notifications.commands.send_email"
+        topic-name: "task_tracker.reporting.events.daily_report_generated"
       internal-consumer:
-        topic-name: "task_tracker.commands.process_user"
+        topic-name: "task_tracker.scheduler.events.user_selected_for_report"
         group-id: "scheduler-consumers"
         max-poll-records: 100  # Дефолт
         poll-timeout: 3000ms   # Дефолт

@@ -27,7 +27,6 @@ public class AppConfig {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         int availableProcessors = Runtime.getRuntime().availableProcessors();
 
-        // Твоя более умная формула для I/O-bound (коллбэков)
         int corePoolSize = Math.max(2, availableProcessors);
         int maxPoolSize = Math.max(corePoolSize, availableProcessors * 2);
 
@@ -36,7 +35,6 @@ public class AppConfig {
         executor.setQueueCapacity(500);
         executor.setThreadNamePrefix("kafka-cb-");
 
-        // 1. Перенос MDC (наш кастомный)
         executor.setTaskDecorator(new MdcTaskDecorator());
 
         executor.setWaitForTasksToCompleteOnShutdown(true);
@@ -51,7 +49,6 @@ public class AppConfig {
 
         log.info("Kafka Callback Executor initialized. Core: {}, Max: {}", corePoolSize, maxPoolSize);
 
-        // 2. Перенос OTel Context (из библиотеки)
         return Context.taskWrapping(executor);
     }
 }

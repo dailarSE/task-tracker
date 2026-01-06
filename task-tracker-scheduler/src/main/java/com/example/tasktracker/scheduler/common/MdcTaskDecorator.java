@@ -14,17 +14,12 @@ public class MdcTaskDecorator implements TaskDecorator {
     @Override
     @NonNull
     public Runnable decorate(@NonNull Runnable runnable) {
-        // Захватываем контекст в момент создания задачи
         Map<String, String> contextMap = MDC.getCopyOfContextMap();
         return () -> {
             try {
-                // Восстанавливаем контекст в момент выполнения
-                if (contextMap != null) {
-                    MDC.setContextMap(contextMap);
-                }
+                MDC.setContextMap(contextMap);
                 runnable.run();
             } finally {
-                // Очищаем контекст после выполнения, чтобы не загрязнять поток из пула
                 MDC.clear();
             }
         };

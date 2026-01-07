@@ -60,31 +60,12 @@ public class SchedulerAppProperties {
     @Getter @Setter
     public static class KafkaProperties {
         @Valid
-        private InternalConsumerProperties internalConsumer = new InternalConsumerProperties();
-        @Valid
         private ReportsProducerProperties reportsProducer = new ReportsProducerProperties();
 
         @Getter @Setter
         public static class ReportsProducerProperties {
             @NotBlank
             private String topicName;
-        }
-
-        @Getter @Setter
-        public static class InternalConsumerProperties {
-            @NotBlank
-            private String topicName;
-            @NotBlank
-            private String groupId;
-            @Positive
-            private int maxPollRecords = 100;
-            @DurationMin(nanos = 1)
-            private Duration pollTimeout = Duration.ofMillis(3000);
-            @Positive
-            private int concurrency = 3;
-            /** Настройки повторных попыток и отправки в DLT для Kafka-консьюмера. */
-            @Valid
-            private RetryAndDltProperties retryAndDlt = new RetryAndDltProperties();
         }
     }
 

@@ -30,7 +30,13 @@ public enum Metric {
     JOB_KAFKA_SEND_FAILURE("tasktracker.scheduler.job.kafka.send.failed",
             "Counts failures to send an event to Kafka within a job."),
     JOB_RUN_DURATION("tasktracker.scheduler.job.run.duration",
-                             "Measures the total execution time of a scheduled job run.");
+                             "Measures the total execution time of a scheduled job run."),
+
+    // --- Метрики для Batch Consumer ---
+    JOB_BATCH_SIZE("tasktracker.scheduler.job.batch.size",
+                           "Histogram of batch sizes consumed from Kafka."),
+    JOB_ITEM_SKIPPED("tasktracker.scheduler.job.item.skipped",
+                             "Count of items skipped during processing (e.g. no data from backend).");
 
     private final String name;
     private final String description;

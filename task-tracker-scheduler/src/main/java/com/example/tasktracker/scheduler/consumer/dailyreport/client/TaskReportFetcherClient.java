@@ -8,7 +8,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
-import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
@@ -26,7 +25,6 @@ import java.util.List;
  * @see ClientConfig Конфигурация RestClient
  * @see BackendApiRetryable Аннотация, управляющая логикой ретраев
  */
-@Component
 @RequiredArgsConstructor
 @Slf4j
 public class TaskReportFetcherClient {
@@ -40,24 +38,21 @@ public class TaskReportFetcherClient {
      * Получает агрегированные отчеты по задачам для указанного списка пользователей.
      * <p>
      * Отправляет список ID и временной интервал в теле POST-запроса.
-     * Повторные попытки выполняются автоматически при серверных (5xx)
-     * или сетевых ошибках благодаря аннотации {@link BackendApiRetryable}.
      * </p>
      *
      * @param userIds Список ID пользователей для обработки.
      * @param from    Начало временного интервала (включительно).
      * @param to      Конец временного интервала (исключительно).
      * @return Список объектов {@link UserTaskReport}.
-     * @throws HttpClientErrorException При получении 4xx ошибок от бэкенда (например, из-за невалидного интервала).
-     * @throws HttpServerErrorException При получении 5xx ошибок после всех ретраев.
+     * @throws HttpClientErrorException При получении 4xx ошибок (например, из-за невалидного интервала).
+     * @throws HttpServerErrorException При получении 5xx ошибок.
      */
-    @BackendApiRetryable
     public List<UserTaskReport> fetchTaskReports(List<Long> userIds, Instant from, Instant to) {
         var requestBody = new UserTaskReportRequest(userIds, from, to);
         log.debug("Fetching task reports for {} users.", userIds.size());
 
         return restClient.post()
-                .uri("/api/v1/internal/tasks/user-reports")
+                .uri("/api/v1/internal/scheduler-support/tasks/user-reports")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(requestBody)
                 .retrieve()

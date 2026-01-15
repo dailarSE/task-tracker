@@ -73,7 +73,7 @@ app:
   scheduler:
     # --- Backend HTTP Client ---
     backend-client:
-      url: "task-tracker-backend:8080"
+      url: "http://task-tracker-backend:8080"
       api-key: "${BACKEND_API_KEY:key-for-scheduler}"
       connect-timeout: 5s # Дефолт
       read-timeout: 30s   # Дефолт
@@ -95,15 +95,16 @@ app:
           lock-at-least-for: "30s"
           lock-at-most-for: "5m"
 
-    kafka:
-      reports-producer:
-        topic-name: "task_tracker.reporting.events.daily_report_generated"
-      internal-consumer:
+    consumers:
+      daily-report:
+        enabled: true
         topic-name: "task_tracker.scheduler.events.user_selected_for_report"
-        group-id: "scheduler-consumers"
-        max-poll-records: 100  # Дефолт
-        poll-timeout: 3000ms   # Дефолт
-        concurrency: 3         # Дефолт
+        sink-topic-name: "task_tracker.reporting.events.daily_report_generated"
+        group-id: "scheduler-daily-report-group"
+        concurrency: 3
+        max-poll-records: 500
+        poll-timeout: 3000ms
+        fetch-max-wait-ms: 500
         retry-and-dlt:
           enabled: true
           max-attempts: 3

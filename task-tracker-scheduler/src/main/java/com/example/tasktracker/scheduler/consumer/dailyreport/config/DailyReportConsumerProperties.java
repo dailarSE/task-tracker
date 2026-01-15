@@ -8,19 +8,20 @@ import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.validator.constraints.time.DurationMin;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.Duration;
 
-@Configuration
 @ConfigurationProperties(prefix = "app.scheduler.consumers.daily-report")
 @Validated
 @Getter
 @Setter
 public class DailyReportConsumerProperties {
+    private boolean enabled = true;
     @NotBlank
     private String topicName;
+    @NotBlank
+    private String sinkTopicName;
     @NotBlank
     private String groupId;
     @Positive

@@ -9,7 +9,6 @@ import io.micrometer.core.instrument.Tags;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 
 import java.time.LocalDate;
@@ -21,7 +20,6 @@ import java.util.stream.Collectors;
  * Kafka Consumer, слушающий события `UserSelectedForDailyReportEvent`.
  * Работает в режиме Batch Listener для эффективной групповой обработки.
  */
-@Service
 @RequiredArgsConstructor
 @Slf4j
 public class DailyTaskReportConsumer {
@@ -37,6 +35,7 @@ public class DailyTaskReportConsumer {
     private record JobRunKey(String jobRunId, LocalDate reportDate) {}
 
     @KafkaListener(
+            id = "daily-report-consumer",
             topics = "${app.scheduler.consumers.daily-report.topic-name}",
             containerFactory = "dailyReportBatchContainerFactory"
     )

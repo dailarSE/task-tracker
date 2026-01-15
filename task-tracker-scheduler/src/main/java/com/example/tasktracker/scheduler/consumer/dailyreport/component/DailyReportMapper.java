@@ -5,7 +5,6 @@ import com.example.tasktracker.scheduler.consumer.dailyreport.client.dto.UserTas
 import com.example.tasktracker.scheduler.consumer.dailyreport.messaging.dto.EmailTriggerCommand;
 import io.opentelemetry.api.trace.Span;
 import org.slf4j.MDC;
-import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.util.HashMap;
@@ -15,7 +14,6 @@ import java.util.UUID;
 /**
  * Компонент для преобразования доменных данных в команды на отправку уведомлений.
  */
-@Component
 public class DailyReportMapper {
 
     private static final String TEMPLATE_ID = "DAILY_TASK_REPORT";

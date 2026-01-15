@@ -11,12 +11,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.KafkaHeaders;
-import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 
 
-@Component
 @Slf4j
 public class DltPublisher {
 
@@ -28,7 +26,8 @@ public class DltPublisher {
                         DailyReportConsumerProperties properties,
                         MetricsReporter metrics) {
         this.kafkaTemplate = kafkaTemplate;
-        this.dltTopicName = properties.getTopicName() + ".DLT";
+        //DeadLetterPublishingRecoverer.DEFAULT_DESTINATION_RESOLVER style
+        this.dltTopicName = properties.getTopicName() + "-dlt";
         this.metrics = metrics;
     }
 

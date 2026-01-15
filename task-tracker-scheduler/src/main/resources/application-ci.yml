@@ -1,8 +1,13 @@
-otel:
-  sdk:
-    disabled: true
-
 app:
+  scheduler:
     jobs:
       daily-task-reports:
         enabled: false
+    consumers:
+      daily-report:
+        enabled: false
+
+logging:
+  level:
+    root:
+    com.example.tasktracker:

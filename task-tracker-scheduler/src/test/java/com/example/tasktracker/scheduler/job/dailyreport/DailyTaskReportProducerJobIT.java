@@ -1,11 +1,11 @@
 package com.example.tasktracker.scheduler.job.dailyreport;
 
 import com.example.tasktracker.scheduler.job.JobStateRepository;
+import com.example.tasktracker.scheduler.job.dailyreport.config.DailyReportJobProperties;
+import com.example.tasktracker.scheduler.job.dailyreport.messaging.event.UserSelectedForDailyReportEvent;
 import com.example.tasktracker.scheduler.job.dto.CursorPayload;
 import com.example.tasktracker.scheduler.job.dto.JobExecutionState;
 import com.example.tasktracker.scheduler.job.dto.JobStatus;
-import com.example.tasktracker.scheduler.job.dailyreport.config.DailyReportJobProperties;
-import com.example.tasktracker.scheduler.job.dailyreport.messaging.event.UserSelectedForDailyReportEvent;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.redis.testcontainers.RedisContainer;
@@ -34,9 +34,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import java.time.Clock;
@@ -51,9 +51,10 @@ import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.springframework.scheduling.config.ScheduledTaskRegistrar.CRON_DISABLED;
 
 @SpringBootTest
-@ActiveProfiles("ci") // application-ci.yml (enabled=false), чтобы джоба не стартовала сама
+@ActiveProfiles("ci")
 @Testcontainers
 @DisplayName("Daily Report Producer Job")
 class DailyTaskReportProducerJobIT {
@@ -74,12 +75,16 @@ class DailyTaskReportProducerJobIT {
 
     @DynamicPropertySource
     static void overrideProperties(DynamicPropertyRegistry registry) {
+        registry.add("app.scheduler.jobs.daily-task-reports.enabled", () -> "true");
+        registry.add("app.scheduler.jobs.daily-task-reports.cron", () -> CRON_DISABLED); //disable trigger autostart
+
         registry.add("spring.data.redis.host", redis::getHost);
         registry.add("spring.data.redis.port", redis::getFirstMappedPort);
         registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
-        // Динамический порт WireMock
+
         registry.add("app.scheduler.backend-client.url", wireMockServer::baseUrl);
     }
+
     @Autowired
     private DailyReportJobProperties dailyReportJobProperties;
 
@@ -126,7 +131,6 @@ class DailyTaskReportProducerJobIT {
     @AfterEach
     void tearDown() {
         container.stop();
-        // Очищаем Redis перед следующим тестом
         Objects.requireNonNull(redisTemplate.getConnectionFactory()).getConnection().serverCommands().flushAll();
         records.clear();
     }
@@ -196,7 +200,8 @@ class DailyTaskReportProducerJobIT {
         var stateOptional = jobStateRepository.findState(
                 dailyReportJobProperties.getJobName(),
                 reportDate,
-                new TypeReference<JobExecutionState<CursorPayload>>() {}
+                new TypeReference<JobExecutionState<CursorPayload>>() {
+                }
         );
 
         assertThat(stateOptional).isPresent();

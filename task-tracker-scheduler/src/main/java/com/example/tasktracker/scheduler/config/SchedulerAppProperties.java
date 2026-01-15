@@ -27,10 +27,6 @@ public class SchedulerAppProperties {
     @Valid
     private ShedLockProperties shedlock = new ShedLockProperties();
 
-    /** Все настройки, связанные с Kafka. */
-    @Valid
-    private KafkaProperties kafka = new KafkaProperties();
-
     @Getter
     @Setter
     public static class ShedLockProperties {
@@ -55,18 +51,6 @@ public class SchedulerAppProperties {
         /** Настройки повторных попыток для HTTP-клиента. */
         @Valid
         private RetryProperties retry = new RetryProperties();
-    }
-
-    @Getter @Setter
-    public static class KafkaProperties {
-        @Valid
-        private ReportsProducerProperties reportsProducer = new ReportsProducerProperties();
-
-        @Getter @Setter
-        public static class ReportsProducerProperties {
-            @NotBlank
-            private String topicName;
-        }
     }
 
     /** Общий класс для настройки ретраев с экспоненциальной задержкой. */

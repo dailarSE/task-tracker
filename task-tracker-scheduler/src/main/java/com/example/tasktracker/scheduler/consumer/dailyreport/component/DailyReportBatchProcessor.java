@@ -13,6 +13,7 @@ import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.MDC;
 
 import java.time.Instant;
@@ -34,20 +35,27 @@ public class DailyReportBatchProcessor {
     private final DltPublisher dltPublisher;
     private final MetricsReporter metrics;
 
-    public void process(String jobRunId, LocalDate reportDate, List<UserSelectedForDailyReportEvent> events) {
+    public void process(String jobRunId,
+                        LocalDate reportDate,
+                        List<ConsumerRecord<String, UserSelectedForDailyReportEvent>> records) {
         Timer.Sample sample = Timer.start();
 
         try (MDC.MDCCloseable ignored = MDC.putCloseable(MdcKeys.JOB_RUN_ID, jobRunId)) {
-            List<Long> userIds = events.stream().map(UserSelectedForDailyReportEvent::userId).toList();
-            log.info("Processing batch for {} users. Report Date: {}", userIds.size(), reportDate);
+            log.info("Processing batch for {} users. Report Date: {}", records.size(), reportDate);
 
             Instant from = reportDate.atStartOfDay(ZoneOffset.UTC).toInstant();
             Instant to = reportDate.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
 
-            Map<Long, UserSelectedForDailyReportEvent> eventMap = events.stream()
-                    .collect(Collectors.toMap(UserSelectedForDailyReportEvent::userId,
+            List<Long> userIds = records.stream()
+                    .map(r -> r.value().userId())
+                    .toList();
+
+            Map<Long, ConsumerRecord<String, UserSelectedForDailyReportEvent>> recordMap = records.stream()
+                    .collect(Collectors.toMap(
+                            r -> r.value().userId(),
                             Function.identity(),
-                            (e1, e2) -> e1));
+                            (existing, replacement) -> existing
+                    ));
 
             List<UserTaskReport> reports = fetcherClient.fetchTaskReports(userIds, from, to);
 
@@ -60,7 +68,7 @@ public class DailyReportBatchProcessor {
             }
 
             List<? extends CompletableFuture<?>> futures = reports.stream()
-                    .map(report -> processSingleReport(report, reportDate, eventMap.get(report.userId())))
+                    .map(report -> processSingleReport(report, reportDate, recordMap.get(report.userId())))
                     .toList();
 
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
@@ -73,15 +81,17 @@ public class DailyReportBatchProcessor {
 
     private CompletableFuture<?> processSingleReport(UserTaskReport report,
                                                      LocalDate reportDate,
-                                                     UserSelectedForDailyReportEvent originalEvent) {
+                                                     ConsumerRecord<String, UserSelectedForDailyReportEvent> originalRecord) {
         try {
             EmailTriggerCommand command = mapper.toCommand(report, reportDate);
             return publisher.publish(command);
         } catch (Exception e) {
             log.error("Partial failure: Could not map/process report for userId: {}.", report.userId(), e);
 
-            if (originalEvent != null) {
-                dltPublisher.sendToDlt(originalEvent, e);
+            if (originalRecord != null) {
+                dltPublisher.sendToDlt(originalRecord, e);
+            } else {
+                log.warn("Original record missing for userId: {}. Cannot send to DLT.", report.userId());
             }
 
             return CompletableFuture.completedFuture(null);

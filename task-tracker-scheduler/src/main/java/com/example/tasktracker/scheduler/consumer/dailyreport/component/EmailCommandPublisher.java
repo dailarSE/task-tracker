@@ -6,7 +6,6 @@ import com.example.tasktracker.scheduler.metrics.Metric;
 import com.example.tasktracker.scheduler.metrics.MetricsReporter;
 import com.example.tasktracker.scheduler.metrics.SchedulerMetricConstants;
 import io.micrometer.core.instrument.Tags;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
@@ -17,7 +16,7 @@ import java.util.concurrent.CompletableFuture;
  * Компонент, ответственный за публикацию команд на отправку email в Kafka.
  * Инкапсулирует логику отправки и сбор базовых метрик успеха/неудачи.
  */
-@RequiredArgsConstructor
+
 @Slf4j
 public class EmailCommandPublisher {
 

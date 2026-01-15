@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -48,9 +49,9 @@ public class DailyReportConsumerConfiguration {
     }
 
     @Bean
-    public DltPublisher dltPublisher(KafkaTemplate<String, UserSelectedForDailyReportEvent> kafkaTemplate,
+    public DltPublisher dltPublisher(@Qualifier("dailyReportRecoverer") DeadLetterPublishingRecoverer recoverer,
                                      MetricsReporter metrics) {
-        return new DltPublisher(kafkaTemplate, consumerProperties, metrics);
+        return new DltPublisher(recoverer, consumerProperties, metrics);
     }
 
     @Bean
@@ -80,6 +81,13 @@ public class DailyReportConsumerConfiguration {
         return new TaskReportFetcherClient(restClient);
     }
 
+    @Bean("dailyReportRecoverer")
+    public DeadLetterPublishingRecoverer dailyReportRecoverer(
+            KafkaTemplate<Object, Object> kafkaTemplate) {
+
+        return new DeadLetterPublishingRecoverer(kafkaTemplate);
+    }
+
     @Bean
     public ConsumerFactory<String, UserSelectedForDailyReportEvent> dailyReportConsumerFactory(
             KafkaProperties springKafkaProperties) {
@@ -103,7 +111,7 @@ public class DailyReportConsumerConfiguration {
     @Bean("dailyReportBatchContainerFactory")
     public ConcurrentKafkaListenerContainerFactory<String, UserSelectedForDailyReportEvent> dailyReportBatchContainerFactory(
             ConsumerFactory<String, UserSelectedForDailyReportEvent> dailyReportConsumerFactory,
-            KafkaTemplate<Object, Object> kafkaTemplate) {
+            @Qualifier("dailyReportRecoverer") DeadLetterPublishingRecoverer recoverer) {
 
         var factory = new ConcurrentKafkaListenerContainerFactory<String, UserSelectedForDailyReportEvent>();
         factory.setConsumerFactory(dailyReportConsumerFactory);
@@ -123,17 +131,16 @@ public class DailyReportConsumerConfiguration {
             backOff.setMaxInterval(retryConfig.getMaxIntervalMs());
             backOff.setMaxAttempts(retryConfig.getMaxAttempts());
 
-            ConsumerRecordRecoverer recoverer;
+            ConsumerRecordRecoverer recovererForErrorHandler;
             if (retryConfig.getDlt().isEnabled()) {
-                recoverer = new DeadLetterPublishingRecoverer(kafkaTemplate);
+                recovererForErrorHandler = recoverer;
                 log.info("DLT is ENABLED for Daily Report Consumer.");
             } else {
-                recoverer = (record, ex) ->
-                        log.error("Retries exhausted for record. DLT is disabled. Record dropped.", ex);
+                recovererForErrorHandler = (record, ex) ->
+                        log.error("Global Retry Exhausted. DLT disabled. Record dropped: {}", record.key(), ex);
                 log.info("DLT is DISABLED for Daily Report Consumer.");
             }
-
-            DefaultErrorHandler errorHandler = new DefaultErrorHandler(recoverer, backOff);
+            DefaultErrorHandler errorHandler = new DefaultErrorHandler(recovererForErrorHandler, backOff);
             factory.setCommonErrorHandler(errorHandler);
         }
 

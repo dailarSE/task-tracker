@@ -8,59 +8,53 @@ import com.example.tasktracker.scheduler.metrics.SchedulerMetricConstants;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Tags;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.support.KafkaHeaders;
-
-import java.nio.charset.StandardCharsets;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 
 
 @Slf4j
 public class DltPublisher {
 
-    private final KafkaTemplate<String, UserSelectedForDailyReportEvent> kafkaTemplate;
-    private final String dltTopicName;
+    private final DeadLetterPublishingRecoverer recoverer;
+    private final boolean dltEnabled;
     private final MetricsReporter metrics;
 
-    public DltPublisher(KafkaTemplate<String, UserSelectedForDailyReportEvent> kafkaTemplate,
+    public DltPublisher(DeadLetterPublishingRecoverer recoverer,
                         DailyReportConsumerProperties properties,
                         MetricsReporter metrics) {
-        this.kafkaTemplate = kafkaTemplate;
-        //DeadLetterPublishingRecoverer.DEFAULT_DESTINATION_RESOLVER style
-        this.dltTopicName = properties.getTopicName() + "-dlt";
+        this.recoverer = recoverer;
+        this.dltEnabled = properties.getRetryAndDlt().getDlt().isEnabled();
         this.metrics = metrics;
     }
 
     /**
-     * Отправляет сообщение в Dead Letter Topic вручную.
+     * Отправляет сообщение в Dead Letter Topic.
      * Используется для обработки частичных сбоев (Partial Failures) внутри батча,
      * когда мы не хотим откатывать весь батч целиком.
      */
-    public void sendToDlt(UserSelectedForDailyReportEvent event, Throwable cause) {
-        try {
-            ProducerRecord<String, UserSelectedForDailyReportEvent> record =
-                    new ProducerRecord<>(dltTopicName, null, event);
+    public void sendToDlt(ConsumerRecord<String, UserSelectedForDailyReportEvent> record, Exception cause) {
+        if (dltEnabled) {
+            try {
+                recoverer.accept(record, cause);
 
-            record.headers().add(KafkaHeaders.DLT_EXCEPTION_MESSAGE,
-                    cause.getMessage().getBytes(StandardCharsets.UTF_8));
-            record.headers().add(KafkaHeaders.DLT_EXCEPTION_STACKTRACE,
-                    cause.toString().getBytes(StandardCharsets.UTF_8));
+                log.warn("Sent poison pill event to DLT for userId: {}. Reason: {}",
+                        record.value().userId(), cause.getMessage());
 
-            kafkaTemplate.send(record).whenComplete((res, ex) -> {
-                if (ex != null) {
-                    log.error("CRITICAL: Failed to send message to DLT. Event lost for userId: {}", event.userId(), ex);
-                } else {
-                    log.warn("Sent poison pill event to DLT for userId: {}. Reason: {}", event.userId(), cause.getMessage());
-                }
-            });
+                metrics.incrementCounter(
+                        Metric.JOB_RUN_FAILURE,
+                        Tags.of(SchedulerMetricConstants.TAG_EMAIL_COMMAND, Tag.of("reason", "sent_to_dlt"))
+                );
+            } catch (Exception e) {
+                log.error("CRITICAL: Failed to delegate to Recoverer for userId: {}", record.value().userId(), e);
+            }
+        } else {
+            log.error("DLT is disabled. Dropping poison pill event for userId: {}. Reason: {}",
+                    record.value().userId(), cause.getMessage());
 
             metrics.incrementCounter(
                     Metric.JOB_RUN_FAILURE,
-                    Tags.of(SchedulerMetricConstants.TAG_EMAIL_COMMAND, Tag.of("reason", "sent_to_dlt"))
+                    Tags.of(SchedulerMetricConstants.TAG_EMAIL_COMMAND, Tag.of("reason", "dropped_no_dlt"))
             );
-
-        } catch (Exception e) {
-            log.error("CRITICAL: Unexpected error while sending to DLT for userId: {}", event.userId(), e);
         }
     }
 }

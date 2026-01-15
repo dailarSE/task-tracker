@@ -8,6 +8,7 @@ import com.example.tasktracker.scheduler.metrics.SchedulerMetricConstants;
 import io.micrometer.core.instrument.Tags;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.util.CollectionUtils;
 
@@ -39,26 +40,26 @@ public class DailyTaskReportConsumer {
             topics = "${app.scheduler.consumers.daily-report.topic-name}",
             containerFactory = "dailyReportBatchContainerFactory"
     )
-    public void consume(List<UserSelectedForDailyReportEvent> events) {
-        if (CollectionUtils.isEmpty(events)) {
+    public void consume(List<ConsumerRecord<String, UserSelectedForDailyReportEvent>> records) {
+        if (CollectionUtils.isEmpty(records)) {
             return;
         }
 
         metrics.recordDistribution(
                 Metric.JOB_BATCH_SIZE,
-                events.size(),
+                records.size(),
                 Tags.of(SchedulerMetricConstants.TAG_EMAIL_COMMAND)
         );
 
-        Map<JobRunKey, List<UserSelectedForDailyReportEvent>> eventsByJobRun = events.stream()
+        Map<JobRunKey, List<ConsumerRecord<String, UserSelectedForDailyReportEvent>>> recordsByJob = records.stream()
                 .collect(Collectors.groupingBy(
-                        e -> new JobRunKey(e.jobRunId(), e.reportDate())
+                        r -> new JobRunKey(r.value().jobRunId(), r.value().reportDate())
                 ));
 
-        log.debug("Consumed batch of {} events. Processing {} groups.", events.size(), eventsByJobRun.size());
+        log.debug("Consumed batch of {} records. Processing {} groups.", records.size(), recordsByJob.size());
 
-        eventsByJobRun.forEach((key, eventList) ->
-                batchProcessor.process(key.jobRunId(), key.reportDate(), eventList)
+        recordsByJob.forEach((key, jobRecords) ->
+                batchProcessor.process(key.jobRunId(), key.reportDate(), jobRecords)
         );
     }
 }

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Daily Task Report</title>
+    <style>
+        .task-list { margin-bottom: 20px; }
+        .task-item { padding: 5px; border-bottom: 1px solid #eee; }
+        .completed { color: green; }
+        .pending { color: orange; }
+    </style>
+</head>
+<body>
+<h1 th:text="#{email.daily_report.header}">Your Daily Report</h1>
+
+<p th:text="|Report for date: ${reportDate}|">Date</p>
+
+<!-- Секция выполненных задач -->
+<div class="task-list" th:if="${not #lists.isEmpty(tasksCompleted)}">
+    <h3 class="completed" th:text="#{email.daily_report.completed_title}">Completed Tasks</h3>
+    <ul>
+        <li class="task-item" th:each="task : ${tasksCompleted}">
+            <span th:text="${task.title}">Task Title</span>
+        </li>
+    </ul>
+</div>
+
+<!-- Секция невыполненных задач -->
+<div class="task-list" th:if="${not #lists.isEmpty(tasksPending)}">
+    <h3 class="pending" th:text="#{email.daily_report.pending_title}">Pending Tasks</h3>
+    <ul>
+        <li class="task-item" th:each="task : ${tasksPending}">
+            <span th:text="${task.title}">Task Title</span>
+        </li>
+    </ul>
+</div>
+
+<p th:if="${#lists.isEmpty(tasksCompleted) and #lists.isEmpty(tasksPending)}">
+    No activity for yesterday.
+</p>
+
+<hr/>
+<small><a href="#">Unsubscribe</a></small>
+</body>
+</html>

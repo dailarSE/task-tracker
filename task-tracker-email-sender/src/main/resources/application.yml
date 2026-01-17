@@ -1,0 +1,73 @@
+spring:
+  application:
+    name: task-tracker-email-sender
+
+  # Настройка почты (Mailhog)
+  mail:
+    host: mailhog
+    port: 1025
+    username: ""
+    password: ""
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
+        debug: true
+
+  data:
+    redis:
+      host: redis
+      port: 6379
+
+  kafka:
+    bootstrap-servers: kafka:9092
+    consumer:
+      group-id: "email-sender-group"
+      auto-offset-reset: latest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+
+otel:
+  service:
+    name: ${spring.application.name}
+  exporter:
+    otlp:
+      endpoint: http://otel-collector:4318 # OTLP/HTTP
+  instrumentation:
+    common:
+      default-enabled: true
+    micrometer:
+      enabled: true
+    logback-appender:
+      enabled: true
+      experimental:
+        capture-mdc-attributes: "*"
+  propagators: tracecontext,baggage
+  traces:
+    sampler:
+      arg: "0.1"
+
+logging:
+  structured:
+    format:
+      console:
+  level:
+    root: INFO
+
+app:
+  email:
+    sender-address: "noreply@tasktracker.com"
+    kafka-topic: "task_tracker.notifications.email_commands"
+
+    rate-limit:
+      capacity: 200
+      refill-tokens: 200
+      refill-duration: 1d
+
+    idempotency:
+      ttl: 7d
+      ttl-daily: 30h

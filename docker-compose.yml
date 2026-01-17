@@ -227,6 +227,16 @@ services:
       CONSOLE_CONFIG_FILEPATH: "" # Путь к файлу конфигурации внутри контейнера, если используется
       CONSOLE_LOG_LEVEL: "info"
 
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: task-tracker-mailhog
+    ports:
+      - "1025:1025" # SMTP порт (для отправки писем из приложений)
+      - "8025:8025" # Web UI (для просмотра писем)
+    networks:
+      - task-tracker-net
+    restart: unless-stopped
+
 volumes:
   pgdata:
   kafkadata:

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Welcome to Task Tracker</title>
+</head>
+<body>
+<h1 th:text="#{email.welcome.header}">Welcome!</h1>
+<p>
+    Hello, <span th:text="${userEmail}">User</span>!
+</p>
+<p th:text="#{email.welcome.body}">
+    Thank you for registering in Task Tracker. We are glad to have you with us.
+</p>
+<p>
+    <a href="http://localhost/">Go to Dashboard</a>
+</p>
+</body>
+</html>

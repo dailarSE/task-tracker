@@ -113,3 +113,10 @@ app:
           max-interval-ms: 10000
           dlt:
             enabled: true
+
+    email-publishing:
+      validity:
+        default-duration: 24h
+        policies:
+          DAILY_TASK_REPORT: 8h
+          USER_WELCOME: 30m

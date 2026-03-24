@@ -1,4 +1,4 @@
-package com.example.tasktracker.scheduler.consumer.dailyreport.messaging.dto;
+package com.example.tasktracker.scheduler.consumer.dailyreport.messaging.api;
 
 import java.util.Map;
 
@@ -7,7 +7,7 @@ import java.util.Map;
  */
 public record EmailTriggerCommand(
         String recipientEmail,
-        String templateId,
+        TemplateType templateId,
         Map<String, Object> templateContext,
         String locale,
         Long userId,

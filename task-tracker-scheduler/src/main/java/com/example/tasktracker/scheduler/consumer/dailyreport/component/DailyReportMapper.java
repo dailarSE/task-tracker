@@ -2,7 +2,8 @@ package com.example.tasktracker.scheduler.consumer.dailyreport.component;
 
 import com.example.tasktracker.scheduler.common.MdcKeys;
 import com.example.tasktracker.scheduler.consumer.dailyreport.client.dto.UserTaskReport;
-import com.example.tasktracker.scheduler.consumer.dailyreport.messaging.dto.EmailTriggerCommand;
+import com.example.tasktracker.scheduler.consumer.dailyreport.messaging.api.EmailTriggerCommand;
+import com.example.tasktracker.scheduler.consumer.dailyreport.messaging.api.TemplateType;
 import io.opentelemetry.api.trace.Span;
 import org.slf4j.MDC;
 
@@ -16,7 +17,6 @@ import java.util.UUID;
  */
 public class DailyReportMapper {
 
-    private static final String TEMPLATE_ID = "DAILY_TASK_REPORT";
     private static final String DEFAULT_LOCALE = "en-US";
 
     /**
@@ -38,7 +38,7 @@ public class DailyReportMapper {
 
         return new EmailTriggerCommand(
                 report.email(),
-                TEMPLATE_ID,
+                TemplateType.DAILY_TASK_REPORT,
                 context,
                 DEFAULT_LOCALE, //TODO: Use user locale from report
                 report.userId(),

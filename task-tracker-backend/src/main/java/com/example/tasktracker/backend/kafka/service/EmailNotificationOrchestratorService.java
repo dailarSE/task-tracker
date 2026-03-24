@@ -11,6 +11,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.opentelemetry.api.trace.Span;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.header.internals.RecordHeader;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,7 +24,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
@@ -38,6 +42,10 @@ import java.util.concurrent.Executor;
 @Service
 @Slf4j
 public class EmailNotificationOrchestratorService {
+    private static final String X_TEMPLATE_ID = "X-Template-ID";
+    private static final String X_CORRELATION_ID = "X-Correlation-ID";
+    private static final String X_VALID_UNTIL = "X-Valid-Until";
+
     private final KafkaTemplate<String, EmailTriggerCommand> kafkaTemplate;
     private final UndeliveredWelcomeEmailRepository undeliveredWelcomeEmailRepository;
     private final Clock clock;
@@ -100,8 +108,14 @@ public class EmailNotificationOrchestratorService {
                 emailCommandsTopicName, correlationId, command.getRecipientEmail(), command.getTemplateId());
 
         try {
+            ProducerRecord<String, EmailTriggerCommand> producerRecord =
+                    new ProducerRecord<>(emailCommandsTopicName, key, command);
+
+            addMessagingHeaders(producerRecord, command);
+
+
             CompletableFuture<SendResult<String, EmailTriggerCommand>> future =
-                    kafkaTemplate.send(emailCommandsTopicName, key, command);
+                    kafkaTemplate.send(producerRecord);
 
             future.whenCompleteAsync((sendResult, exception) -> {
                         try (MDC.MDCCloseable ignored = MDC.putCloseable(MdcKeys.USER_ID, userIdFromMdc)) {
@@ -159,12 +173,22 @@ public class EmailNotificationOrchestratorService {
     EmailTriggerCommand createEmailTriggerCommand(@NonNull User newUser, String localeTag) {
         return new EmailTriggerCommand(
                 newUser.getEmail(),
-                "USER_WELCOME",
+                "USER_WELCOME", //TODO to constant
                 Map.of("userEmail", newUser.getEmail()),
                 localeTag,
                 newUser.getId(),
                 generateCorrelationId()
         );
+    }
+
+    private void addMessagingHeaders(ProducerRecord<String, EmailTriggerCommand> record, EmailTriggerCommand command) {
+        var headers = record.headers();
+
+        headers.add(new RecordHeader(X_TEMPLATE_ID, command.getTemplateId().getBytes(StandardCharsets.UTF_8)));
+        headers.add(new RecordHeader(X_CORRELATION_ID, command.getCorrelationId().getBytes(StandardCharsets.UTF_8)));
+
+        Instant validUntil = Instant.now(clock).plus(Duration.ofMinutes(30)); //TODO to props
+        headers.add(new RecordHeader(X_VALID_UNTIL, validUntil.toString().getBytes(StandardCharsets.UTF_8)));
     }
 
     /**

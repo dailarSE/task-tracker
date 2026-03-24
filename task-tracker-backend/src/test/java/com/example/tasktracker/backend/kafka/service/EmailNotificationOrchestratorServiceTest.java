@@ -6,6 +6,8 @@ import com.example.tasktracker.backend.user.entity.User;
 import com.example.tasktracker.backend.user.messaging.dto.EmailTriggerCommand;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.header.Header;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -18,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -30,7 +33,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 /**
@@ -57,7 +59,7 @@ class EmailNotificationOrchestratorServiceTest {
     private EmailNotificationOrchestratorService orchestratorService;
 
     @Captor
-    private ArgumentCaptor<EmailTriggerCommand> emailCommandCaptor;
+    private ArgumentCaptor<ProducerRecord<String, EmailTriggerCommand>> recordCaptor;
     @Captor
     private ArgumentCaptor<UndeliveredWelcomeEmail> undeliveredWelcomeEmailCaptor;
 
@@ -106,15 +108,26 @@ class EmailNotificationOrchestratorServiceTest {
             // Arrange
             CompletableFuture<SendResult<String, EmailTriggerCommand>> successfulFuture =
                     CompletableFuture.completedFuture(mock(SendResult.class));
-            when(mockKafkaTemplate.send(anyString(), anyString(), any(EmailTriggerCommand.class)))
-                    .thenReturn(successfulFuture);
+            when(mockKafkaTemplate.send(any(ProducerRecord.class))).thenReturn(successfulFuture);
 
             // Act
             orchestratorService.scheduleInitialEmailNotification(testUser, TEST_LOCALE_TAG);
 
             // Assert
-            verify(mockKafkaTemplate).send(eq(TEST_TOPIC_NAME), eq(testUser.getEmail()), emailCommandCaptor.capture());
-            EmailTriggerCommand capturedCommand = emailCommandCaptor.getValue();
+            verify(mockKafkaTemplate).send(recordCaptor.capture());
+            ProducerRecord<String, EmailTriggerCommand> capturedRecord = recordCaptor.getValue();
+
+            assertThat(capturedRecord.topic()).isEqualTo(TEST_TOPIC_NAME);
+            assertThat(capturedRecord.key()).isEqualTo(TEST_EMAIL);
+
+            EmailTriggerCommand capturedCommand = capturedRecord.value();
+            assertThat(capturedCommand.getRecipientEmail()).isEqualTo(TEST_EMAIL);
+
+            assertThat(getHeaderValue(capturedRecord, "X-Template-ID")).isEqualTo("USER_WELCOME");
+            assertThat(getHeaderValue(capturedRecord, "X-Correlation-ID")).isEqualTo(capturedCommand.getCorrelationId());
+
+            String expectedValidUntil = FIXED_NOW.plus(30, ChronoUnit.MINUTES).toString();
+            assertThat(getHeaderValue(capturedRecord, "X-Valid-Until")).isEqualTo(expectedValidUntil);
 
             // Проверяем, что команда была создана правильно
             assertThat(capturedCommand.getRecipientEmail()).isEqualTo(TEST_EMAIL);
@@ -133,8 +146,7 @@ class EmailNotificationOrchestratorServiceTest {
         void whenKafkaSendThrowsSyncException_shouldCallHandleFailure() {
             // Arrange
             RuntimeException syncKafkaException = new RuntimeException("Synchronous Kafka send failed");
-            when(mockKafkaTemplate.send(anyString(), anyString(), any(EmailTriggerCommand.class)))
-                    .thenThrow(syncKafkaException);
+            when(mockKafkaTemplate.send(any(ProducerRecord.class))).thenThrow(syncKafkaException);
 
             // Используем spy, чтобы проверить вызов приватного метода
             EmailNotificationOrchestratorService spyOrchestrator = spy(orchestratorService);
@@ -154,8 +166,7 @@ class EmailNotificationOrchestratorServiceTest {
             RuntimeException asyncKafkaException = new RuntimeException("Async Kafka send failed");
             CompletableFuture<SendResult<String, EmailTriggerCommand>> failedFuture =
                     CompletableFuture.failedFuture(asyncKafkaException);
-            when(mockKafkaTemplate.send(anyString(), anyString(), any(EmailTriggerCommand.class)))
-                    .thenReturn(failedFuture);
+            when(mockKafkaTemplate.send(any(ProducerRecord.class))).thenReturn(failedFuture);
 
             EmailNotificationOrchestratorService spyOrchestrator = spy(orchestratorService);
             doNothing().when(spyOrchestrator).handleInitialSendFailure(any(), any());
@@ -165,6 +176,11 @@ class EmailNotificationOrchestratorServiceTest {
 
             // Assert
             verify(spyOrchestrator).handleInitialSendFailure(any(EmailTriggerCommand.class), eq(asyncKafkaException));
+        }
+
+        private String getHeaderValue(ProducerRecord<?, ?> record, String headerName) {
+            Header header = record.headers().lastHeader(headerName);
+            return header != null ? new String(header.value(), StandardCharsets.UTF_8) : null;
         }
     }
 

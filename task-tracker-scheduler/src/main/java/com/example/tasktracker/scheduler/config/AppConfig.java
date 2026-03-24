@@ -5,6 +5,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.jvm.ExecutorServiceMetrics;
 import io.opentelemetry.context.Context;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -14,6 +15,7 @@ import java.util.concurrent.Executor;
 
 @Configuration
 @Slf4j
+@EnableConfigurationProperties(EmailPublishingProperties.class)
 public class AppConfig {
 
     public static final String KAFKA_CALLBACK_EXECUTOR = "kafkaCallbackExecutor";

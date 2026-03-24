@@ -3,7 +3,8 @@ package com.example.tasktracker.scheduler.consumer.dailyreport;
 import com.example.tasktracker.scheduler.consumer.dailyreport.client.dto.TaskInfo;
 import com.example.tasktracker.scheduler.consumer.dailyreport.client.dto.UserTaskReport;
 import com.example.tasktracker.scheduler.consumer.dailyreport.component.DailyReportMapper;
-import com.example.tasktracker.scheduler.consumer.dailyreport.messaging.dto.EmailTriggerCommand;
+import com.example.tasktracker.scheduler.consumer.dailyreport.messaging.api.EmailTriggerCommand;
+import com.example.tasktracker.scheduler.consumer.dailyreport.messaging.api.TemplateType;
 import com.example.tasktracker.scheduler.job.dailyreport.messaging.event.UserSelectedForDailyReportEvent;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,7 +41,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +54,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import static com.example.tasktracker.scheduler.consumer.dailyreport.messaging.api.MessagingHeaders.*;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -200,6 +204,13 @@ class DailyTaskReportConsumerIT {
                 .orElseThrow(() -> new AssertionError("Command for user " + userId + " not found"));
     }
 
+    private ConsumerRecord<String, EmailTriggerCommand> findRecordForUser(long userId) {
+        return receivedCommands.stream()
+                .filter(record -> record.value().userId().equals(userId))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Record for user " + userId + " not found"));
+    }
+
     @Test
     @DisplayName("TC-1: Happy Path - should process events, fetch reports, and publish commands")
     void happyPath_shouldProcessBatchAndPublishCommands() throws JsonProcessingException {
@@ -210,7 +221,7 @@ class DailyTaskReportConsumerIT {
         final long userId2 = 102L;
         final String userEmail1 = "user101@test.com";
         final String userEmail2 = "user102@test.com";
-        final String expectedTemplateId = "DAILY_TASK_REPORT";
+        final TemplateType expectedTemplateId = TemplateType.DAILY_TASK_REPORT;
 
         List<UserSelectedForDailyReportEvent> sourceEvents = List.of(
                 new UserSelectedForDailyReportEvent(userId1, jobRunId, reportDate),
@@ -259,12 +270,22 @@ class DailyTaskReportConsumerIT {
         wireMockServer.verify(new CountMatchingStrategy(CountMatchingStrategy.LESS_THAN_OR_EQUAL, 2),
                 postRequestedFor(urlPathEqualTo("/api/v1/internal/scheduler-support/tasks/user-reports")));
 
-        EmailTriggerCommand command1 = findCommandForUser(userId1);
+        ConsumerRecord<String, EmailTriggerCommand> record1 = findRecordForUser(userId1);
+        EmailTriggerCommand command1 = record1.value();
+
         assertThat(command1.recipientEmail()).isEqualTo(userEmail1);
         assertThat(command1.templateId()).isEqualTo(expectedTemplateId);
         assertThat(command1.templateContext().get("tasksCompleted"))
                 .asInstanceOf(InstanceOfAssertFactories.LIST)
                 .hasSize(1).extracting("title").contains("Done task");
+
+        assertHeader(record1, X_TEMPLATE_ID, TemplateType.DAILY_TASK_REPORT.name());
+        assertHeader(record1, X_CORRELATION_ID, command1.correlationId());
+
+        String validUntilRaw = getHeaderValue(record1, X_VALID_UNTIL);
+        assertThat(validUntilRaw).isNotNull();
+        Instant validUntil = Instant.parse(validUntilRaw);
+        assertThat(validUntil).isAfter(Instant.now());
 
         EmailTriggerCommand command2 = findCommandForUser(userId2);
         assertThat(command2.recipientEmail()).isEqualTo(userEmail2);
@@ -364,5 +385,15 @@ class DailyTaskReportConsumerIT {
                             .withFailMessage("DLT should contain only the poison pill user ID")
                             .containsExactlyInAnyOrder(poisonPillUserId);
                 });
+    }
+
+    private void assertHeader(ConsumerRecord<?, ?> record, String key, String expectedValue) {
+        String actual = getHeaderValue(record, key);
+        assertThat(actual).as("Header %s mismatch", key).isEqualTo(expectedValue);
+    }
+
+    private String getHeaderValue(ConsumerRecord<?, ?> record, String key) {
+        var header = record.headers().lastHeader(key);
+        return header != null ? new String(header.value(), StandardCharsets.UTF_8) : null;
     }
 }

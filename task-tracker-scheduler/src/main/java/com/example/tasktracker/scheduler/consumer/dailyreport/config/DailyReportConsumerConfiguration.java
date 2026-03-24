@@ -1,12 +1,13 @@
 package com.example.tasktracker.scheduler.consumer.dailyreport.config;
 
+import com.example.tasktracker.scheduler.config.EmailPublishingProperties;
 import com.example.tasktracker.scheduler.consumer.dailyreport.DailyTaskReportConsumer;
 import com.example.tasktracker.scheduler.consumer.dailyreport.client.TaskReportFetcherClient;
 import com.example.tasktracker.scheduler.consumer.dailyreport.component.DailyReportBatchProcessor;
 import com.example.tasktracker.scheduler.consumer.dailyreport.component.DailyReportMapper;
 import com.example.tasktracker.scheduler.consumer.dailyreport.component.DltPublisher;
 import com.example.tasktracker.scheduler.consumer.dailyreport.component.EmailCommandPublisher;
-import com.example.tasktracker.scheduler.consumer.dailyreport.messaging.dto.EmailTriggerCommand;
+import com.example.tasktracker.scheduler.consumer.dailyreport.messaging.api.EmailTriggerCommand;
 import com.example.tasktracker.scheduler.job.dailyreport.messaging.event.UserSelectedForDailyReportEvent;
 import com.example.tasktracker.scheduler.metrics.MetricsReporter;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +33,7 @@ import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.util.backoff.ExponentialBackOff;
 import org.springframework.web.client.RestClient;
 
+import java.time.Clock;
 import java.util.Map;
 
 @Slf4j
@@ -56,9 +58,11 @@ public class DailyReportConsumerConfiguration {
 
     @Bean
     public EmailCommandPublisher emailCommandPublisher(KafkaTemplate<String, EmailTriggerCommand> kafkaTemplate,
+                                                       Clock clock,
                                                        DailyReportConsumerProperties dailyReportConsumerProperties,
+                                                       EmailPublishingProperties publishingProperties,
                                                        MetricsReporter metrics) {
-        return new EmailCommandPublisher(kafkaTemplate, dailyReportConsumerProperties, metrics);
+        return new EmailCommandPublisher(kafkaTemplate, clock, dailyReportConsumerProperties, publishingProperties, metrics);
     }
 
     @Bean

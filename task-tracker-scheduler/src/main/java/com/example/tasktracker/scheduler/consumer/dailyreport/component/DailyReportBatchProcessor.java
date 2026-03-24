@@ -3,7 +3,7 @@ package com.example.tasktracker.scheduler.consumer.dailyreport.component;
 import com.example.tasktracker.scheduler.common.MdcKeys;
 import com.example.tasktracker.scheduler.consumer.dailyreport.client.TaskReportFetcherClient;
 import com.example.tasktracker.scheduler.consumer.dailyreport.client.dto.UserTaskReport;
-import com.example.tasktracker.scheduler.consumer.dailyreport.messaging.dto.EmailTriggerCommand;
+import com.example.tasktracker.scheduler.consumer.dailyreport.messaging.api.EmailTriggerCommand;
 import com.example.tasktracker.scheduler.job.dailyreport.messaging.event.UserSelectedForDailyReportEvent;
 import com.example.tasktracker.scheduler.metrics.Metric;
 import com.example.tasktracker.scheduler.metrics.MetricsReporter;

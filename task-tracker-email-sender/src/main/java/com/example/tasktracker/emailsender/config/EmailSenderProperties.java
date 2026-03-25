@@ -1,6 +1,7 @@
 package com.example.tasktracker.emailsender.config;
 
 import com.example.tasktracker.emailsender.api.messaging.TemplateType;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -39,6 +40,9 @@ public class EmailSenderProperties {
     @NotNull
     private EmailSenderProperties.MessageValidityProperties messageValidity = new MessageValidityProperties();
 
+    @Valid
+    private IdempotencyProperties idempotency = new IdempotencyProperties();
+
     @Getter
     @Setter
     public static class MessageValidityProperties {
@@ -55,6 +59,37 @@ public class EmailSenderProperties {
 
         public Duration getDurationFor(TemplateType type) {
             return policies.getOrDefault(type, defaultDuration);
+        }
+    }
+
+    @Getter
+    @Setter
+    public static class IdempotencyProperties {
+        /**
+         * TTL для короткой блокировки на время обработки сообщения (статус PROCESSING).
+         */
+        @NotNull
+        private Duration processingLockDuration = Duration.ofMinutes(5);
+
+        /**
+         * Карта настроек TTL для хранения статуса успешной обработки (SENT) или фатальной ошибки (FAILED)
+         * для каждого типа шаблона.
+         * <p>
+         * Ключ: {@link TemplateType}
+         * Значение: {@link Duration} (сколько времени хранить информацию о том, что письмо уже отправлено).
+         * </p>
+         */
+        private Map<TemplateType, Duration> retentionPolicies = new EnumMap<>(TemplateType.class);
+
+        /**
+         * Возвращает настроенный TTL для указанного типа шаблона.
+         * Если настройка отсутствует, возвращает дефолтное значение.
+         *
+         * @param type тип шаблона.
+         * @return Duration TTL.
+         */
+        public Duration getTtlFor(TemplateType type) {
+            return retentionPolicies.getOrDefault(type, Duration.ofDays(7));
         }
     }
 }

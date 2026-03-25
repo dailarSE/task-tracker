@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: task-tracker-email-sender
+
+  data:
+    redis:
+
+logging:
+  level:
+    root: warn
+    com.example.tasktracker.emailsender: debug

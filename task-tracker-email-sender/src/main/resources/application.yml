@@ -20,6 +20,12 @@ app:
     retry-topic: "task_tracker.notifications.email_commands-recovery"
     dlt-topic: "task_tracker.notifications.email_commands-dlt"
 
+    idempotency:
+      processing-lock-duration: 70s
+      retention-policies:
+        USER_WELCOME: 7d
+        DAILY_TASK_REPORT: 30h
+
     message-validity:
       default-duration: 7d
       policies:

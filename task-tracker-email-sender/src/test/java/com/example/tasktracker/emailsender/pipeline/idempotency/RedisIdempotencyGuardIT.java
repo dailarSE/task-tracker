@@ -31,7 +31,7 @@ class RedisIdempotencyGuardIT {
 
     @Container
     @ServiceConnection
-    static RedisContainer redis = new RedisContainer(RedisContainer.DEFAULT_IMAGE_NAME.withTag("8-alpine"));
+    static final RedisContainer redis = new RedisContainer(RedisContainer.DEFAULT_IMAGE_NAME.withTag("8-alpine"));
 
     @Autowired
     private IdempotencyGuard guard;

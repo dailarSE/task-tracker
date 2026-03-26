@@ -1,6 +1,7 @@
 package com.example.tasktracker.emailsender.config;
 
 import com.example.tasktracker.emailsender.infra.RuntimeInstanceIdProvider;
+import com.example.tasktracker.emailsender.pipeline.ChunkingExecutor;
 import com.example.tasktracker.emailsender.pipeline.assembler.BatchAssembler;
 import com.example.tasktracker.emailsender.pipeline.assembler.ValidatingBatchAssembler;
 import com.example.tasktracker.emailsender.pipeline.assembler.processor.*;
@@ -8,12 +9,18 @@ import com.example.tasktracker.emailsender.pipeline.idempotency.IdempotencyGuard
 import com.example.tasktracker.emailsender.pipeline.idempotency.TemplateKeyRegistry;
 import com.example.tasktracker.emailsender.pipeline.idempotency.RedisIdempotencyCommitter;
 import com.example.tasktracker.emailsender.pipeline.idempotency.RedisIdempotencyGuard;
+import com.example.tasktracker.emailsender.pipeline.ratelimit.Bucket4jRpsLimiter;
+import com.example.tasktracker.emailsender.pipeline.ratelimit.RpsLimitedChunkingExecutor;
+import com.example.tasktracker.emailsender.pipeline.ratelimit.RpsLimiter;
+import com.example.tasktracker.emailsender.pipeline.sender.Sender;
+import io.github.bucket4j.BlockingBucket;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
+import java.time.Clock;
 import java.util.List;
 
 @Configuration
@@ -55,5 +62,15 @@ public class PipelineConfig {
     public RedisIdempotencyCommitter redisIdempotencyCommitter(
             StringRedisTemplate redisTemplate, TemplateKeyRegistry keyRegistry, EmailSenderProperties properties) {
         return new RedisIdempotencyCommitter(redisTemplate, keyRegistry, properties);
+    }
+
+    @Bean
+    public RpsLimiter rpsLimiter(BlockingBucket rpsBucket, EmailSenderProperties properties) {
+        return new Bucket4jRpsLimiter(rpsBucket, properties.getRateLimit());
+    }
+
+    @Bean
+    public ChunkingExecutor chunkingExecutor(RpsLimiter rpsLimiter, Sender asyncSender, EmailSenderProperties properties, Clock clock) {
+        return new RpsLimitedChunkingExecutor(rpsLimiter, asyncSender, properties.getRateLimit(), clock);
     }
 }

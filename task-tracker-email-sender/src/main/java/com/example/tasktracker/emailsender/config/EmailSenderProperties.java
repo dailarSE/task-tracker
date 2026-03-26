@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -42,6 +43,9 @@ public class EmailSenderProperties {
 
     @Valid
     private IdempotencyProperties idempotency = new IdempotencyProperties();
+
+    @Valid
+    private RateLimitProperties rateLimit = new RateLimitProperties();
 
     @Getter
     @Setter
@@ -91,5 +95,35 @@ public class EmailSenderProperties {
         public Duration getTtlFor(TemplateType type) {
             return retentionPolicies.getOrDefault(type, Duration.ofDays(7));
         }
+    }
+
+    @Getter
+    @Setter
+    public static class RateLimitProperties {
+        /**
+         * Глобальный лимит (запросов в секунду) на весь кластер.
+         */
+        @Positive
+        private long globalRps = 200;
+
+        /**
+         * Размер пачки токенов, запрашиваемой за один раз.
+         * Влияет на плавность (чем меньше, тем плавнее).
+         */
+        @Positive
+        private int tokenChunkSize = 20;
+
+        /**
+         * Максимальное время ожидания квоты.
+         */
+        @NotNull
+        private Duration acquisitionTimeout = Duration.ofSeconds(30);
+
+        /**
+         * Hard limit на обработку одного батча
+         */
+
+        @NotNull
+        private Duration batchProcessingTimeout = Duration.ofSeconds(60);
     }
 }

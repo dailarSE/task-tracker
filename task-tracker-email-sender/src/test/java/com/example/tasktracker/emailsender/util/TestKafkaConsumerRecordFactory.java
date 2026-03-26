@@ -1,6 +1,7 @@
 package com.example.tasktracker.emailsender.util;
 
 import com.example.tasktracker.emailsender.api.messaging.MessagingHeaders;
+import com.example.tasktracker.emailsender.pipeline.model.PipelineItem;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.kafka.common.header.internals.RecordHeaders;
@@ -8,7 +9,9 @@ import org.apache.kafka.common.record.TimestampType;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.IntStream;
 
 /**
  * Универсальная фабрика для создания ConsumerRecord в тестах.
@@ -91,5 +94,11 @@ public class TestKafkaConsumerRecordFactory {
                 headers,
                 Optional.empty()
         );
+    }
+
+    public static List<PipelineItem> createItems(int count) {
+        return IntStream.range(0, count)
+                .mapToObj(i -> new PipelineItem(record().offset(i).build()))
+                .toList();
     }
 }

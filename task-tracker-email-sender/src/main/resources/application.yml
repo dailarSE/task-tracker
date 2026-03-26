@@ -20,6 +20,12 @@ app:
     retry-topic: "task_tracker.notifications.email_commands-recovery"
     dlt-topic: "task_tracker.notifications.email_commands-dlt"
 
+    rate-limit:
+      acquisition-timeout: 30s
+      global-rps: 200
+      token-chunk-size: 20
+      batch-processing-timeout: 60s
+
     idempotency:
       processing-lock-duration: 70s
       retention-policies:

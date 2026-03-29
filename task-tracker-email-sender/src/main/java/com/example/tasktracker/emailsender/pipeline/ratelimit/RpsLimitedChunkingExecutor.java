@@ -1,10 +1,12 @@
 package com.example.tasktracker.emailsender.pipeline.ratelimit;
 
 import com.example.tasktracker.emailsender.config.EmailSenderProperties;
+import com.example.tasktracker.emailsender.exception.FatalProcessingException;
 import com.example.tasktracker.emailsender.exception.infrastructure.InfrastructureException;
 import com.example.tasktracker.emailsender.exception.infrastructure.InfrastructureSuspendedException;
 import com.example.tasktracker.emailsender.pipeline.ChunkingExecutor;
 import com.example.tasktracker.emailsender.pipeline.model.PipelineItem;
+import com.example.tasktracker.emailsender.pipeline.model.RejectReason;
 import com.example.tasktracker.emailsender.pipeline.sender.Sender;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,6 +53,10 @@ public class RpsLimitedChunkingExecutor implements ChunkingExecutor {
             }
 
             waitForCompletion(sendingFutures, deadline);
+
+        } catch (InfrastructureException e) {
+            abortAll(sendingFutures, "Retryable failure: " + e.getClass().getSimpleName());
+            throw e;
         } catch (TimeoutException e) {
             abortAll(sendingFutures, "Deadline reached during batch execution");
             throw new InfrastructureSuspendedException("Batch execution timed out", e);
@@ -59,8 +65,9 @@ public class RpsLimitedChunkingExecutor implements ChunkingExecutor {
             Thread.currentThread().interrupt();
             throw e;
         } catch (Exception e) {
-            abortAll(sendingFutures, "Infrastructure failure: " + e.getMessage());
-            throw new InfrastructureSuspendedException("Batch orchestration failed", e);
+            abortAll(sendingFutures, "Unhandled failure: " + e.getMessage());
+            throw new FatalProcessingException(
+                    RejectReason.INTERNAL_ERROR, "Chunk orchestration bug: " + e.getMessage(), e);
         }
     }
 
@@ -87,6 +94,6 @@ public class RpsLimitedChunkingExecutor implements ChunkingExecutor {
         if (futures.isEmpty()) return;
 
         log.warn("Aborting {} active sending tasks. Reason: {}", futures.size(), reason);
-        futures.forEach(f->f.cancel(true));
+        futures.forEach(f -> f.cancel(true));
     }
 }

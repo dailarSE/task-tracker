@@ -4,6 +4,6 @@ import com.example.tasktracker.emailsender.exception.infrastructure.Infrastructu
 
 public class RateLimitExceededException extends InfrastructureException {
     public RateLimitExceededException(String message) {
-        super(message);
+        super(message, null);
     }
 }

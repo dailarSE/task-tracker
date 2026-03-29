@@ -9,18 +9,11 @@ import lombok.Getter;
 
 public class FatalProcessingException extends RuntimeException {
     @Getter
-    private RejectReason rejectReason;
+    private final RejectReason rejectReason;
 
-    public FatalProcessingException(RejectReason rejectReason, String message) {
-        super(message);
+    public FatalProcessingException(RejectReason rejectReason, String message, Throwable cause) {
+        super(message, cause);
         this.rejectReason = rejectReason;
     }
 
-    public FatalProcessingException(String message, Throwable cause) {
-        super(message, cause);
-    }
-
-    public FatalProcessingException(String message) {
-        super(message);
-    }
 }

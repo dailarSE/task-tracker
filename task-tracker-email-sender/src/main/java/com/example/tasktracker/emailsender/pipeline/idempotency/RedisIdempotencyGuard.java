@@ -2,6 +2,7 @@ package com.example.tasktracker.emailsender.pipeline.idempotency;
 
 import com.example.tasktracker.emailsender.api.messaging.TriggerCommand;
 import com.example.tasktracker.emailsender.config.EmailSenderProperties;
+import com.example.tasktracker.emailsender.exception.FatalProcessingException;
 import com.example.tasktracker.emailsender.exception.infrastructure.StateStoreInfrastructureException;
 import com.example.tasktracker.emailsender.infra.RuntimeInstanceIdProvider;
 import com.example.tasktracker.emailsender.pipeline.model.PipelineBatch;
@@ -171,7 +172,7 @@ public class RedisIdempotencyGuard implements IdempotencyGuard {
                 String errorMsg = String.format("Protocol error: unexpected status '%s' for key '%s' " +
                         "Expected one of: [ACQUIRED, SENT, PROCESSING]", status, key);
                 log.error(errorMsg);
-                throw new StateStoreInfrastructureException(errorMsg);
+                throw new FatalProcessingException(RejectReason.INTERNAL_ERROR, errorMsg, null);
             }
         }
     }

@@ -189,7 +189,7 @@ class ValidatingBatchAssemblerTest {
         JsonParser failingParser = new JsonParser(OBJECT_MAPPER) {
             @Override
             public void process(PipelineItem item) {
-                throw new InfrastructureException("External System Failure");
+                throw new InfrastructureException("External System Failure", null);
             }
         };
 
@@ -209,7 +209,7 @@ class ValidatingBatchAssemblerTest {
     @Test
     @DisplayName("Logic: Unexpected RuntimeException should be caught and mark item as INTERNAL_ERROR")
     void shouldHandleUnexpectedRuntimeException() {
-        CorrelationIdFilter buggyProcessor = new CorrelationIdFilter(){
+        CorrelationIdFilter buggyProcessor = new CorrelationIdFilter() {
             @Override
             public void process(PipelineItem item) {
                 throw new RuntimeException("Unexpected bug in code");

@@ -1,10 +1,12 @@
 package com.example.tasktracker.emailsender.config;
 
 import com.example.tasktracker.emailsender.infra.RuntimeInstanceIdProvider;
+import com.example.tasktracker.emailsender.messaging.util.KafkaMetadataEnricher;
 import com.example.tasktracker.emailsender.pipeline.ChunkingExecutor;
 import com.example.tasktracker.emailsender.pipeline.assembler.BatchAssembler;
 import com.example.tasktracker.emailsender.pipeline.assembler.ValidatingBatchAssembler;
 import com.example.tasktracker.emailsender.pipeline.assembler.processor.*;
+import com.example.tasktracker.emailsender.pipeline.dispatch.DispatcherStep;
 import com.example.tasktracker.emailsender.pipeline.idempotency.IdempotencyGuard;
 import com.example.tasktracker.emailsender.pipeline.idempotency.RedisIdempotencyCommitter;
 import com.example.tasktracker.emailsender.pipeline.idempotency.RedisIdempotencyGuard;
@@ -21,6 +23,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
+import org.springframework.kafka.core.KafkaTemplate;
 
 import java.time.Clock;
 import java.util.List;
@@ -87,4 +90,13 @@ public class PipelineConfig {
     public ExecutorService virtualThreadExecutor() {
         return Executors.newVirtualThreadPerTaskExecutor();
     }
+
+    @Bean
+    public DispatcherStep dispatcherStep(
+            KafkaMetadataEnricher metadataEnricher,
+            @Qualifier("rawKafkaTemplate") KafkaTemplate<byte[], byte[]> kafkaTemplate,
+            EmailSenderProperties properties) {
+        return new DispatcherStep(metadataEnricher, kafkaTemplate, properties);
+    }
+
 }

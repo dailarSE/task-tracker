@@ -15,7 +15,7 @@ public record TriggerCommand(
         @Email @NotEmpty String recipientEmail,
         @NotBlank String templateId,
         @NotNull Map<String, Object> templateContext,
-        @Nullable String locale,
+        @Nullable String localeTag,
         @NotNull Long userId,
         @NotBlank String correlationId
 ) {}

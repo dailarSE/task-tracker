@@ -1,6 +1,6 @@
 package com.example.tasktracker.emailsender.pipeline.ratelimit;
 
-import com.example.tasktracker.emailsender.config.EmailSenderProperties;
+import com.example.tasktracker.emailsender.config.ReliabilityProperties;
 import com.example.tasktracker.emailsender.exception.infrastructure.InfrastructureSuspendedException;
 import com.example.tasktracker.emailsender.pipeline.model.PipelineItem;
 import com.example.tasktracker.emailsender.pipeline.sender.Sender;
@@ -25,7 +25,7 @@ class RpsLimitedChunkingExecutorTest {
     private static final Duration TIMEOUT = Duration.ofSeconds(2);
     private static final Instant NOW = Instant.parse("2025-01-01T10:00:00Z");
 
-    private final EmailSenderProperties.RateLimitProperties props = new EmailSenderProperties.RateLimitProperties();
+    private final ReliabilityProperties props = new ReliabilityProperties();
     private final MutableClock clock = new MutableClock(NOW);
 
     private final List<PipelineItem> capturedItems = new ArrayList<>();
@@ -41,8 +41,12 @@ class RpsLimitedChunkingExecutorTest {
         capturedItems.clear();
         senderFuture = CompletableFuture.completedFuture(null);
 
-        props.setTokenChunkSize(CHUNK_SIZE);
-        props.setBatchProcessingTimeout(TIMEOUT);
+        ReliabilityProperties.DispatchCapacity capacity = new ReliabilityProperties.DispatchCapacity();
+        capacity.setTokenChunkSize(CHUNK_SIZE);
+        ReliabilityProperties.Budget budget = new ReliabilityProperties.Budget();
+        budget.setMaxBatchProcessingTime(TIMEOUT);
+        props.setCapacity(capacity);
+        props.setBudget(budget);
 
         sender = new Sender() {
             @Override public CompletableFuture<Void> sendAsync(PipelineItem item) { return null; }

@@ -1,6 +1,38 @@
+app:
+  instance-id: ${APP_INSTANCE_ID}
+  email:
+    sender-address: "noreply@tasktracker.com"
+    kafka-topic: "task_tracker.notifications.email_commands"
+    retry-topic: "task_tracker.notifications.email_commands-recovery"
+    dlt-topic: "task_tracker.notifications.email_commands-dlt"
+
+    reliability:
+      capacity:
+        configuration-version: 1
+      budget:
+        command-intake-batch-size: 500
+        max-batch-processing-time: 90s
+      idempotency:
+        processing-lock-duration: 120s
+        retention-policies:
+          USER_WELCOME: 7d
+          DAILY_TASK_REPORT: 30h
+
+    message-validity:
+      default-duration: 7d
+      policies:
+        USER_WELCOME: 30m
+        DAILY_TASK_REPORT: 8h
+
 spring:
   application:
     name: task-tracker-email-sender
+
+  mail:
+    host: mailhog
+    port: 1025
+    username: ""
+    password: ""
 
   kafka:
     bootstrap-servers: kafka:9092
@@ -11,29 +43,4 @@ spring:
         session.timeout.ms: 45000
         heartbeat.interval.ms: 10000
         max.poll.interval.ms: 300000
-
-app:
-  instance-id: ${APP_INSTANCE_ID}
-  email:
-    sender-address: "noreply@tasktracker.com"
-    kafka-topic: "task_tracker.notifications.email_commands"
-    retry-topic: "task_tracker.notifications.email_commands-recovery"
-    dlt-topic: "task_tracker.notifications.email_commands-dlt"
-
-    rate-limit:
-      acquisition-timeout: 30s
-      global-rps: 200
-      token-chunk-size: 20
-      batch-processing-timeout: 60s
-
-    idempotency:
-      processing-lock-duration: 70s
-      retention-policies:
-        USER_WELCOME: 7d
-        DAILY_TASK_REPORT: 30h
-
-    message-validity:
-      default-duration: 7d
-      policies:
-        USER_WELCOME: 30m
-        DAILY_TASK_REPORT: 8h
+      max-poll-records: ${app.email.reliability.budget.command-intake-batch-size}

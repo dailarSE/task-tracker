@@ -1,6 +1,6 @@
 package com.example.tasktracker.emailsender.pipeline.ratelimit;
 
-import com.example.tasktracker.emailsender.config.EmailSenderProperties;
+import com.example.tasktracker.emailsender.config.ReliabilityProperties;
 import com.example.tasktracker.emailsender.exception.infrastructure.StateStoreInfrastructureException;
 import io.github.bucket4j.BlockingBucket;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,16 +21,19 @@ class Bucket4jRpsLimiterTest {
     private static final int MAX_CHUNK = 20;
     private static final Duration TIMEOUT = Duration.ofMillis(100);
 
-    private final EmailSenderProperties.RateLimitProperties props = new EmailSenderProperties.RateLimitProperties();
     private final BlockingBucket bucket = mock(BlockingBucket.class);
 
     private Bucket4jRpsLimiter limiter;
 
     @BeforeEach
     void setUp() {
-        props.setTokenChunkSize(MAX_CHUNK);
-        props.setAcquisitionTimeout(TIMEOUT);
-        limiter = new Bucket4jRpsLimiter(bucket, props);
+        ReliabilityProperties.DispatchCapacity dispatchCapacity = new ReliabilityProperties.DispatchCapacity();
+        dispatchCapacity.setTokenChunkSize(MAX_CHUNK);
+        dispatchCapacity.setAcquisitionTimeout(TIMEOUT);
+        ReliabilityProperties reliabilityProperties = new ReliabilityProperties();
+        reliabilityProperties.setCapacity(dispatchCapacity);
+
+        limiter = new Bucket4jRpsLimiter(bucket, reliabilityProperties);
     }
 
     @ParameterizedTest(name = "Requested: {0} -> Expected Chunk: {1}")

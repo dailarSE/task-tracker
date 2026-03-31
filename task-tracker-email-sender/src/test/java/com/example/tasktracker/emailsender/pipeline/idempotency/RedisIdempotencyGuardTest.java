@@ -2,7 +2,7 @@ package com.example.tasktracker.emailsender.pipeline.idempotency;
 
 import com.example.tasktracker.emailsender.api.messaging.TemplateType;
 import com.example.tasktracker.emailsender.api.messaging.TriggerCommand;
-import com.example.tasktracker.emailsender.config.EmailSenderProperties;
+import com.example.tasktracker.emailsender.config.ReliabilityProperties;
 import com.example.tasktracker.emailsender.exception.infrastructure.StateStoreInfrastructureException;
 import com.example.tasktracker.emailsender.infra.RuntimeInstanceIdProvider;
 import com.example.tasktracker.emailsender.pipeline.model.PipelineBatch;
@@ -20,7 +20,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class RedisIdempotencyGuardTest {
@@ -44,7 +43,7 @@ class RedisIdempotencyGuardTest {
 
     @BeforeEach
     void setUp() {
-        EmailSenderProperties props = new EmailSenderProperties();
+        ReliabilityProperties props = new ReliabilityProperties();
         props.getIdempotency().setProcessingLockDuration(LOCK_TTL);
         guard = new RedisIdempotencyGuard(props, redisTemplate, registry, idProvider, script);
     }

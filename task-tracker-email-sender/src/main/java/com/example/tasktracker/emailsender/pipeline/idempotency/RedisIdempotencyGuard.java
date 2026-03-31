@@ -1,7 +1,7 @@
 package com.example.tasktracker.emailsender.pipeline.idempotency;
 
 import com.example.tasktracker.emailsender.api.messaging.TriggerCommand;
-import com.example.tasktracker.emailsender.config.EmailSenderProperties;
+import com.example.tasktracker.emailsender.config.ReliabilityProperties;
 import com.example.tasktracker.emailsender.exception.FatalProcessingException;
 import com.example.tasktracker.emailsender.exception.infrastructure.StateStoreInfrastructureException;
 import com.example.tasktracker.emailsender.infra.RuntimeInstanceIdProvider;
@@ -30,7 +30,7 @@ public class RedisIdempotencyGuard implements IdempotencyGuard {
     private final Duration lockTtl;
 
     public RedisIdempotencyGuard(
-            EmailSenderProperties properties,
+            ReliabilityProperties properties,
             StringRedisTemplate redisTemplate,
             TemplateKeyRegistry keyRegistry,
             RuntimeInstanceIdProvider idProvider,

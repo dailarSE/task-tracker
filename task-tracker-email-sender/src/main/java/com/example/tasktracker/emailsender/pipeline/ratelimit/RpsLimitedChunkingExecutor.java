@@ -1,13 +1,14 @@
 package com.example.tasktracker.emailsender.pipeline.ratelimit;
 
-import com.example.tasktracker.emailsender.config.EmailSenderProperties;
+import com.example.tasktracker.emailsender.config.ReliabilityProperties;
 import com.example.tasktracker.emailsender.exception.FatalProcessingException;
-import com.example.tasktracker.emailsender.exception.infrastructure.InfrastructureException;
+import com.example.tasktracker.emailsender.exception.RetryableProcessingException;
 import com.example.tasktracker.emailsender.exception.infrastructure.InfrastructureSuspendedException;
 import com.example.tasktracker.emailsender.pipeline.ChunkingExecutor;
 import com.example.tasktracker.emailsender.pipeline.model.PipelineItem;
 import com.example.tasktracker.emailsender.pipeline.model.RejectReason;
 import com.example.tasktracker.emailsender.pipeline.sender.Sender;
+import com.example.tasktracker.emailsender.util.AsyncUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -16,24 +17,21 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 
 @Slf4j
 @RequiredArgsConstructor
 public class RpsLimitedChunkingExecutor implements ChunkingExecutor {
     private final RpsLimiter rpsLimiter;
     private final Sender asyncSender;
-    private final EmailSenderProperties.RateLimitProperties properties;
+    private final ReliabilityProperties properties;
     private final Clock clock;
 
     @Override
-    public void execute(List<PipelineItem> items) throws InterruptedException, InfrastructureException {
+    public void execute(List<PipelineItem> items) {
         if (items.isEmpty()) return;
 
-        final Instant deadline = Instant.now(clock).plus(properties.getBatchProcessingTimeout());
+        final Instant deadline = Instant.now(clock).plus(properties.getBudget().getMaxBatchProcessingTime());
         List<CompletableFuture<Void>> sendingFutures = new ArrayList<>();
         int cursor = 0;
 
@@ -54,21 +52,26 @@ public class RpsLimitedChunkingExecutor implements ChunkingExecutor {
 
             waitForCompletion(sendingFutures, deadline);
 
-        } catch (InfrastructureException e) {
-            abortAll(sendingFutures, "Retryable failure: " + e.getClass().getSimpleName());
-            throw e;
-        } catch (TimeoutException e) {
-            abortAll(sendingFutures, "Deadline reached during batch execution");
-            throw new InfrastructureSuspendedException("Batch execution timed out", e);
-        } catch (InterruptedException e) {
-            abortAll(sendingFutures, "Execution interrupted");
-            Thread.currentThread().interrupt();
-            throw e;
-        } catch (Exception e) {
-            abortAll(sendingFutures, "Unhandled failure: " + e.getMessage());
-            throw new FatalProcessingException(
-                    RejectReason.INTERNAL_ERROR, "Chunk orchestration bug: " + e.getMessage(), e);
+        } catch (Throwable t) {
+            abortAll(sendingFutures, "Batch error: " + t.getClass().getSimpleName());
+            handleBatchError(t);
         }
+    }
+
+    private void handleBatchError(Throwable t) {
+        Throwable cause = AsyncUtils.unwrap(t);
+
+        throw switch (cause) {
+            case RetryableProcessingException e -> e;
+            case FatalProcessingException e -> e;
+            case TimeoutException e -> new InfrastructureSuspendedException("Batch deadline exceeded", e);
+            case InterruptedException e -> {
+                Thread.currentThread().interrupt();
+                yield new InfrastructureSuspendedException("Batch execution interrupted", e);
+            }
+            case CancellationException e -> new InfrastructureSuspendedException("Batch was cancelled", e);
+            default -> new FatalProcessingException(RejectReason.INTERNAL_ERROR, "Chunking orchestration bug", cause);
+        };
     }
 
     private void ensureNotExpired(Instant deadline) throws TimeoutException {

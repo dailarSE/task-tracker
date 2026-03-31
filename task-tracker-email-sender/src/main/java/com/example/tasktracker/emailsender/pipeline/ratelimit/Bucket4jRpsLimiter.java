@@ -1,6 +1,6 @@
 package com.example.tasktracker.emailsender.pipeline.ratelimit;
 
-import com.example.tasktracker.emailsender.config.EmailSenderProperties;
+import com.example.tasktracker.emailsender.config.ReliabilityProperties;
 import com.example.tasktracker.emailsender.exception.infrastructure.StateStoreInfrastructureException;
 import io.github.bucket4j.BlockingBucket;
 import lombok.extern.slf4j.Slf4j;
@@ -14,11 +14,11 @@ public class Bucket4jRpsLimiter implements RpsLimiter{
     private final int maxChunkSize;
     private final Duration acquisitionTimeout;
 
-    public Bucket4jRpsLimiter(BlockingBucket rpsBucket, EmailSenderProperties.RateLimitProperties properties) {
+    public Bucket4jRpsLimiter(BlockingBucket rpsBucket, ReliabilityProperties properties) {
         this.rpsBucket = rpsBucket;
 
-        this.maxChunkSize = properties.getTokenChunkSize();
-        this.acquisitionTimeout = properties.getAcquisitionTimeout();
+        this.maxChunkSize = properties.getCapacity().getTokenChunkSize();
+        this.acquisitionTimeout = properties.getCapacity().getAcquisitionTimeout();
     }
 
     /**

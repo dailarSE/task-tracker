@@ -1,6 +1,6 @@
 package com.example.tasktracker.emailsender.pipeline.idempotency;
 
-import com.example.tasktracker.emailsender.config.EmailSenderProperties;
+import com.example.tasktracker.emailsender.config.ReliabilityProperties;
 import com.example.tasktracker.emailsender.pipeline.model.PipelineBatch;
 import com.example.tasktracker.emailsender.pipeline.model.PipelineItem;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +17,7 @@ import java.util.List;
 public class RedisIdempotencyCommitter implements IdempotencyCommitter {
     private final StringRedisTemplate redisTemplate;
     private final TemplateKeyRegistry keyRegistry;
-    private final EmailSenderProperties properties;
+    private final ReliabilityProperties properties;
 
     private static final String STATUS_SENT = "SENT";
 

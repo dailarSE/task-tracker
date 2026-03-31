@@ -1398,3 +1398,17 @@ Superseded by ADR-0028
 ### 4. Observability
 *   **Trace Context:** `correlationId` в команде заполняется текущим `TraceID` из OpenTelemetry (или генерируется новый, если контекст отсутствует).
 *   **Метрики:** Обязателен сбор RED-метрик (Rate, Errors, Duration) и метрик насыщения (Batch Size Histogram).
+
+# ADR 0046: Email Dispatch Pipeline Timings and Resilience Strategy
+
+Для предотвращения каскадных сбоев и соблюдения контракта Kafka, принята следующая иерархия отсечек (сверху вниз):
+
+| Уровень | Параметр | Значение | Обоснование |
+| :--- | :--- | :--- | :--- |
+| **Kafka Poll** | `max.poll.interval.ms` | 300 000 мс (5 мин) | Жесткий лимит на обработку батча из 500 записей. |
+| **Pipeline Target** | `batchProcessingTimeout` | 90 000 мс (90 с) | Внутренний дедлайн. Дает 3-кратный запас относительно лимита Kafka. |
+| **SMTP Socket** | `mail.smtp.timeout` (Read) | 5 000 мс (5 с) | Последний рубеж защиты ОС. Разрыв зависшего сокета. |
+| **App Guard** | `Resilience4j TimeLimiter` | 4 000 мс (4 с) | Отсечка на уровне приложения. Гарантирует возврат управления до разрыва сокета. |
+| **Rate Limit** | `Acquisition Timeout` | 3 000 мс (3 с) | Fail-fast при исчерпании глобальной квоты в Redis/Bucket4j. |
+| **SMTP Conn** | `mail.smtp.connectiontimeout` | 2 000 мс (2 с) | Быстрый отказ при невозможности установить TCP/TLS хендшейк. |
+| **Degradation** | `Slow Call Threshold` | 1 500 мс (1.5 с) | Порог фиксации "тормозов" сервера (≈ 2x P99). Триггер для Circuit Breaker. |

@@ -80,19 +80,20 @@ public class DispatcherStep {
         List<PipelineItem> items = batch.items();
 
         batch.items().stream()
-                .filter(PipelineItem::isFailed)
-                .forEach(this::checkInfrastructureHealth);
+                .filter(item -> item.getStage().isFailed())
+                .forEach(item -> checkInfrastructureHealth(item, item.getStage()));
 
         List<CompletableFuture<?>> routingFutures = new ArrayList<>();
 
         for (var item : items) {
-            switch (item.getStatus()) {
-                case FAILED -> routingFutures.add(handleFatal(item));
-                case RETRY -> routingFutures.add(handleTransient(item));
+            PipelineItem.ExecutionStage stage = item.getStage();
+            switch (stage.status()) {
+                case FAILED -> routingFutures.add(handleFatal(item, stage));
+                case RETRY -> routingFutures.add(handleTransient(item, stage));
                 case SKIPPED -> log.trace("Item [{}] skipped.", item.getCoordinates());
                 case SENT -> log.trace("Item [{}] successfully processed.", item.getCoordinates());
                 default -> throw new FatalProcessingException(RejectReason.INTERNAL_ERROR,
-                        "Unexpected value: " + item.getStatus(),
+                        "Unexpected value: " + stage.status(),
                         null);
             }
         }
@@ -111,23 +112,25 @@ public class DispatcherStep {
         }
     }
 
-    protected CompletableFuture<?> handleTransient(PipelineItem item) {
+    protected CompletableFuture<?> handleTransient(PipelineItem item, PipelineItem.ExecutionStage failedStage) {
         log.info("Sending item [{}] to RETRY topic. Reason: {}",
-                item.getCoordinates(), item.getRejectDescription());
+                item.getCoordinates(), failedStage.rejectDescription());
 
-        ProducerRecord<byte[], byte[]> record = buildProducerRecord(retryTopic, item);
+        ProducerRecord<byte[], byte[]> record = buildProducerRecord(retryTopic, item, failedStage);
         return doSend(record);
     }
 
-    protected CompletableFuture<?> handleFatal(PipelineItem item) {
+    protected CompletableFuture<?> handleFatal(PipelineItem item, PipelineItem.ExecutionStage failedStage) {
         log.warn("Sending item [{}] to DLT. Reason: '{}'",
-                item.getCoordinates(), item.getRejectDescription());
+                item.getCoordinates(), failedStage.rejectDescription());
 
-        ProducerRecord<byte[], byte[]> record = buildProducerRecord(dltTopicName, item);
+        ProducerRecord<byte[], byte[]> record = buildProducerRecord(dltTopicName, item, failedStage);
         return doSend(record);
     }
 
-    protected ProducerRecord<byte[], byte[]> buildProducerRecord(String topic, PipelineItem item) {
+    protected ProducerRecord<byte[], byte[]> buildProducerRecord(String topic,
+                                                                 PipelineItem item,
+                                                                 PipelineItem.ExecutionStage stage) {
         ConsumerRecord<byte[], byte[]> orig = item.getOriginalRecord();
         ProducerRecord<byte[], byte[]> record = new ProducerRecord<>(topic,
                 null,
@@ -135,7 +138,7 @@ public class DispatcherStep {
                 orig.value(),
                 new RecordHeaders(orig.headers()));
 
-        metadataEnricher.enrichWithFailureMetadata(record.headers(), orig, item.getRejectCause());
+        metadataEnricher.enrichWithFailureMetadata(record.headers(), orig, stage);
         return record;
     }
 
@@ -160,8 +163,8 @@ public class DispatcherStep {
                 });
     }
 
-    private void checkInfrastructureHealth(PipelineItem item) {
-        Throwable cause = item.getRejectCause();
+    private void checkInfrastructureHealth(PipelineItem item, PipelineItem.ExecutionStage stage) {
+        Throwable cause = stage.rejectCause();
         if (cause == null) return;
 
         Throwable root = cause;

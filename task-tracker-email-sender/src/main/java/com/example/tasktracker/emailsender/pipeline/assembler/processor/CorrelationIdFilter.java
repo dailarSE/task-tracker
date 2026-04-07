@@ -13,7 +13,7 @@ public class CorrelationIdFilter implements ItemProcessor{
     public void process(PipelineItem item) {
         if (item.getCorrelationIdHeader() == null || item.getCorrelationIdHeader().isBlank()) {
             String message = "Missing mandatory header: " + MessagingHeaders.X_CORRELATION_ID;
-            item.reject(PipelineItem.Status.FAILED, RejectReason.MALFORMED_TRANSPORT, message);
+            item.tryReject(PipelineItem.Status.FAILED, RejectReason.MALFORMED_TRANSPORT, message);
             log.debug("Validation failed for {}: {}", item.getCoordinates(), message);
         }
     }

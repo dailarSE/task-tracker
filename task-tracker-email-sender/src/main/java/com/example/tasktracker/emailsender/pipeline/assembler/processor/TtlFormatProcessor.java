@@ -28,7 +28,7 @@ public class TtlFormatProcessor implements ItemProcessor {
                 item.setDeadline(Instant.parse(validUntilHeader));
             } catch (DateTimeParseException ex) {
                 String message = "Invalid TTL Header format";
-                item.reject(PipelineItem.Status.FAILED, RejectReason.DATA_INCONSISTENCY, message, ex);
+                item.tryReject(PipelineItem.Status.FAILED, RejectReason.DATA_INCONSISTENCY, message, ex);
                 log.debug("Processing failed for {}: '{}'", item.getCoordinates(), message);
             }
         } else

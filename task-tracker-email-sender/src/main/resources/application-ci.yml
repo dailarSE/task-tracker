@@ -5,6 +5,8 @@ spring:
   data:
     redis:
       host: overrideItLocal
+  kafka:
+    bootstrap-servers: overrideItLocal
 
 logging:
   level:

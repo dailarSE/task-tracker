@@ -38,7 +38,7 @@ public class SmtpEmailTransport implements EmailTransport {
     public void send(SendInstructions instructions) {
         try {
             mailSender.send(createMimeMessage(instructions));
-        } catch (MessagingException e) {
+        } catch (Exception e) {
             throw emailErrorResolver.resolve(e);
         }
     }

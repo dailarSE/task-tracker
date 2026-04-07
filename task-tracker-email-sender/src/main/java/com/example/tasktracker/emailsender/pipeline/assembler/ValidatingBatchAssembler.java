@@ -55,7 +55,7 @@ public class ValidatingBatchAssembler implements BatchAssembler {
 
     private void processItems(List<PipelineItem> items, ItemProcessor step) {
         for (var item : items) {
-            if (item.isPending()) {
+            if (item.getStage().isPending()) {
                 try {
                     step.process(item);
                 } catch (InfrastructureException e) {
@@ -65,7 +65,7 @@ public class ValidatingBatchAssembler implements BatchAssembler {
                     throw e;
                 } catch (Exception e) {
                     String componentName = step.getClass().getSimpleName();
-                    item.reject(
+                    item.tryReject(
                             PipelineItem.Status.FAILED,
                             RejectReason.INTERNAL_ERROR,
                             String.format("Fault in component [%s]", componentName),

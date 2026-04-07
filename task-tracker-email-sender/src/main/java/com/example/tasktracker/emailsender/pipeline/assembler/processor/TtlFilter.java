@@ -22,7 +22,7 @@ public class TtlFilter implements ItemProcessor {
 
         if (now.isAfter(deadline)) {
             String message = String.format("Expired. Deadline: %s, Now: %s", deadline, now);
-            item.reject(PipelineItem.Status.SKIPPED, RejectReason.TTL_EXPIRED, message);
+            item.tryReject(PipelineItem.Status.SKIPPED, RejectReason.TTL_EXPIRED, message);
             log.debug("Validation failed for {}: '{}'", item.getCoordinates(), message);
         }
     }

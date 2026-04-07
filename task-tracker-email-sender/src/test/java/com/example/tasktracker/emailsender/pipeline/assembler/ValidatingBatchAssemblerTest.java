@@ -92,7 +92,7 @@ class ValidatingBatchAssemblerTest {
         PipelineBatch batch = assembler.assemble(List.of(record));
 
         PipelineItem item = batch.items().getFirst();
-        assertEquals(PipelineItem.Status.PENDING, item.getStatus());
+        assertEquals(PipelineItem.Status.PENDING, item.getStage().status());
         assertNotNull(item.getPayload());
         assertEquals("corr-1", item.getPayload().correlationId());
     }
@@ -112,8 +112,8 @@ class ValidatingBatchAssemblerTest {
 
         PipelineBatch batch = assembler.assemble(List.of(validRecord, invalidRecord));
 
-        assertEquals(PipelineItem.Status.PENDING, batch.items().get(0).getStatus());
-        assertEquals(PipelineItem.Status.FAILED, batch.items().get(1).getStatus());
+        assertEquals(PipelineItem.Status.PENDING, batch.items().get(0).getStage().status());
+        assertEquals(PipelineItem.Status.FAILED, batch.items().get(1).getStage().status());
     }
 
     @ParameterizedTest(name = "{0}")
@@ -123,7 +123,7 @@ class ValidatingBatchAssemblerTest {
         PipelineBatch batch = assembler.assemble(List.of(record));
         PipelineItem item = batch.items().getFirst();
 
-        assertEquals(expectedReason, item.getRejectReason());
+        assertEquals(expectedReason, item.getStage().rejectReason());
         if (payloadShouldBeNull) {
             assertNull(item.getPayload(), "Payload parsing should have been skipped to save resources");
         } else {
@@ -229,14 +229,14 @@ class ValidatingBatchAssemblerTest {
         PipelineBatch batch = faultyAssembler.assemble(List.of(record));
         PipelineItem item = batch.items().getFirst();
 
-        assertEquals(PipelineItem.Status.FAILED, item.getStatus());
+        assertEquals(PipelineItem.Status.FAILED, item.getStage().status());
 
-        assertEquals(RejectReason.INTERNAL_ERROR, item.getRejectReason());
+        assertEquals(RejectReason.INTERNAL_ERROR, item.getStage().rejectReason());
 
-        assertTrue(item.getRejectDescription().contains("Fault in component ["));
+        assertTrue(item.getStage().rejectDescription().contains("Fault in component ["));
 
-        assertInstanceOf(RuntimeException.class, item.getRejectCause());
-        assertEquals("Unexpected bug in code", item.getRejectCause().getMessage());
+        assertInstanceOf(RuntimeException.class, item.getStage().rejectCause());
+        assertEquals("Unexpected bug in code", item.getStage().rejectCause().getMessage());
     }
 
 }

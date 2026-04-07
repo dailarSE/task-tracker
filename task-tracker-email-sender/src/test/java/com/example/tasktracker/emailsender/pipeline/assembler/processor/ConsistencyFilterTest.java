@@ -27,7 +27,7 @@ class ConsistencyFilterTest {
 
         filter.process(item);
 
-        assertTrue(item.isPending(), "Item should stay PENDING");
+        assertTrue(item.getStage().isPending(), "Item should stay PENDING");
     }
 
     @ParameterizedTest(name = "{0}")
@@ -41,9 +41,9 @@ class ConsistencyFilterTest {
         filter.process(item);
 
         // Then
-        assertEquals(PipelineItem.Status.FAILED, item.getStatus());
-        assertEquals(RejectReason.DATA_INCONSISTENCY, item.getRejectReason());
-        assertTrue(item.getRejectDescription().contains(expectedMessagePart),
+        assertEquals(PipelineItem.Status.FAILED, item.getStage().status());
+        assertEquals(RejectReason.DATA_INCONSISTENCY, item.getStage().rejectReason());
+        assertTrue(item.getStage().rejectDescription().contains(expectedMessagePart),
                 "Error message should mention the mismatching field");
     }
 

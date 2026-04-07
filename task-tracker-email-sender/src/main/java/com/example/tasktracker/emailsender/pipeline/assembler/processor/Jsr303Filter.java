@@ -24,7 +24,7 @@ public class Jsr303Filter implements ItemProcessor {
                     .map(v -> v.getPropertyPath() + " " + v.getMessage())
                     .collect(Collectors.joining(", "));
 
-            item.reject(PipelineItem.Status.FAILED, RejectReason.INVALID_PAYLOAD, String.format(errorMsg));
+            item.tryReject(PipelineItem.Status.FAILED, RejectReason.INVALID_PAYLOAD, String.format(errorMsg));
             log.debug("Validation failed for JSON at '{}': {}", item.getCoordinates(), errorMsg);
         }
     }

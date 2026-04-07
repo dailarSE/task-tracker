@@ -25,4 +25,10 @@ public class MessagingHeaders {
      * отправлено в DLT или Retry топик.
      */
     public static final String X_REJECT_REASON = "X-Reject-Reason";
+
+    /**
+     * Внутренний/Диагностический: Описание причины, по которой сообщение было
+     * отправлено в DLT или Retry топик.
+     */
+    public static final String X_REJECT_DESCRIPTION = "X-Reject-Description";
 }

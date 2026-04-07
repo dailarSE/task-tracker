@@ -22,7 +22,7 @@ public class RedisIdempotencyCommitter implements IdempotencyCommitter {
     private static final String STATUS_SENT = "SENT";
 
     public void commitSuccess(PipelineItem item) {
-        if (item.getStatus() != PipelineItem.Status.SENT) return;
+        if (item.getStage().status() != PipelineItem.Status.SENT) return;
 
         try {
             String key = buildKey(item);

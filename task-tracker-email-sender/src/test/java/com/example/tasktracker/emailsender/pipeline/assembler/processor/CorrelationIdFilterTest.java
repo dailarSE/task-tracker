@@ -23,7 +23,7 @@ class CorrelationIdFilterTest {
 
         filter.process(item);
 
-        assertTrue(item.isPending(), "Item should remain PENDING when CID is valid");
+        assertTrue(item.getStage().isPending(), "Item should remain PENDING when CID is valid");
     }
 
     @ParameterizedTest
@@ -35,9 +35,9 @@ class CorrelationIdFilterTest {
 
         filter.process(item);
 
-        assertEquals(PipelineItem.Status.FAILED, item.getStatus(), "Item status should be FAILED");
-        assertEquals(RejectReason.MALFORMED_TRANSPORT, item.getRejectReason(), "Reject reason mismatch");
-        assertTrue(item.getRejectDescription().contains("X-Correlation-ID"), "Error message should mention the header");
+        assertEquals(PipelineItem.Status.FAILED, item.getStage().status(), "Item status should be FAILED");
+        assertEquals(RejectReason.MALFORMED_TRANSPORT, item.getStage().rejectReason(), "Reject reason mismatch");
+        assertTrue(item.getStage().rejectDescription().contains("X-Correlation-ID"), "Error message should mention the header");
     }
 
     private PipelineItem createItemWithCorrelationId(String cid) {

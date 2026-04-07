@@ -62,7 +62,7 @@ class RedisIdempotencyGuardTest {
 
         guard.checkAndLock(item);
 
-        assertEquals(PipelineItem.Status.SKIPPED, item.getStatus());
+        assertEquals(PipelineItem.Status.SKIPPED, item.getStage().status());
         verify(redisTemplate).execute(any(), eq(List.of(expectedKey)), eq(expectedLease), eq(expectedTtl), eq(STATUS_SENT));
     }
 
@@ -78,10 +78,10 @@ class RedisIdempotencyGuardTest {
 
         guard.checkAndLock(new PipelineBatch(List.of(noDateReport, goodWelcome)));
 
-        assertEquals(PipelineItem.Status.FAILED, noDateReport.getStatus());
-        assertEquals(RejectReason.KEY_GENERATION, noDateReport.getRejectReason());
+        assertEquals(PipelineItem.Status.FAILED, noDateReport.getStage().status());
+        assertEquals(RejectReason.KEY_GENERATION, noDateReport.getStage().rejectReason());
 
-        assertEquals(PipelineItem.Status.PENDING, goodWelcome.getStatus());
+        assertEquals(PipelineItem.Status.PENDING, goodWelcome.getStage().status());
 
         verify(redisTemplate).execute(any(), eq(List.of(goodKey)), any(), any(), any());
     }

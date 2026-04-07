@@ -2,15 +2,62 @@ package com.example.tasktracker.emailsender.pipeline.model;
 
 import com.example.tasktracker.emailsender.api.messaging.TemplateType;
 import com.example.tasktracker.emailsender.api.messaging.TriggerCommand;
+import com.example.tasktracker.emailsender.exception.FatalProcessingException;
+import com.example.tasktracker.emailsender.exception.RetryableProcessingException;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.springframework.lang.Nullable;
 
 import java.time.Instant;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Getter
+@Slf4j
 public class PipelineItem {
+
+    public enum Status {
+        PENDING, SKIPPED, RETRY, FAILED, SENT
+    }
+
+    public record ExecutionStage(
+            @NonNull Status status,
+            @NonNull RejectReason rejectReason,
+            @Nullable String rejectDescription,
+            @Nullable Exception rejectCause
+    ) {
+        public ExecutionStage {
+            Objects.requireNonNull(status, "Status cannot be null");
+            Objects.requireNonNull(rejectReason, "RejectReason cannot be null");
+        }
+
+        public boolean isFailed() {
+            return status == Status.FAILED || status == Status.RETRY;
+        }
+
+        public boolean isPending() {
+            return status == Status.PENDING;
+        }
+
+        public Optional<RuntimeException> toException() {
+            return switch (status) {
+                case RETRY ->
+                        Optional.of(new RetryableProcessingException(rejectReason, rejectDescription, rejectCause));
+                case FAILED -> Optional.of(new FatalProcessingException(rejectReason, rejectDescription, rejectCause));
+                default -> Optional.empty();
+            };
+        }
+    }
+
+    private static final ExecutionStage INITIAL_STAGE =
+            new ExecutionStage(Status.PENDING, RejectReason.NONE, null, null);
+    private static final ExecutionStage STAGE_SENT =
+            new ExecutionStage(Status.SENT, RejectReason.NONE, null, null);
+
     @Setter
     private String templateIdHeader;
     @Setter
@@ -23,54 +70,50 @@ public class PipelineItem {
     @Setter
     private Instant deadline;
 
-    @Setter
     private TriggerCommand payload;
     private final ConsumerRecord<byte[], byte[]> originalRecord;
 
-    private volatile Status status = Status.PENDING;
-    private RejectReason rejectReason = RejectReason.NONE;
-    private String rejectDescription;
-    private Throwable rejectCause;
+    private final AtomicReference<ExecutionStage> stage = new AtomicReference<>(INITIAL_STAGE);
 
     public PipelineItem(@NonNull ConsumerRecord<byte[], byte[]> originalRecord) {
         this.originalRecord = originalRecord;
     }
 
-    public enum Status {
-        PENDING, // Готов к обработке
-        SKIPPED, // Пропущен
-        RETRY,   // Временная ошибка отправки (в ретрай)
-        FAILED,  // Фатальная ошибка (в DLT)
-        SENT     // Успешно отправлен
+    public boolean tryMarkAsSent() {
+        return tryTerminate(STAGE_SENT);
     }
 
-    public void markAsSent() {
-        assertIsPending();
-        this.status = Status.SENT;
+    public boolean tryReject(@NonNull Status status, @NonNull RejectReason reason, @NonNull String description) {
+        return tryReject(status, reason, description, null);
     }
 
-    public void reject(@NonNull Status status, @NonNull RejectReason reason, @NonNull String description) {
+    public boolean tryReject(@NonNull Status status, @NonNull RejectReason reason, @NonNull String description, Exception cause) {
         validateRejectionStatus(status);
-        validateDescription(description);
-        assertIsPending();
-
-        this.status = status;
-        this.rejectReason = reason;
-        this.rejectDescription = description;
+        return tryTerminate(new ExecutionStage(status, reason, description, cause));
     }
 
-    public void reject(@NonNull Status status, @NonNull RejectReason reason, @NonNull String description, Throwable cause) {
-        this.reject(status, reason, description);
-        this.rejectCause = cause;
+    private boolean tryTerminate(ExecutionStage nextState) {
+        boolean won = stage.compareAndSet(INITIAL_STAGE, nextState);
+
+        if (!won) {
+            log.warn("Thread {} lost state race for item {}. Current state: {}, Attempted: {}",
+                    Thread.currentThread().getName(),
+                    getCoordinates(),
+                    stage.get().status(),
+                    nextState.status());
+        }
+        return won;
     }
 
-
-    public boolean isPending() {
-        return this.status == Status.PENDING;
+    public void setPayload(TriggerCommand payload) {
+        if (this.payload != null) {
+            throw new IllegalStateException("Payload already set");
+        }
+        this.payload = payload;
     }
 
-    public boolean isFailed() {
-        return status == Status.FAILED || status == Status.RETRY;
+    public ExecutionStage getStage() {
+        return stage.get();
     }
 
     public String getCoordinates() {
@@ -81,20 +124,6 @@ public class PipelineItem {
         if (status == Status.PENDING || status == Status.SENT) {
             throw new IllegalArgumentException(
                     "Invalid rejection status: " + status + ". Expected SKIPPED, RETRY, or FAILED."
-            );
-        }
-    }
-
-    private void validateDescription(String description) {
-        if (description.isBlank()) {
-            throw new IllegalArgumentException("Rejection description cannot be empty or blank.");
-        }
-    }
-
-    private void assertIsPending() {
-        if (!isPending()) {
-            throw new IllegalStateException(
-                    "Cannot modify a terminal item. Current status: " + this.status
             );
         }
     }

@@ -44,7 +44,7 @@ class TtlFormatProcessorTest {
 
         assertEquals(Instant.parse(ISO_DATE_HEADER), item.getDeadline(),
                 "Deadline must match the header value, ignoring record timestamp");
-        assertTrue(item.isPending());
+        assertTrue(item.getStage().isPending());
     }
 
     @Test
@@ -79,9 +79,9 @@ class TtlFormatProcessorTest {
 
         processor.process(item);
 
-        assertEquals(PipelineItem.Status.FAILED, item.getStatus());
-        assertEquals(RejectReason.DATA_INCONSISTENCY, item.getRejectReason());
-        assertInstanceOf(java.time.format.DateTimeParseException.class, item.getRejectCause());
+        assertEquals(PipelineItem.Status.FAILED, item.getStage().status());
+        assertEquals(RejectReason.DATA_INCONSISTENCY, item.getStage().rejectReason());
+        assertInstanceOf(java.time.format.DateTimeParseException.class, item.getStage().rejectCause());
     }
 
     private PipelineItem createItem(long timestamp, TemplateType type) {

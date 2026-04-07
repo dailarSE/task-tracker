@@ -24,7 +24,7 @@ class TemplateTypeProcessorTest {
 
         processor.process(item);
 
-        assertTrue(item.isPending(), "Item should remain PENDING");
+        assertTrue(item.getStage().isPending(), "Item should remain PENDING");
         assertEquals(type, item.getTemplateType(), "Resolved TemplateType mismatch");
     }
 
@@ -35,7 +35,7 @@ class TemplateTypeProcessorTest {
 
         processor.process(item);
 
-        assertTrue(item.isPending());
+        assertTrue(item.getStage().isPending());
         assertEquals(TemplateType.USER_WELCOME, item.getTemplateType());
     }
 
@@ -46,8 +46,8 @@ class TemplateTypeProcessorTest {
 
         processor.process(item);
 
-        assertEquals(PipelineItem.Status.FAILED, item.getStatus());
-        assertEquals(RejectReason.MALFORMED_TRANSPORT, item.getRejectReason());
+        assertEquals(PipelineItem.Status.FAILED, item.getStage().status());
+        assertEquals(RejectReason.MALFORMED_TRANSPORT, item.getStage().rejectReason());
     }
 
     @ParameterizedTest
@@ -58,9 +58,9 @@ class TemplateTypeProcessorTest {
 
         processor.process(item);
 
-        assertEquals(PipelineItem.Status.FAILED, item.getStatus());
-        assertEquals(RejectReason.DATA_INCONSISTENCY, item.getRejectReason());
-        assertNotNull(item.getRejectCause(), "Should preserve the cause");
+        assertEquals(PipelineItem.Status.FAILED, item.getStage().status());
+        assertEquals(RejectReason.DATA_INCONSISTENCY, item.getStage().rejectReason());
+        assertNotNull(item.getStage().rejectCause(), "Should preserve the cause");
     }
 
     private PipelineItem createItemWithTemplateHeaderField(String headerValue) {

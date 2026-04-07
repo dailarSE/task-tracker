@@ -1,20 +1,18 @@
 package com.example.tasktracker.emailsender.pipeline.idempotency;
 
+import com.example.tasktracker.emailsender.ContainerizedIntegrationTest;
 import com.example.tasktracker.emailsender.api.messaging.TemplateType;
 import com.example.tasktracker.emailsender.api.messaging.TriggerCommand;
 import com.example.tasktracker.emailsender.pipeline.model.PipelineBatch;
 import com.example.tasktracker.emailsender.pipeline.model.PipelineItem;
 import com.example.tasktracker.emailsender.pipeline.model.RejectReason;
 import com.example.tasktracker.emailsender.util.TestKafkaConsumerRecordFactory;
-import com.redis.testcontainers.RedisContainer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Duration;
@@ -27,11 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest
 @Testcontainers
 @ActiveProfiles("ci")
-class RedisIdempotencyGuardIT {
-
-    @Container
-    @ServiceConnection
-    static final RedisContainer redis = new RedisContainer(RedisContainer.DEFAULT_IMAGE_NAME.withTag("8-alpine"));
+class RedisIdempotencyGuardIT extends ContainerizedIntegrationTest {
 
     @Autowired
     private IdempotencyGuard guard;
@@ -53,8 +47,8 @@ class RedisIdempotencyGuardIT {
 
         guard.checkAndLock(new PipelineBatch(List.of(welcomeItem, reportItem)));
 
-        assertTrue(welcomeItem.isPending());
-        assertTrue(reportItem.isPending());
+        assertTrue(welcomeItem.getStage().isPending());
+        assertTrue(reportItem.getStage().isPending());
 
         assertNotNull(redisTemplate.opsForValue().get(welcomeKey));
         assertNotNull(redisTemplate.opsForValue().get(reportKey));
@@ -69,8 +63,8 @@ class RedisIdempotencyGuardIT {
         guard.checkAndLock(retryWelcome);
 
         // Результат: Welcome уже отправлен (SENT), поэтому SKIPPED.
-        assertEquals(PipelineItem.Status.SKIPPED, retryWelcome.getStatus());
-        assertEquals(RejectReason.DUPLICATE, retryWelcome.getRejectReason());
+        assertEquals(PipelineItem.Status.SKIPPED, retryWelcome.getStage().status());
+        assertEquals(RejectReason.DUPLICATE, retryWelcome.getStage().rejectReason());
     }
 
     @Test
@@ -85,8 +79,8 @@ class RedisIdempotencyGuardIT {
         guard.checkAndLock(item1);
 
         // Результат: Конфликт блокировки (PROCESSING)
-        assertEquals(PipelineItem.Status.RETRY, item1.getStatus());
-        assertEquals(RejectReason.CONCURRENT_LOCK, item1.getRejectReason());
+        assertEquals(PipelineItem.Status.RETRY, item1.getStage().status());
+        assertEquals(RejectReason.CONCURRENT_LOCK, item1.getStage().rejectReason());
     }
 
     private PipelineItem createItem(TemplateType type, Long userId, String topic, long offset, String... date) {

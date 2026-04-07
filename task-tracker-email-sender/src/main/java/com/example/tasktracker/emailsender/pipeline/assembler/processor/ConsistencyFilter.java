@@ -29,7 +29,7 @@ public class ConsistencyFilter implements ItemProcessor {
     }
 
      void reject(PipelineItem item, String message) {
-        item.reject(PipelineItem.Status.FAILED, RejectReason.DATA_INCONSISTENCY, message);
+        item.tryReject(PipelineItem.Status.FAILED, RejectReason.DATA_INCONSISTENCY, message);
         log.debug("Consistency check failed at '{}': {}", item.getCoordinates(), message);
     }
 }

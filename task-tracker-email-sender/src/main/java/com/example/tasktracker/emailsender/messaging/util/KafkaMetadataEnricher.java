@@ -1,5 +1,8 @@
 package com.example.tasktracker.emailsender.messaging.util;
 
+import com.example.tasktracker.emailsender.api.messaging.MessagingHeaders;
+import com.example.tasktracker.emailsender.pipeline.model.PipelineItem;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.Headers;
@@ -27,29 +30,30 @@ public class KafkaMetadataEnricher {
             KafkaHeaders.EXCEPTION_FQCN,
             KafkaHeaders.EXCEPTION_MESSAGE,
             KafkaHeaders.EXCEPTION_STACKTRACE,
-            KafkaHeaders.EXCEPTION_CAUSE_FQCN
+            KafkaHeaders.EXCEPTION_CAUSE_FQCN,
+            MessagingHeaders.X_REJECT_DESCRIPTION
     );
 
 
     /**
      * Обогащает заголовки информацией об оригинальном сообщении и причине отказа.
      */
-    public void enrichWithFailureMetadata(Headers targetHeaders,
-                                          ConsumerRecord<byte[], byte[]> sourceRecord,
-                                          Throwable rejectCause) {
+    public void enrichWithFailureMetadata(@NonNull Headers targetHeaders,
+                                          @NonNull ConsumerRecord<byte[], byte[]> sourceRecord,
+                                          @NonNull PipelineItem.ExecutionStage failureStage) {
         clearExistingMetadata(targetHeaders);
         copySourceCoordinates(targetHeaders, sourceRecord);
-        injectErrorDetails(targetHeaders, rejectCause);
+        injectErrorDetails(targetHeaders, failureStage);
     }
 
-    public void clearExistingMetadata(Headers headers) {
+    public void clearExistingMetadata(@NonNull Headers headers) {
         METADATA_KEYS.forEach(headers::remove);
     }
 
     /**
      * Записывает координаты сообщения (Topic, Partition, Offset).
      */
-    private void copySourceCoordinates(Headers headers, ConsumerRecord<byte[], byte[]> original) {
+    private void copySourceCoordinates(@NonNull Headers headers, @NonNull ConsumerRecord<byte[], byte[]> original) {
         addHeader(headers, KafkaHeaders.ORIGINAL_TOPIC, original.topic());
         addHeader(headers, KafkaHeaders.ORIGINAL_PARTITION, original.partition());
         addHeader(headers, KafkaHeaders.ORIGINAL_OFFSET, original.offset());
@@ -65,24 +69,27 @@ public class KafkaMetadataEnricher {
     /**
      * Записывает детали исключения для отладки.
      */
-    private void injectErrorDetails(Headers headers, Throwable ex) {
-        if (ex == null) return;
+    private void injectErrorDetails(@NonNull Headers headers, @NonNull PipelineItem.ExecutionStage failureStage) {
+        Exception ex = failureStage.rejectCause();
+        if (ex != null) {
+            addHeader(headers, KafkaHeaders.EXCEPTION_FQCN, ex.getClass().getName());
+            addHeader(headers, KafkaHeaders.EXCEPTION_MESSAGE, ex.getMessage());
+            addHeader(headers, KafkaHeaders.EXCEPTION_STACKTRACE, getStackTrace(ex));
 
-        addHeader(headers, KafkaHeaders.EXCEPTION_FQCN, ex.getClass().getName());
-        addHeader(headers, KafkaHeaders.EXCEPTION_MESSAGE, ex.getMessage());
-        addHeader(headers, KafkaHeaders.EXCEPTION_STACKTRACE, getStackTrace(ex));
+            Optional.ofNullable(ex.getCause())
+                    .ifPresent(cause -> addHeader(headers, KafkaHeaders.EXCEPTION_CAUSE_FQCN, cause.getClass().getName()));
+        }
 
-        Optional.ofNullable(ex.getCause())
-                .ifPresent(cause -> addHeader(headers, KafkaHeaders.EXCEPTION_CAUSE_FQCN, cause.getClass().getName()));
+        addHeader(headers, MessagingHeaders.X_REJECT_DESCRIPTION, failureStage.rejectDescription());
     }
 
-    private void addHeader(Headers headers, String key, Object value) {
+    private void addHeader(@NonNull Headers headers, String key, Object value) {
         if (value != null) {
             headers.add(key, String.valueOf(value).getBytes(StandardCharsets.UTF_8));
         }
     }
 
-    private String getStackTrace(Throwable t) {
+    private String getStackTrace(@NonNull Throwable t) {
         StringWriter sw = new StringWriter();
         t.printStackTrace(new PrintWriter(sw));
         return sw.toString();

@@ -20,7 +20,7 @@ public class JsonParser implements ItemProcessor {
             TriggerCommand cmd = objectMapper.readValue(item.getOriginalRecord().value(), TriggerCommand.class);
             item.setPayload(cmd);
         } catch (IOException e) {
-            item.reject(PipelineItem.Status.FAILED, RejectReason.MALFORMED_JSON, "JSON Syntax Error", e);
+            item.tryReject(PipelineItem.Status.FAILED, RejectReason.MALFORMED_JSON, "JSON Syntax Error", e);
         }
     }
 }

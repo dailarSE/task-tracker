@@ -18,7 +18,7 @@ public class TemplateTypeProcessor implements ItemProcessor {
 
         if (templateIdHeader == null) {
             String message = "No template id header found.";
-            item.reject(
+            item.tryReject(
                     PipelineItem.Status.FAILED, RejectReason.MALFORMED_TRANSPORT, message);
             log.debug("Validation failed for {}: '{}'", item.getCoordinates(), message);
             return;
@@ -26,7 +26,7 @@ public class TemplateTypeProcessor implements ItemProcessor {
         try {
             item.setTemplateType(TemplateType.from(templateIdHeader));
         } catch (IllegalArgumentException e) {
-            item.reject(PipelineItem.Status.FAILED, RejectReason.DATA_INCONSISTENCY, e.getMessage(), e);
+            item.tryReject(PipelineItem.Status.FAILED, RejectReason.DATA_INCONSISTENCY, e.getMessage(), e);
             log.debug("Validation failed for {}: '{}'", item.getCoordinates(), e.getMessage());
         }
     }

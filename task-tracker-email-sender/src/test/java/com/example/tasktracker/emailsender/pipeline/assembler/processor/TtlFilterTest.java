@@ -37,8 +37,8 @@ class TtlFilterTest {
 
         filter.process(item);
 
-        assertEquals(expectedStatus, item.getStatus(), "Status mismatch for: " + description);
-        assertEquals(expectedReason, item.getRejectReason(), "Reject reason mismatch for: " + description);
+        assertEquals(expectedStatus, item.getStage().status(), "Status mismatch for: " + description);
+        assertEquals(expectedReason, item.getStage().rejectReason(), "Reject reason mismatch for: " + description);
     }
 
     private static Stream<Arguments> provideTtlScenarios() {

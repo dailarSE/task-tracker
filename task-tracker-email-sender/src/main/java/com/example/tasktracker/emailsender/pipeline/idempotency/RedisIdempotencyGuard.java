@@ -53,7 +53,7 @@ public class RedisIdempotencyGuard implements IdempotencyGuard {
      * Выполняет проверку на дубликаты и захватывает временную блокировку для одиночного элемента.
      */
     public void checkAndLock(PipelineItem item) {
-        if (item.isPending()) {
+        if (item.getStage().isPending()) {
             guardAll(List.of(item));
         }
     }
@@ -85,7 +85,7 @@ public class RedisIdempotencyGuard implements IdempotencyGuard {
                 leaseValues.add(item.getCoordinates() + "|" + instanceId);
                 itemsInScope.add(item);
             } catch (Exception e) {
-                item.reject(
+                item.tryReject(
                         PipelineItem.Status.FAILED,
                         RejectReason.KEY_GENERATION,
                         "Failed to generate dedup key: " + e.getMessage(),
@@ -153,7 +153,7 @@ public class RedisIdempotencyGuard implements IdempotencyGuard {
         switch (status) {
             case STATUS_ACQUIRED -> log.trace("Lock acquired for key: '{}'", key);
             case STATUS_SENT -> {
-                item.reject(
+                item.tryReject(
                         PipelineItem.Status.SKIPPED,
                         RejectReason.DUPLICATE,
                         "Message already processed (key: " + key + ")"
@@ -161,7 +161,7 @@ public class RedisIdempotencyGuard implements IdempotencyGuard {
                 log.trace("Deduplication: key '{}' already processed (SENT).", key);
             }
             case STATUS_PROCESSING -> {
-                item.reject(
+                item.tryReject(
                         PipelineItem.Status.RETRY,
                         RejectReason.CONCURRENT_LOCK,
                         "Resource is temporarily locked by another worker"

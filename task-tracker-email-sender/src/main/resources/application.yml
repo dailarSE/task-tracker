@@ -44,3 +44,37 @@ spring:
         heartbeat.interval.ms: 10000
         max.poll.interval.ms: 300000
       max-poll-records: ${app.email.reliability.budget.command-intake-batch-size}
+
+management:
+  opentelemetry:
+    resource-attributes:
+      service.instance.id: ${APP_INSTANCE_ID}
+      service.name: ${spring.application.name}
+  tracing:
+    enabled: true
+    sampling:
+      probability: 1.0
+    baggage:
+      correlation:
+        fields: ["correlation_id"]
+      remote-fields: ["correlation_id"]
+      tag-fields: ["correlation_id"]
+
+  otlp:
+    metrics:
+      export:
+        enabled: true
+        url: http://otel-collector:4318/v1/metrics
+    logging:
+      export:
+        enabled: true
+      endpoint: http://otel-collector:4318/v1/logs
+    tracing:
+      export:
+        enabled: true
+      endpoint: http://otel-collector:4318/v1/traces
+
+logging:
+  structured:
+    format:
+      console:

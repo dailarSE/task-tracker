@@ -20,4 +20,11 @@ public class AppProperties {
      */
     @NotBlank
     private String instanceId;
+
+    private ObservationProperties observability = new ObservationProperties();
+
+    @Getter @Setter
+    public static class ObservationProperties {
+        private boolean enabled = true;
+    }
 }

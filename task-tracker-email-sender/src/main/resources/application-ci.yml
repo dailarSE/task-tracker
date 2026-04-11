@@ -8,6 +8,22 @@ spring:
   kafka:
     bootstrap-servers: overrideItLocal
 
+app:
+  observability:
+    enabled: true
+
+management:
+  defaults:
+    metrics:
+      export:
+        enabled: false
+  tracing:
+    enabled: false
+  logging:
+    export:
+      enabled: false
+
+
 logging:
   level:
     root: warn

@@ -2,6 +2,7 @@ package com.example.tasktracker.emailsender.config;
 
 import com.example.tasktracker.emailsender.infra.RuntimeInstanceIdProvider;
 import com.example.tasktracker.emailsender.messaging.util.KafkaMetadataEnricher;
+import com.example.tasktracker.emailsender.o11y.observation.annotation.ObservedExecutor;
 import com.example.tasktracker.emailsender.pipeline.ChunkingExecutor;
 import com.example.tasktracker.emailsender.pipeline.EmailProcessor;
 import com.example.tasktracker.emailsender.pipeline.assembler.BatchAssembler;
@@ -100,6 +101,7 @@ public class PipelineConfig {
     }
 
     @Bean("virtualThreadExecutor")
+    @ObservedExecutor(value = "email.sender.vthread.executor", metrics = false)
     public ExecutorService virtualThreadExecutor() {
         return Executors.newVirtualThreadPerTaskExecutor();
     }

@@ -14,7 +14,7 @@ public final class MessagingOperation {
 
     public static final class Name {
         public static final String PUBLISH = "publish";
-        public static final String POLL = "pool";
+        public static final String POLL = "poll";
         public static final String PROCESS = "process";
     }
 }

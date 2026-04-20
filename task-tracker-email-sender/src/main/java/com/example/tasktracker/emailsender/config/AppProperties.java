@@ -26,5 +26,6 @@ public class AppProperties {
     @Getter @Setter
     public static class ObservationProperties {
         private boolean enabled = true;
+        private boolean captureMessageSizes = false;
     }
 }

@@ -1,6 +1,7 @@
 package com.example.tasktracker.emailsender.o11y.observation.handler;
 
 import com.example.tasktracker.emailsender.o11y.observation.context.DetachedContext;
+import com.example.tasktracker.emailsender.o11y.observation.context.kafka.KafkaConnectionContext;
 import io.micrometer.common.util.StringUtils;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.transport.ReceiverContext;
@@ -57,6 +58,10 @@ public class LinkingPropagatingTracingObservationHandler extends DefaultTracingO
             builder.kind(Span.Kind.valueOf(sc.getKind().name()));
             builder.remoteServiceName(sc.getRemoteServiceName());
             setRemoteCoords(sc.getRemoteServiceAddress(), builder);
+        }
+
+        if (context instanceof KafkaConnectionContext kcc && kcc.getServerAddress() != null) {
+            builder.remoteIpAndPort(kcc.getServerAddress(), kcc.getServerPort());
         }
 
         Span span = builder.start();

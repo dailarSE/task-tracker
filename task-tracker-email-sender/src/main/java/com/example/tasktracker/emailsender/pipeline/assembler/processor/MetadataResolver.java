@@ -14,8 +14,8 @@ public class MetadataResolver implements ItemProcessor {
     @Override
     public void process(PipelineItem item) {
         ConsumerRecord<byte[], byte[]> record = item.getOriginalRecord();
-        item.setTemplateIdHeader(KafkaHeaderReader.readString(record, X_TEMPLATE_ID).orElse(null));
-        item.setValidUntilHeader(KafkaHeaderReader.readString(record, X_VALID_UNTIL).orElse(null));
-        item.setCorrelationIdHeader(KafkaHeaderReader.readString(record, X_CORRELATION_ID).orElse(null));
+        item.setTemplateIdHeader(KafkaHeaderReader.readAsString(record, X_TEMPLATE_ID).orElse(null));
+        item.setValidUntilHeader(KafkaHeaderReader.readAsString(record, X_VALID_UNTIL).orElse(null));
+        item.setCorrelationIdHeader(KafkaHeaderReader.readAsString(record, X_CORRELATION_ID).orElse(null));
     }
 }

@@ -1,6 +1,7 @@
 package com.example.tasktracker.emailsender.o11y.observation.context;
 
 import io.micrometer.tracing.TraceContext;
+import org.springframework.lang.Nullable;
 
 /**
  * Указывает, что удаленный родитель (например, RECEIVE в Kafka) из заголовков может стать Link-ом,
@@ -8,7 +9,7 @@ import io.micrometer.tracing.TraceContext;
  */
 public interface DetachedContext {
 
-    TraceContext getRemoteParentLink();
+    @Nullable TraceContext getRemoteParentLink();
 
     void setRemoteParentLink(TraceContext context);
 }

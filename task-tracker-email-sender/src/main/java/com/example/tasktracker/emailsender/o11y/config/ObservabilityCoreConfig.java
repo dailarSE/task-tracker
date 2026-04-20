@@ -1,6 +1,10 @@
 package com.example.tasktracker.emailsender.o11y.config;
 
+import com.example.tasktracker.emailsender.config.AppProperties;
+import com.example.tasktracker.emailsender.o11y.observation.context.KafkaContextFactory;
+import com.example.tasktracker.emailsender.o11y.observation.handler.KafkaMessagingMetricsHandler;
 import com.example.tasktracker.emailsender.o11y.observation.handler.LinkingPropagatingTracingObservationHandler;
+import com.example.tasktracker.emailsender.o11y.observation.util.KafkaPropertiesResolver;
 import io.micrometer.context.ContextRegistry;
 import io.micrometer.context.ContextSnapshotFactory;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -12,6 +16,7 @@ import io.micrometer.tracing.handler.PropagatingReceiverTracingObservationHandle
 import io.micrometer.tracing.handler.PropagatingSenderTracingObservationHandler;
 import io.micrometer.tracing.propagation.Propagator;
 import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.context.propagation.TextMapPropagator;
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.InitializingBean;
@@ -85,5 +90,17 @@ public class ObservabilityCoreConfig {
                 return false;
             }
         };
+    }
+
+    @Bean
+    public KafkaContextFactory kafkaContextFactory(KafkaPropertiesResolver resolver,
+                                                   AppProperties appProperties,
+                                                   TextMapPropagator propagator) {
+        return new KafkaContextFactory(resolver, appProperties, propagator);
+    }
+
+    @Bean
+    public KafkaMessagingMetricsHandler<?> kafkaMessagingMetricsHandler(MeterRegistry meterRegistry) {
+        return new KafkaMessagingMetricsHandler<>(meterRegistry);
     }
 }

@@ -2,6 +2,7 @@ package com.example.tasktracker.emailsender.messaging.util;
 
 import com.example.tasktracker.emailsender.api.messaging.MessagingHeaders;
 import com.example.tasktracker.emailsender.pipeline.model.PipelineItem;
+import com.example.tasktracker.emailsender.pipeline.model.RejectReason;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -20,17 +21,24 @@ import java.util.Optional;
 @Slf4j
 public class KafkaMetadataEnricher {
 
-    private static final List<String> METADATA_KEYS = List.of(
+    private static final List<String> COORDINATE_KEYS = List.of(
             KafkaHeaders.ORIGINAL_TOPIC,
             KafkaHeaders.ORIGINAL_PARTITION,
             KafkaHeaders.ORIGINAL_OFFSET,
             KafkaHeaders.ORIGINAL_TIMESTAMP,
             KafkaHeaders.ORIGINAL_TIMESTAMP_TYPE,
-            KafkaHeaders.DLT_ORIGINAL_CONSUMER_GROUP,
+            KafkaHeaders.DLT_ORIGINAL_CONSUMER_GROUP
+    );
+
+    private static final List<String> SPRING_ERROR_KEYS = List.of(
             KafkaHeaders.EXCEPTION_FQCN,
             KafkaHeaders.EXCEPTION_MESSAGE,
             KafkaHeaders.EXCEPTION_STACKTRACE,
-            KafkaHeaders.EXCEPTION_CAUSE_FQCN,
+            KafkaHeaders.EXCEPTION_CAUSE_FQCN
+    );
+
+    private static final List<String> REJECT_DETAILS_KEYS = List.of(
+            MessagingHeaders.X_REJECT_REASON,
             MessagingHeaders.X_REJECT_DESCRIPTION
     );
 
@@ -47,7 +55,22 @@ public class KafkaMetadataEnricher {
     }
 
     public void clearExistingMetadata(@NonNull Headers headers) {
-        METADATA_KEYS.forEach(headers::remove);
+        clearHeaders(headers, COORDINATE_KEYS);
+        clearHeaders(headers, SPRING_ERROR_KEYS);
+        clearHeaders(headers, REJECT_DETAILS_KEYS);
+    }
+
+    public void injectRejectionDetails(@NonNull Headers headers, RejectReason reason, String description) {
+        addHeader(headers, MessagingHeaders.X_REJECT_REASON, reason);
+        addHeader(headers, MessagingHeaders.X_REJECT_DESCRIPTION, description);
+    }
+
+    public void clearRejectionDetails(@NonNull Headers headers) {
+        clearHeaders(headers, REJECT_DETAILS_KEYS);
+    }
+
+    private void clearHeaders(Headers headers, List<String> keys) {
+        keys.forEach(headers::remove);
     }
 
     /**
@@ -80,10 +103,10 @@ public class KafkaMetadataEnricher {
                     .ifPresent(cause -> addHeader(headers, KafkaHeaders.EXCEPTION_CAUSE_FQCN, cause.getClass().getName()));
         }
 
-        addHeader(headers, MessagingHeaders.X_REJECT_DESCRIPTION, failureStage.rejectDescription());
+        injectRejectionDetails(headers, failureStage.rejectReason(), failureStage.rejectDescription());
     }
 
-    private void addHeader(@NonNull Headers headers, String key, Object value) {
+    public void addHeader(@NonNull Headers headers, String key, Object value) {
         if (value != null) {
             headers.add(key, String.valueOf(value).getBytes(StandardCharsets.UTF_8));
         }

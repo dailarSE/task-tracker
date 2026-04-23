@@ -15,14 +15,10 @@ import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 
-import static com.example.tasktracker.emailsender.api.email.EmailHeaders.X_CORRELATION_ID;
-
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class SmtpEmailTransport implements EmailTransport {
-
-
     private final JavaMailSender mailSender;
     private final EmailSenderProperties properties;
     private final EmailErrorResolver emailErrorResolver;
@@ -43,7 +39,8 @@ public class SmtpEmailTransport implements EmailTransport {
         }
     }
 
-    @NonNull MimeMessage createMimeMessage(SendInstructions instructions) throws MessagingException {
+    @NonNull
+    MimeMessage createMimeMessage(SendInstructions instructions) throws MessagingException {
         MimeMessage mimeMessage = mailSender.createMimeMessage();
         MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, StandardCharsets.UTF_8.name());
 
@@ -52,7 +49,13 @@ public class SmtpEmailTransport implements EmailTransport {
         helper.setSubject(instructions.subject());
         helper.setText(instructions.body(), instructions.isHtml());
 
-        mimeMessage.addHeader(X_CORRELATION_ID, instructions.correlationId());
+        instructions.headers().forEach((k, v) -> {
+            try {
+                mimeMessage.addHeader(k, v);
+            } catch (MessagingException e) {
+                log.warn("Failed to set header: {}", k);
+            }
+        });
 
         return mimeMessage;
     }

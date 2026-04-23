@@ -7,6 +7,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.validation.annotation.Validated;
 
+import java.util.Set;
+
 @Configuration
 @ConfigurationProperties(prefix = "app")
 @Validated
@@ -23,9 +25,19 @@ public class AppProperties {
 
     private ObservationProperties observability = new ObservationProperties();
 
-    @Getter @Setter
+    @Getter
+    @Setter
     public static class ObservationProperties {
         private boolean enabled = true;
         private boolean captureMessageSizes = false;
+
+        private String defaultSmtpProviderName = "default-smtp-provider";
+        /**
+         * Список доменов, которые считаются "крупными".
+         * Только они попадут в теги метрик. Остальные станут "other".
+         */
+        private Set<String> knownDomains = Set.of(
+                "gmail.com", "yahoo.com", "outlook.com", "icloud.com", "yandex.ru", "mail.ru"
+        );
     }
 }

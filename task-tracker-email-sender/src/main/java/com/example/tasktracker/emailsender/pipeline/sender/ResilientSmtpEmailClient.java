@@ -1,5 +1,6 @@
 package com.example.tasktracker.emailsender.pipeline.sender;
 
+import com.example.tasktracker.emailsender.api.email.EmailHeaders;
 import com.example.tasktracker.emailsender.api.messaging.TriggerCommand;
 import com.example.tasktracker.emailsender.exception.FatalProcessingException;
 import com.example.tasktracker.emailsender.exception.RetryableProcessingException;
@@ -13,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
+import java.util.HashMap;
 import java.util.concurrent.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -100,12 +102,16 @@ public class ResilientSmtpEmailClient implements EmailClient {
                             sendCommand.localeTag()
                     );
 
+                    HashMap<String, String> headers = new HashMap<>();
+                    headers.put(EmailHeaders.X_CORRELATION_ID, sendCommand.correlationId());
+                    headers.put(EmailHeaders.X_TEMPLATE_ID, sendCommand.templateId());
+
                     transport.send(new SendInstructions(
                             sendCommand.recipientEmail(),
                             renderingResult.subject(),
                             renderingResult.body(),
                             true,
-                            sendCommand.correlationId()
+                            headers
                     ));
 
                 },

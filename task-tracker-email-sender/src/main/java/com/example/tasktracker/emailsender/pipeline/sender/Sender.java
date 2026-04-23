@@ -25,6 +25,7 @@ public interface Sender {
      * @return Фьюча, сигнализирующая о завершении логической обработки элемента.
      */
     CompletableFuture<Void> sendAsync(PipelineItem item);
+
     /**
      * Группирует список элементов в единый асинхронный чанк.
      * <p>
@@ -34,6 +35,16 @@ public interface Sender {
      * @param chunk Список элементов для параллельной обработки.
      * @return Фьюча, представляющая собой завершение обработки всего чанка.
      */
-    CompletableFuture<Void> sendChunkAsync(List<PipelineItem> chunk);
+    default CompletableFuture<Void> sendChunkAsync(List<PipelineItem> chunk) {
+        if (chunk == null || chunk.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        List<CompletableFuture<Void>> futures = chunk.stream()
+                .map(this::sendAsync)
+                .toList();
+
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+    }
 
 }

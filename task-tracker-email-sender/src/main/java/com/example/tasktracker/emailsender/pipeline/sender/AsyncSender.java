@@ -8,7 +8,6 @@ import com.example.tasktracker.emailsender.pipeline.model.RejectReason;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 
@@ -29,19 +28,6 @@ public class AsyncSender implements Sender {
                         handleError(item, throwable);
                     return result;
                 });
-    }
-
-    @Override
-    public CompletableFuture<Void> sendChunkAsync(List<PipelineItem> chunk) {
-        if (chunk == null || chunk.isEmpty()) {
-            return CompletableFuture.completedFuture(null);
-        }
-
-        List<CompletableFuture<Void>> futures = chunk.stream()
-                .map(this::sendAsync)
-                .toList();
-
-        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
     }
 
     private void handleError(PipelineItem item, Throwable t) {

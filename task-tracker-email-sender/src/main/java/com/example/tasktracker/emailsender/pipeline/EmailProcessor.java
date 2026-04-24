@@ -10,11 +10,13 @@ import com.example.tasktracker.emailsender.pipeline.model.PipelineBatch;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.springframework.stereotype.Component;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.function.Consumer;
 
+@Component
 @Slf4j
 @RequiredArgsConstructor
 public class EmailProcessor {

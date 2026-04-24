@@ -1,7 +1,12 @@
 package com.example.tasktracker.emailsender.messaging;
 
 import com.example.tasktracker.emailsender.exception.RetryableProcessingException;
+import com.example.tasktracker.emailsender.o11y.observation.context.KafkaContextFactory;
+import com.example.tasktracker.emailsender.o11y.observation.context.kafka.KafkaBatchReceiveContext;
+import com.example.tasktracker.emailsender.o11y.observation.convention.KafkaReceiveConvention;
 import com.example.tasktracker.emailsender.pipeline.EmailProcessor;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -15,7 +20,11 @@ import java.util.List;
 @Slf4j
 @RequiredArgsConstructor
 public class EmailBatchListener {
+
     private final EmailProcessor processor;
+    private final ObservationRegistry registry;
+    private final KafkaReceiveConvention<KafkaBatchReceiveContext> convention;
+    private final KafkaContextFactory contextFactory;
 
     @KafkaListener(
             topics = "${app.email.kafka-topic}",
@@ -23,13 +32,17 @@ public class EmailBatchListener {
             groupId = "${spring.kafka.consumer.group-id}"
     )
     public void onBatch(List<ConsumerRecord<byte[], byte[]>> rawRecords) {
-        try {
-            processor.processBatch(rawRecords);
-        } catch (RetryableProcessingException e) {
-            throw new BatchListenerFailedException("retry caught", e, 0);
-        } catch (Throwable e) {
-            log.error("Unhandled batch processing error", e);
-            throw e;
-        }
+        Observation.createNotStarted(convention, () -> contextFactory.createBatchReceiveContext(rawRecords), registry)
+                .observe(() -> {
+                    try {
+                        return processor.processBatch(rawRecords);
+                    } catch (RetryableProcessingException e) {
+                        throw new BatchListenerFailedException("retry caught", e, 0);
+                    } catch (Throwable e) {
+                        log.error("Unhandled batch processing error", e);
+                        throw e;
+                    }
+                });
+
     }
 }

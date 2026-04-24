@@ -10,6 +10,24 @@ import static com.example.tasktracker.emailsender.o11y.observation.convention.Ka
 import static com.example.tasktracker.emailsender.o11y.observation.convention.KafkaObservationTags.LowCardinality.*;
 
 public abstract class BaseKafkaMessagingConvention<T extends Observation.Context & KafkaConnectionContext> extends BaseO11yConvention<T> {
+    public static final double[] SLO_BUCKETS =
+            new double[]{
+                    5_000_000.0,
+                    10_000_000.0,
+                    25_000_000.0,
+                    50_000_000.0,
+                    75_000_000.0,
+                    100_000_000.0,
+                    250_000_000.0,
+                    500_000_000.0,
+                    750_000_000.0,
+                    1_000_000_000.0,
+                    2_500_000_000.0,
+                    5_000_000_000.0,
+                    7_500_000_000.0,
+                    10_000_000_000.0
+            };
+
     /**
      * Формирует имя спана согласно OTel Spec для Messaging: {@code {messaging.operation.name} {destination}}.
      * Пример: {@code user_welcome publish}

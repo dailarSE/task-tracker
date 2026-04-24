@@ -11,6 +11,7 @@ import com.example.tasktracker.emailsender.pipeline.sender.Sender;
 import com.example.tasktracker.emailsender.util.AsyncUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -19,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 
+@Component
 @Slf4j
 @RequiredArgsConstructor
 public class RpsLimitedChunkingExecutor implements ChunkingExecutor {

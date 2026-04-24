@@ -24,7 +24,7 @@ class IdempotencyLifecycleIT extends ContainerizedIntegrationTest {
     private IdempotencyGuard guard;
 
     @Autowired
-    private RedisIdempotencyCommitter committer;
+    private IdempotencyCommitter committer;
 
     @Autowired
     private TemplateKeyRegistry registry;

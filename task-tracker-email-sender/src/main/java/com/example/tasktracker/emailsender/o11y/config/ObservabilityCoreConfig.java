@@ -5,6 +5,7 @@ import com.example.tasktracker.emailsender.o11y.observation.context.KafkaContext
 import com.example.tasktracker.emailsender.o11y.observation.handler.KafkaMessagingMetricsHandler;
 import com.example.tasktracker.emailsender.o11y.observation.handler.LinkingPropagatingTracingObservationHandler;
 import com.example.tasktracker.emailsender.o11y.observation.util.KafkaPropertiesResolver;
+import com.example.tasktracker.emailsender.o11y.observation.util.TelemetryTracker;
 import io.micrometer.context.ContextRegistry;
 import io.micrometer.context.ContextSnapshotFactory;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -102,5 +103,10 @@ public class ObservabilityCoreConfig {
     @Bean
     public KafkaMessagingMetricsHandler<?> kafkaMessagingMetricsHandler(MeterRegistry meterRegistry) {
         return new KafkaMessagingMetricsHandler<>(meterRegistry);
+    }
+
+    @Bean
+    public TelemetryTracker telemetryTracker() {
+        return new TelemetryTracker();
     }
 }

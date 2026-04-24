@@ -13,8 +13,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.header.internals.RecordHeaders;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
+import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -26,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.springframework.kafka.support.KafkaUtils.determineSendTimeout;
 
+@Component
 @Slf4j
 public class DispatcherStep {
     private final KafkaMetadataEnricher metadataEnricher;
@@ -36,7 +39,7 @@ public class DispatcherStep {
 
     public DispatcherStep(
             KafkaMetadataEnricher metadataEnricher,
-            KafkaTemplate<byte[], byte[]> kafkaTemplate,
+            @Qualifier("rawKafkaTemplate") KafkaTemplate<byte[], byte[]> kafkaTemplate,
             EmailSenderProperties properties
     ) {
         this.metadataEnricher = metadataEnricher;

@@ -1,10 +1,8 @@
 package com.example.tasktracker.emailsender.o11y.config;
 
+import com.example.tasktracker.emailsender.config.ReliabilityProperties;
 import com.example.tasktracker.emailsender.o11y.observation.context.kafka.KafkaRecordPublishContext;
-import com.example.tasktracker.emailsender.o11y.observation.convention.KafkaProcessConvention;
-import com.example.tasktracker.emailsender.o11y.observation.convention.KafkaPublishConvention;
-import com.example.tasktracker.emailsender.o11y.observation.convention.KafkaReceiveConvention;
-import com.example.tasktracker.emailsender.o11y.observation.convention.KafkaRejectPublishConvention;
+import com.example.tasktracker.emailsender.o11y.observation.convention.*;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,6 +10,20 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 @ConditionalOnProperty(value = "app.observability.enabled", havingValue = "true", matchIfMissing = true)
 public class ObservationConfig {
+    @Bean
+    public AssemblyConvention assemblyConvention() {
+        return new AssemblyConvention();
+    }
+
+    @Bean
+    public ChunkRateLimitConvention chunkRateLimitConvention(ReliabilityProperties properties) {
+        return new ChunkRateLimitConvention(properties);
+    }
+
+    @Bean
+    public EmailSmtpConvention emailSmtpConvention() {
+        return new EmailSmtpConvention();
+    }
 
     @Bean
     public KafkaProcessConvention kafkaProcessConvention() {
@@ -19,7 +31,14 @@ public class ObservationConfig {
     }
 
     @Bean
-    public KafkaPublishConvention<KafkaRecordPublishContext> kafkaPublishConvention(){return new KafkaPublishConvention<>();}
+    public KafkaPublishConvention<KafkaRecordPublishContext> kafkaPublishConvention() {
+        return new KafkaPublishConvention<>();
+    }
+
+    @Bean
+    public KafkaReceiveConvention<?> kafkaReceiveConvention() {
+        return new KafkaReceiveConvention<>();
+    }
 
     @Bean
     public KafkaRejectPublishConvention kafkaRejectPublishConvention() {
@@ -27,7 +46,7 @@ public class ObservationConfig {
     }
 
     @Bean
-    public KafkaReceiveConvention<?> kafkaReceiveConvention() {
-        return new KafkaReceiveConvention<>();
+    public RedisConvention redisConvention() {
+        return new RedisConvention();
     }
 }

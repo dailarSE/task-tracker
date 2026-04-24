@@ -11,11 +11,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.NonNull;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
-import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 
-@Component
 @RequiredArgsConstructor
 @Slf4j
 public class SmtpEmailTransport implements EmailTransport {

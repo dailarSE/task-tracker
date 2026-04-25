@@ -140,7 +140,8 @@ public class ResilientSmtpEmailClient implements EmailClient {
             }
             case CancellationException e -> new InfrastructureSuspendedException("Task was cancelled", e);
 
-            case Exception e when e.getClass().getPackageName().startsWith("io.github.resilience4j") ->
+            case Exception e when
+                    e instanceof TimeoutException || e.getClass().getPackageName().startsWith("io.github.resilience4j") ->
                     new RetryableProcessingException(RejectReason.INFRASTRUCTURE, "Resilience safety trigger", e);
 
             case RuntimeException e ->

@@ -8,6 +8,7 @@ import com.example.tasktracker.emailsender.pipeline.model.PipelineItem;
 import com.example.tasktracker.emailsender.pipeline.sender.Sender;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 import java.util.concurrent.CompletableFuture;
@@ -21,7 +22,7 @@ public class ObservedSender implements Sender {
     private final TelemetryTracker tracker;
 
     @Override
-    public CompletableFuture<Void> sendAsync(PipelineItem item) {
+    public CompletableFuture<Void> sendAsync(@NonNull PipelineItem item) {
 
         KafkaRecordProcessContext processContext = recordContextFactory.createProcessContext(item);
 

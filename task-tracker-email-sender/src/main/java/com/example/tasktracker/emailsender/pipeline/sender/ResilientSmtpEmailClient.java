@@ -10,6 +10,7 @@ import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.decorators.Decorators;
 import io.github.resilience4j.timelimiter.TimeLimiter;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -70,14 +71,14 @@ public class ResilientSmtpEmailClient implements EmailClient {
      * </ul>
      */
 
-    public CompletableFuture<Void> send(TriggerCommand sendCommand) {
+    public CompletableFuture<Void> send(@NonNull TriggerCommand sendCommand) {
         return CompletableFuture
                 .supplyAsync(() -> decorateWithResilience(sendCommand), vThreadExecutor)
                 .thenCompose(Function.identity())
                 .handle(this::translateException);
     }
 
-    private CompletionStage<Void> decorateWithResilience(TriggerCommand sendCommand) {
+    private CompletionStage<Void> decorateWithResilience(@NonNull TriggerCommand sendCommand) {
         Supplier<CompletionStage<Void>> task = () -> startAsyncExecution(sendCommand);
 
         return Decorators.ofCompletionStage(task)
@@ -94,7 +95,7 @@ public class ResilientSmtpEmailClient implements EmailClient {
      * внутри "луковицы" декораторов. Это позволяет избежать конфликтов между моделью исполнения JVM и логикой
      * стороннего лимитера, чья реализация накладывает нетривиальные ограничения на оркестрацию потоков.
      */
-    private CompletableFuture<Void> startAsyncExecution(TriggerCommand sendCommand) {
+    private CompletableFuture<Void> startAsyncExecution(@NonNull TriggerCommand sendCommand) {
         return CompletableFuture.runAsync(() -> {
                     var renderingResult = templateEngine.process(
                             sendCommand.templateId(),

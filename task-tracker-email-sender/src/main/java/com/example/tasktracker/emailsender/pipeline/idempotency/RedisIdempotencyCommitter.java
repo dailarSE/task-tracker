@@ -12,6 +12,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import java.time.Duration;
 import java.util.List;
 
+import static com.example.tasktracker.emailsender.pipeline.idempotency.IdempotencyStatus.SENT;
+
 @Slf4j
 @RequiredArgsConstructor
 public class RedisIdempotencyCommitter implements IdempotencyCommitter {
@@ -19,15 +21,13 @@ public class RedisIdempotencyCommitter implements IdempotencyCommitter {
     private final TemplateKeyRegistry keyRegistry;
     private final ReliabilityProperties properties;
 
-    private static final String STATUS_SENT = "SENT";
-
     public void commitSuccess(PipelineItem item) {
         if (item.getStage().status() != PipelineItem.Status.SENT) return;
 
         try {
             String key = buildKey(item);
             Duration ttl = resolveTtl(item);
-            redisTemplate.opsForValue().set(key, STATUS_SENT, ttl);
+            redisTemplate.opsForValue().set(key, SENT, ttl);
             log.debug("Finalized item [{}]. Key: {}", item.getCoordinates(), key);
         } catch (Exception e) {
             log.error("Failed to finalize single item in Redis: [{}].", item.getCoordinates(), e);
@@ -65,7 +65,7 @@ public class RedisIdempotencyCommitter implements IdempotencyCommitter {
         try {
             String key = buildKey(item);
             Duration ttl = resolveTtl(item);
-            connection.setEx(key, ttl.toSeconds(), STATUS_SENT);
+            connection.setEx(key, ttl.toSeconds(), SENT);
         } catch (Exception e) {
             log.warn("Skipping finalization for item [{}]: logic failed.", item.getCoordinates());
         }

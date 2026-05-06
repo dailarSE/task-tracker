@@ -1,9 +1,6 @@
 package com.example.tasktracker.emailsender;
 
-import com.example.tasktracker.emailsender.util.EmailSupport;
-import com.example.tasktracker.emailsender.util.KafkaSupport;
-import com.example.tasktracker.emailsender.util.RedisSupport;
-import com.example.tasktracker.emailsender.util.TestSupportConfig;
+import com.example.tasktracker.emailsender.util.*;
 import com.redis.testcontainers.RedisContainer;
 import eu.rekawek.toxiproxy.Proxy;
 import eu.rekawek.toxiproxy.ToxiproxyClient;
@@ -11,9 +8,13 @@ import eu.rekawek.toxiproxy.model.Toxic;
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.AfterEach;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.data.redis.RedisConnectionDetails;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.context.annotation.Primary;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
@@ -26,13 +27,15 @@ import org.testcontainers.utility.DockerImageName;
 
 import java.io.IOException;
 
-@Import(TestSupportConfig.class)
+@Import({TestSupportConfig.class,
+        ContainerizedIntegrationTest.RedisProxyConfig.class,
+        ContainerizedIntegrationTest.ContextGuardConfig.class
+})
+@ActiveProfiles("ci")
 public abstract class ContainerizedIntegrationTest {
     protected static final int SMTP_PROXIED_PORT = 8666;
+    protected static final int REDIS_PROXIED_PORT = 8667;
     protected static final Network NETWORK = Network.newNetwork();
-
-    @Autowired
-    protected StringRedisTemplate redisTemplate;
 
     @Autowired
     protected KafkaSupport kafka;
@@ -63,6 +66,7 @@ public abstract class ContainerizedIntegrationTest {
             .withNetwork(NETWORK);
 
     protected static Proxy mailProxy;
+    protected static Proxy redisProxy;
 
     static {
         Startables.deepStart(REDIS, KAFKA, MAILHOG, TOXIPROXY).join();
@@ -70,13 +74,51 @@ public abstract class ContainerizedIntegrationTest {
         ToxiproxyClient toxiproxyClient = new ToxiproxyClient(TOXIPROXY.getHost(), TOXIPROXY.getControlPort());
 
         String smtpInternalCoords = MAILHOG.getNetworkAliases().getFirst() + ":" + 1025;
+        String redisInternalCoords = REDIS.getNetworkAliases().getFirst() + ":" + 6379;
         try {
             mailProxy = toxiproxyClient.createProxy(
-                    "smtp",
+                    "smtp-proxy",
                     "0.0.0.0:" + SMTP_PROXIED_PORT,
                     smtpInternalCoords);
+            redisProxy = toxiproxyClient.createProxy(
+                    "redis-proxy",
+                    "0.0.0.0:" + REDIS_PROXIED_PORT,
+                    redisInternalCoords);
         } catch (IOException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    @TestConfiguration
+    static class ContextGuardConfig {
+        @Bean
+        public Object contextGuard() {
+            SingleContextGuard.verify();
+            return new Object();
+        }
+    }
+
+    @TestConfiguration
+    static class RedisProxyConfig {
+        @Bean
+        @Primary
+        public RedisConnectionDetails redisConnectionDetails() {
+            return new RedisConnectionDetails() {
+                @Override
+                public Standalone getStandalone() {
+                    return new Standalone() {
+                        @Override
+                        public String getHost() {
+                            return TOXIPROXY.getHost();
+                        }
+
+                        @Override
+                        public int getPort() {
+                            return TOXIPROXY.getMappedPort(REDIS_PROXIED_PORT);
+                        }
+                    };
+                }
+            };
         }
     }
 
@@ -96,8 +138,16 @@ public abstract class ContainerizedIntegrationTest {
         resetKafkaListener();
     }
 
-    private void resetToxics(){
+    private void resetToxics() {
         resetMailToxics();
+        resetRedisToxics();
+    }
+
+    @SneakyThrows
+    private void resetRedisToxics() {
+        for (Toxic toxic : redisProxy.toxics().getAll()) {
+            toxic.remove();
+        }
     }
 
     @SneakyThrows
@@ -115,7 +165,7 @@ public abstract class ContainerizedIntegrationTest {
         redis.clear();
     }
 
-    private void resetKafkaListener(){
+    private void resetKafkaListener() {
         kafka.clear();
     }
 }

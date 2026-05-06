@@ -9,6 +9,7 @@ import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.time.Duration;
+import java.util.UUID;
 
 @TestComponent
 @RequiredArgsConstructor
@@ -22,6 +23,12 @@ public class RedisSupport {
 
     public void forceStatus(TriggerCommand cmd, String status) {
         redisTemplate.opsForValue().set(buildKey(cmd), status, Duration.ofMinutes(5));
+    }
+
+    public void forceForeignLock(TriggerCommand cmd) {
+        String key = buildKey(cmd);
+        String lease = "other-topic-0@0|" + UUID.randomUUID();
+        redisTemplate.opsForValue().set(key, lease, Duration.ofMinutes(5));
     }
 
     private String buildKey(TriggerCommand cmd) {

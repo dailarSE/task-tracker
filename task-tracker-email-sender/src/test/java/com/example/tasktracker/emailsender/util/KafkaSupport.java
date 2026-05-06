@@ -2,13 +2,13 @@ package com.example.tasktracker.emailsender.util;
 
 import com.example.tasktracker.emailsender.api.messaging.MessagingHeaders;
 import com.example.tasktracker.emailsender.api.messaging.TriggerCommand;
+import com.example.tasktracker.emailsender.messaging.util.KafkaHeaderReader;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.header.Header;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.TestComponent;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -58,12 +58,12 @@ public class KafkaSupport {
 
     @KafkaListener(topics = "${app.email.dlt-topic}", containerFactory = "rawSingleRetryFactory", groupId = "spy")
     void listenDlt(ConsumerRecord<byte[], byte[]> record) {
-        Optional.ofNullable(extractCorrelationId(record)).ifPresent(id -> dltRecords.put(id, record));
+        extractCorrelationId(record).ifPresent(id -> dltRecords.put(id, record));
     }
 
-    @KafkaListener(topics = "${app.email.retry-topic}",containerFactory = "rawSingleRetryFactory", groupId = "spy")
+    @KafkaListener(topics = "${app.email.retry-topic}", containerFactory = "rawSingleRetryFactory", groupId = "spy")
     void listenRetry(ConsumerRecord<byte[], byte[]> record) {
-        Optional.ofNullable(extractCorrelationId(record)).ifPresent(id -> retryRecords.put(id, record));
+        extractCorrelationId(record).ifPresent(id -> retryRecords.put(id, record));
     }
 
     public Optional<ConsumerRecord<byte[], byte[]>> getDltRecord(String cid) {
@@ -79,8 +79,7 @@ public class KafkaSupport {
         retryRecords.clear();
     }
 
-    private String extractCorrelationId(ConsumerRecord<byte[], byte[]> record) {
-        Header header = record.headers().lastHeader(MessagingHeaders.X_CORRELATION_ID);
-        return header != null ? new String(header.value(), StandardCharsets.UTF_8) : null;
+    private Optional<String> extractCorrelationId(ConsumerRecord<byte[], byte[]> record) {
+        return KafkaHeaderReader.readAsString(record, MessagingHeaders.X_CORRELATION_ID);
     }
 }

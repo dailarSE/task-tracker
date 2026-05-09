@@ -17,7 +17,6 @@ import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.FixedBackOff;
 
-import java.time.Duration;
 import java.util.Map;
 
 @Configuration
@@ -33,8 +32,17 @@ public class KafkaConfig {
     }
 
     @Bean
-    public DefaultErrorHandler errorHandler(DeadLetterPublishingRecoverer recoverer) {
-        FixedBackOff backOff = new FixedBackOff(Duration.ofSeconds(60).toMillis(), FixedBackOff.UNLIMITED_ATTEMPTS);
+    public DefaultErrorHandler errorHandler(DeadLetterPublishingRecoverer recoverer, ReliabilityProperties props) {
+        var retryConfig = props.getKafkaRetry();
+        long attempts = retryConfig.getMaxAttempts() < 0
+                ? FixedBackOff.UNLIMITED_ATTEMPTS
+                : retryConfig.getMaxAttempts();
+
+        FixedBackOff backOff = new FixedBackOff(
+                retryConfig.getBlockingRetryInterval().toMillis(),
+                attempts
+        );
+
         DefaultErrorHandler defaultErrorHandler = new DefaultErrorHandler(recoverer, backOff);
         defaultErrorHandler.addRetryableExceptions(RetryableProcessingException.class);
         return defaultErrorHandler;

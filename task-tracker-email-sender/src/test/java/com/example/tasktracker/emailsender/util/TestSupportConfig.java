@@ -11,7 +11,7 @@ import org.springframework.context.annotation.Import;
 import java.time.Duration;
 
 @TestConfiguration
-@Import({KafkaSupport.class, RedisSupport.class, EmailSupport.class})
+@Import({KafkaSupport.class, RedisSupport.class, EmailSupport.class, RpsSupport.class})
 public class TestSupportConfig {
     @Value("${app.email.kafka-topic}")
     private String mainTopic;
@@ -26,7 +26,7 @@ public class TestSupportConfig {
                 .clientOptions(ClientOptions.builder()
                         .disconnectedBehavior(ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
                         .build())
-                .commandTimeout(Duration.ofMillis(400));
+                .commandTimeout(Duration.ofMillis(1000));
     }
 
     @Bean

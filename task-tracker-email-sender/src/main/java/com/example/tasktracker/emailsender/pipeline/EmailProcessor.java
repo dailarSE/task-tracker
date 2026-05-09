@@ -2,11 +2,13 @@ package com.example.tasktracker.emailsender.pipeline;
 
 import com.example.tasktracker.emailsender.exception.FatalProcessingException;
 import com.example.tasktracker.emailsender.exception.RetryableProcessingException;
+import com.example.tasktracker.emailsender.exception.infrastructure.InfrastructureException;
 import com.example.tasktracker.emailsender.pipeline.assembler.BatchAssembler;
 import com.example.tasktracker.emailsender.pipeline.dispatch.DispatcherStep;
 import com.example.tasktracker.emailsender.pipeline.idempotency.IdempotencyCommitter;
 import com.example.tasktracker.emailsender.pipeline.idempotency.IdempotencyGuard;
 import com.example.tasktracker.emailsender.pipeline.model.PipelineBatch;
+import com.example.tasktracker.emailsender.pipeline.model.PipelineItem;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -62,6 +64,10 @@ public class EmailProcessor {
             finisher.accept(batch);
 
             return batch;
+        } catch (InfrastructureException infra) {
+            batch.forEachPending(item ->
+                    item.tryReject(PipelineItem.Status.RETRY, infra.getRejectReason(), infra.getMessage(), infra));
+            throw infra;
         } finally {
             logOutcome(batch);
         }
@@ -86,11 +92,12 @@ public class EmailProcessor {
 
         for (var item : items) {
             switch (item.getStage().status()) {
-                case SENT    -> sent++;
+                case SENT -> sent++;
                 case SKIPPED -> skipped++;
-                case FAILED  -> failed++;
-                case RETRY   -> retry++;
-                default      -> {}
+                case FAILED -> failed++;
+                case RETRY -> retry++;
+                default -> {
+                }
             }
         }
 

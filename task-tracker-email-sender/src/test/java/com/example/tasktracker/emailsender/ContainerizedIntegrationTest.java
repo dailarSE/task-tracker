@@ -43,6 +43,8 @@ public abstract class ContainerizedIntegrationTest {
     protected RedisSupport redis;
     @Autowired
     protected EmailSupport email;
+    @Autowired
+    protected RpsSupport rps;
 
     @ServiceConnection
     protected static final RedisContainer REDIS =
@@ -124,6 +126,7 @@ public abstract class ContainerizedIntegrationTest {
 
     @DynamicPropertySource
     protected static void properties(DynamicPropertyRegistry registry) {
+        registry.add("app.email.reliability.kafka-retry.blocking-retry-interval", () -> "200ms");
         registry.add("spring.mail.host", TOXIPROXY::getHost);
         registry.add("spring.mail.port", () -> TOXIPROXY.getMappedPort(SMTP_PROXIED_PORT));
         registry.add("test.mailhog.url",

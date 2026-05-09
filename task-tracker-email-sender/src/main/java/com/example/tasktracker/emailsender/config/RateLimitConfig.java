@@ -16,6 +16,7 @@ import java.util.function.Supplier;
 public class RateLimitConfig {
 
     public static final String RPS_LIMIT_KEY = "email:ratelimit:global_rps";
+    public static final String BANDWIDTH_ID = "global-limit";
 
     @Bean
     public BlockingBucket rpsBucket(@Qualifier("rateLimitProxyManager") ProxyManager<String> proxyManager,
@@ -25,6 +26,7 @@ public class RateLimitConfig {
         Bandwidth bandwidth = Bandwidth.builder()
                 .capacity(rps)
                 .refillIntervally(rps, Duration.ofSeconds(1))
+                .id(BANDWIDTH_ID)
                 .initialTokens(rps)
                 .build();
 

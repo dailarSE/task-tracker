@@ -39,6 +39,8 @@ public class ReliabilityProperties {
     private Idempotency idempotency = new Idempotency();
     @Valid
     private CircuitBreakerPolicy circuitBreakerPolicy = new CircuitBreakerPolicy();
+    @Valid
+    private KafkaRetry kafkaRetry = new KafkaRetry();
 
     /**
      * Параметры пропускной способности (Throughput).
@@ -172,6 +174,21 @@ public class ReliabilityProperties {
         private Duration waitDurationInOpenState = Duration.ofSeconds(30);
         @Positive
         private int permittedNumberOfCallsInHalfOpenState = 20;
+    }
+
+    @Getter
+    @Setter
+    public static class KafkaRetry {
+        /**
+         * Интервал между попытками при блокирующем ретрае.
+         */
+        @NotNull
+        private Duration blockingRetryInterval = Duration.ofSeconds(60);
+
+        /**
+         * Максимальное количество попыток. -1 для бесконечности.
+         */
+        private long maxAttempts = -1;
     }
 
     /**

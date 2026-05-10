@@ -1,3 +1,8 @@
+spring:
+  datasource:
+    username: devuser
+    password: devpass
+
 logging:
   level:
     org.hibernate.SQL: DEBUG
@@ -13,14 +18,15 @@ server:
     include-exception: true
     whitelabel.enabled: true
 
+otel:
+  service:
+    name: ${spring.application.name}
+
 springdoc:
   swagger-ui:
     enabled: false
   api-docs:
     enabled: true
-
-#TODO принять решение о минимальном observability стеке на ci. например коллектор с экспортом в stdout и/или файл;
-#TODO  стриминг из коллектора на поднятный Obs stack
 
 app:
   kafka:

@@ -3,11 +3,9 @@ spring:
     name:
       task-tracker-backend
   datasource:
-    url: jdbc:postgresql://postgres:5432/task_tracker_db
-    username:
-      file: /run/secrets/postgres_user
-    password:
-      file: /run/secrets/postgres_password
+    url: jdbc:postgresql://task-tracker-postgres:5432/task_tracker_db
+    username: ${postgres_user}
+    password: ${postgres_password}
   jpa:
     open-in-view: false
     hibernate:
@@ -26,7 +24,7 @@ spring:
     deserialization:
       FAIL_ON_UNKNOWN_PROPERTIES: true
   kafka:
-    bootstrap-servers: kafka:9092 # Адрес Kafka-брокера из docker-compose.yml
+    bootstrap-servers: task-tracker-kafka:9092 # Адрес Kafka-брокера из docker-compose.yml
     admin:
       fail-fast: true
     producer:
@@ -58,21 +56,30 @@ logging:
     root: INFO
 
 management:
+  server:
+    port: ${MANAGEMENT_PORT:8081}
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: always
+      show-components: always
   endpoints:
     web:
       exposure:
         include: health, info
   # Отключим метрики JMX, если не нужны
   jmx:
-    enabled: false
-  # Настроим теги, которые будут добавляться ко всем метрикам
+    metrics:
+      export:
+        enabled: false
 
 otel:
   service:
     name: ${spring.application.name}
   exporter:
     otlp:
-      endpoint: http://otel-collector:4318 # OTLP/HTTP
+      endpoint: http://task-tracker-otel-collector:4318 # OTLP/HTTP
   instrumentation:
     common:
       default-enabled: true
@@ -93,8 +100,6 @@ springdoc:
   api-docs:
     enabled: false
 
-#TODO принять решение о минимальном observability стеке
-
 app:
   kafka:
     topic-verifier:
@@ -105,6 +110,7 @@ app:
   security:
     jwt:
       expiration-ms: 3600000 # 1 час
+      secret-key: ${jwt_secret}
   internal-api:
     scheduler-support:
       user-processing-ids:

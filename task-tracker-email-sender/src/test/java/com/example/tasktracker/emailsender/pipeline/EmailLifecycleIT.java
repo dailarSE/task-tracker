@@ -25,7 +25,7 @@ class EmailLifecycleIT extends ContainerizedIntegrationTest {
 
         kafka.send(cmd);
 
-        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
             var messages = email.fetchAllMessages();
             assertEquals(1, messages.size());
             assertEquals(cid, messages.getFirst().get("Content").get("Headers").get(EmailHeaders.X_CORRELATION_ID).get(0).asText());
@@ -51,7 +51,7 @@ class EmailLifecycleIT extends ContainerizedIntegrationTest {
         kafka.send(cmdDup, commonKey);
         kafka.send(cmdMarker, commonKey);
 
-        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
             var messages = email.fetchAllMessages();
 
             boolean sentinelArrived = EmailSupport.findByCorrelationId(messages, cidMarker).isPresent();

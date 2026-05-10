@@ -1,5 +1,6 @@
 spring:
   datasource:
+    url: jdbc:postgresql://postgres:5432/task_tracker_db
     username: devuser
     password: devpass
   jpa:
@@ -7,6 +8,8 @@ spring:
     properties:
       hibernate:
         format-sql: true
+  kafka:
+    bootstrap-servers: kafka:9092
 
 logging:
   level:
@@ -27,14 +30,23 @@ server:
     whitelabel.enabled: true
 
 management:
+  server:
+    port: 9081
   endpoints:
     web:
       exposure:
         include: health, info, prometheus, metrics, env, loggers
   jmx:
-    enabled: true
+    metrics:
+      export:
+        enabled: true
 
 otel:
+  service:
+    name: ${spring.application.name}
+  exporter:
+    otlp:
+      endpoint: http://otel-collector:4318
   traces:
     sampler:
       arg: "1.0"

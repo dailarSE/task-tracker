@@ -1,0 +1,10 @@
+server:
+  port: 8092
+management:
+  server:
+    port: 9083
+
+logging:
+  structured:
+    format:
+      console:

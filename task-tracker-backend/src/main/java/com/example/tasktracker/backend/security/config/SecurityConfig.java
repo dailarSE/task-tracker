@@ -105,7 +105,8 @@ public class SecurityConfig {
             new AntPathRequestMatcher(LOGIN_ENDPOINT, HttpMethod.POST.name()),
             new AntPathRequestMatcher("/swagger-ui.html"),
             new AntPathRequestMatcher("/swagger-ui/**"),
-            new AntPathRequestMatcher("/v3/api-docs/**")
+            new AntPathRequestMatcher("/v3/api-docs/**"),
+            new AntPathRequestMatcher("/actuator/health/**")
     );
 
     /**
@@ -156,11 +157,8 @@ public class SecurityConfig {
                         .authenticationEntryPoint(bearerTokenAuthenticationEntryPoint)
                         .accessDeniedHandler(problemDetailsAccessDeniedHandler))
                 .authorizeHttpRequests(authorize -> authorize
-                        // Разрешаем публичный доступ к эндпоинтам регистрации и логина
                         .requestMatchers(publicEndpointsMatcher).permitAll()
                         .requestMatchers(errorPath).permitAll()
-                        // TODO: Разрешить доступ к эндпоинтам Spring Boot Actuator (если они включены и нужны публично/защищенно)
-                        // .requestMatchers("/actuator/**").permitAll() // или .hasRole("ADMIN") и т.д.
                         .anyRequest().authenticated())
                 .addFilterAfter(jwtAuthenticationFilter, ExceptionTranslationFilter.class)
                 .build();

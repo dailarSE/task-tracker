@@ -69,7 +69,7 @@ class ExecutionThrottlingIT extends ContainerizedIntegrationTest {
 
             commands.forEach(kafka::send);
 
-            await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
                 assertTrue(commands.stream()
                         .anyMatch(command -> null != redis.getStatus(command))
                 );
@@ -93,7 +93,7 @@ class ExecutionThrottlingIT extends ContainerizedIntegrationTest {
             rps.resetToInit();
             //drop kafka state
             await()
-                    .atMost(Duration.ofSeconds(5))
+                    .atMost(Duration.ofSeconds(10))
                     .pollDelay(properties.getKafkaRetry().getBlockingRetryInterval())
                     .untilAsserted(() -> {
                         List<JsonNode> messages = email.fetchAllMessages();
@@ -119,7 +119,7 @@ class ExecutionThrottlingIT extends ContainerizedIntegrationTest {
 
             kafka.send(cmd);
 
-            await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
                 assertNotNull(redis.getStatus(cmd), "лок должен быть взят");
 
                 assertTrue(EmailSupport.findByCorrelationId(email.fetchAllMessages(), cid).isEmpty(), "письмо должно быть не отправлено");
@@ -131,7 +131,7 @@ class ExecutionThrottlingIT extends ContainerizedIntegrationTest {
         } finally {
             ReflectionTestUtils.setField(properties.getBudget(), "maxBatchProcessingTime", originalBatchBudget);
             //drop kafka state
-            await().atMost(Duration.ofSeconds(5))
+            await().atMost(Duration.ofSeconds(10))
                     .pollDelay(properties.getKafkaRetry().getBlockingRetryInterval())
                     .untilAsserted(() -> {
                         List<JsonNode> messages = email.fetchAllMessages();

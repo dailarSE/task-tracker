@@ -38,7 +38,7 @@ spring:
     password: ""
 
   kafka:
-    bootstrap-servers: kafka:9092
+    bootstrap-servers: task-tracker-kafka:9092
     consumer:
       group-id: "task-tracker-email-sender-v1"
       auto-offset-reset: latest
@@ -49,6 +49,14 @@ spring:
       max-poll-records: ${app.email.reliability.budget.command-intake-batch-size}
 
 management:
+  server:
+    port: ${MANAGEMENT_PORT:8081}
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: always
+      show-components: always
   opentelemetry:
     resource-attributes:
       service.instance.id: ${APP_INSTANCE_ID}
@@ -67,15 +75,15 @@ management:
     metrics:
       export:
         enabled: true
-        url: http://otel-collector:4318/v1/metrics
+        url: http://task-tracker-otel-collector:4318/v1/metrics
     logging:
       export:
         enabled: true
-      endpoint: http://otel-collector:4318/v1/logs
+      endpoint: http://task-tracker-otel-collector:4318/v1/logs
     tracing:
       export:
         enabled: true
-      endpoint: http://otel-collector:4318/v1/traces
+      endpoint: http://task-tracker-otel-collector:4318/v1/traces
 
 logging:
   structured:

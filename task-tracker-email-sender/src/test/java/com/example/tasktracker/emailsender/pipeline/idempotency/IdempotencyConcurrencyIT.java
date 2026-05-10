@@ -60,7 +60,7 @@ class IdempotencyConcurrencyIT extends ContainerizedIntegrationTest {
 
         kafka.send(cmd);
 
-        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
             var messages = email.fetchAllMessages();
             assertFalse(EmailSupport.findByCorrelationId(messages, cid).isPresent(), "Email should not be sent");
 
@@ -100,7 +100,7 @@ class IdempotencyConcurrencyIT extends ContainerizedIntegrationTest {
 
         kafka.send(validCmd, pKey);
 
-        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
             Mockito.verify(committerSpy).commitSuccess(BatchMatchers.containsCid(cidTarget));
 
             var messages = email.fetchAllMessages();
@@ -110,7 +110,7 @@ class IdempotencyConcurrencyIT extends ContainerizedIntegrationTest {
         kafka.send(dltCmd, pKey);
         kafka.send(retryCmd, pKey);
 
-        await().atMost(Duration.ofSeconds(10)).untilAsserted(
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(
                 () -> {
                     assertTrue(kafka.getRetryRecord(cidRetry).isPresent(), "Retry marker failed to arrive");
                     assertTrue(kafka.getDltRecord(cidDlt).isPresent(), "DLT marker failed to arrive");

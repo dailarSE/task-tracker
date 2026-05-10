@@ -2,16 +2,20 @@ services:
   task-tracker-frontend:
     image: nginx:1.28.0-alpine
     container_name: task-tracker-frontend-nginx
+    environment:
+      - BACKEND_HOST=host.docker.internal
     ports:
       - "80:80"
     volumes:
       - ./task-tracker-frontend:/usr/share/nginx/html:ro
+      - ./task-tracker-frontend/default.conf.template:/etc/nginx/templates/default.conf.template:ro
     networks:
       - task-tracker-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
-#    depends_on:
-#      - task-tracker-backend
-  postgres:
+
+  task-tracker-postgres:
     image: ${POSTGRES_IMAGE:-postgres:17.4}
     
     container_name: task-tracker-postgres
@@ -39,15 +43,65 @@ services:
       - "log_duration=on"
       - "-c"
       - "log_min_duration_statement=0"
-   
-  kafka:
+
+  task-tracker-kafka-setup:
+    image: alpine:3.23.4
+    container_name: task-tracker-kafka-setup
+    user: "root"
+    volumes:
+      - kafkadata:/var/lib/kafka/data
+    command: chown -R 1000:1000 /var/lib/kafka/data
+    networks:
+      - task-tracker-net
+
+  task-tracker-kafka-init:
+    image: apache/kafka:4.0.0
+    container_name: task-tracker-kafka-init
+    networks:
+      - task-tracker-net
+    depends_on:
+      - task-tracker-kafka
+    entrypoint: [ "/bin/sh", "-c" ]
+    command:
+      - |
+        echo 'Waiting for Kafka to be fully ready...'
+        
+        until /opt/kafka/bin/kafka-topics.sh --bootstrap-server task-tracker-kafka:9092 --list > /dev/null 2>&1; do
+          echo 'Kafka is still initializing... (waiting 2s)'
+          sleep 2
+        done
+        
+        echo "Starting Kafka topics initialization..."
+        
+        # Список топиков
+        TOPICS="task_tracker.notifications.email_commands:1:1 
+                task_tracker.notifications.email_commands-recovery:1:1 
+                task_tracker.notifications.email_commands-dlt:1:1 
+                task_tracker.scheduler.events.user_selected_for_report:1:1 
+                task_tracker.reporting.events.daily_report_generated:1:1"
+        
+        for topic in $$TOPICS; do
+          # Исправлено: добавлен echo и двойные $$
+          NAME=$$(echo $$topic | cut -d: -f1)
+          PARTITIONS=$$(echo $$topic | cut -d: -f2)
+          REPLICAS=$$(echo $$topic | cut -d: -f3)
+        
+          echo "Checking topic: $$NAME"
+        
+          /opt/kafka/bin/kafka-topics.sh --create --if-not-exists \
+            --bootstrap-server task-tracker-kafka:9092 \
+            --topic "$$NAME" \
+            --partitions "$$PARTITIONS" \
+            --replication-factor "$$REPLICAS"
+        done
+        
+        echo "Kafka topics initialization completed successfully."
+
+  task-tracker-kafka:
     image: apache/kafka:4.0.0
     container_name: task-tracker-kafka
-    hostname: kafka
 
     ports:
-      # Пробрасываем порт 9092 на хост для доступа с localhost:9092.
-      # Этот внешний порт будет мапиться на ВНУТРЕННИЙ порт 9094 (слушатель EXTERNAL).
       - '9092:9094'
       # Внутренний порт 9092 (слушатель INTERNAL) доступен внутри Docker сети по имени сервиса 'kafka:9092'.
       # Внутренний порт 9093 (слушатель CONTROLLER) доступен внутри Docker сети по имени сервиса 'kafka:9093' для KRaft.
@@ -56,7 +110,6 @@ services:
     networks:
       - task-tracker-net
     volumes:
-      # Том для сохранения данных и метаданных KRaft между запусками
       - kafkadata:/tmp/kafka-logs
 
     environment:
@@ -77,7 +130,7 @@ services:
       # Настройка РЕКЛАМИРУЕМЫХ адресов - как клиенты должны подключаться
       # INTERNAL://kafka:9092    - Адрес для клиентов внутри Docker сети (имя сервиса)
       # EXTERNAL://localhost:9092 - Адрес для клиентов на хост-машине (localhost и проброшенный порт 9092)
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://task-tracker-kafka:9092,EXTERNAL://localhost:9092
 
       # Маппинг протоколов безопасности к слушателям (для PLAINTEXT просто указываем PLAINTEXT)
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
@@ -91,7 +144,7 @@ services:
       # Информация о кворуме контроллеров (для 1 узла - он сам).
       # Формат: <NodeId>@<Hostname>:<Port>
       # Используем внутреннее имя сервиса 'kafka' и внутренний порт контроллера 9093
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@task-tracker-kafka:9093
 
       # --- Прочее ---
 
@@ -103,13 +156,11 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1 # _ -> __
       KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
 
-      # Разрешаем нешифрованный трафик для простоты в dev (специфично для Bitnami)
-      #TODO принять решение о TLS в продакш реди среде
       ALLOW_PLAINTEXT_LISTENER: 'yes'
 
     restart: unless-stopped
 
-  redis:
+  task-tracker-redis:
     image: redis:8-alpine
     container_name: task-tracker-redis
     ports:
@@ -118,9 +169,9 @@ services:
       - task-tracker-net
     restart: unless-stopped
 
-  otel-collector:
+  task-tracker-otel-collector:
     image: otel/opentelemetry-collector-contrib:0.123.0
-    container_name: otel-collector
+    container_name: task-tracker-otel-collector
     command:
       - "--config=/etc/otelcol-contrib/config.yaml"
     volumes:
@@ -131,12 +182,12 @@ services:
     networks:
       - task-tracker-net
     depends_on:
-      - tempo
-      - loki
+      - task-tracker-tempo
+      - task-tracker-loki
 
-  prometheus:
+  task-tracker-prometheus:
     image: prom/prometheus:v3.3.1 
-    container_name: prometheus
+    container_name: task-tracker-prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       -  "--web.enable-lifecycle"
@@ -149,19 +200,20 @@ services:
     networks:
       - task-tracker-net
     depends_on:
-      - otel-collector
-  tempo-init:
+      - task-tracker-otel-collector
+
+  task-tracker-tempo-init:
     image: grafana/tempo:main-2345116
-    container_name: tempo-init
+    container_name: task-tracker-tempo-init
     user: root
     volumes:
       - tempo_data:/tmp/tempo
     # Явно указываем entrypoint и команду
     entrypoint: ["chown"]
     command: ["-R", "10001:10001", "/tmp/tempo"]
-  tempo:
+  task-tracker-tempo:
     image: grafana/tempo:main-2345116
-    container_name: tempo
+    container_name: task-tracker-tempo
     command: ["-config.file=/etc/tempo/tempo-config.yaml"]
     volumes:
       - ./observability/tempo-config.yaml:/etc/tempo/tempo-config.yaml
@@ -171,12 +223,12 @@ services:
     networks:
       - task-tracker-net
     depends_on:
-      tempo-init:
+      task-tracker-tempo-init:
         condition: service_completed_successfully
 
-  grafana:
+  task-tracker-grafana:
     image: grafana/grafana:12.0.0
-    container_name: grafana
+    container_name: task-tracker-grafana
     volumes:
       - grafana_data:/var/lib/grafana
       # Мапим папку для автоматического провижининга Data Sources
@@ -189,13 +241,13 @@ services:
     networks:
       - task-tracker-net
     depends_on:
-      - prometheus
-      - tempo
-      - loki
+      - task-tracker-prometheus
+      - task-tracker-tempo
+      - task-tracker-loki
 
-  loki:
+  task-tracker-loki:
     image: grafana/loki:main-23c4f8d
-    container_name: loki
+    container_name: task-tracker-loki
     command: [ "-config.file=/etc/loki/local-config.yaml" ]
     ports:
       - "3100:3100" # HTTP port Loki
@@ -205,18 +257,18 @@ services:
     networks:
       - task-tracker-net
 
-  redpanda-console:
+  task-tracker-redpanda-console:
     image: docker.redpanda.com/redpandadata/console
-    container_name: redpanda-console
+    container_name: task-tracker-redpanda-console
     restart: unless-stopped
     ports:
       - "8081:8080"
     networks:
       - task-tracker-net
     depends_on:
-      - kafka # Запускать после Kafka
+      - task-tracker-kafka # Запускать после Kafka
     environment:
-      KAFKA_BROKERS: "kafka:9092"
+      KAFKA_BROKERS: "task-tracker-kafka:9092"
       # Если у вас несколько брокеров, перечислите их через запятую: "kafka1:9092,kafka2:9092"
 
       # Опционально: конфигурация для Schema Registry, если используете
@@ -227,7 +279,7 @@ services:
       CONSOLE_CONFIG_FILEPATH: "" # Путь к файлу конфигурации внутри контейнера, если используется
       CONSOLE_LOG_LEVEL: "info"
 
-  mailhog:
+  task-tracker-mailhog:
     image: mailhog/mailhog:v1.0.1
     container_name: task-tracker-mailhog
     ports:

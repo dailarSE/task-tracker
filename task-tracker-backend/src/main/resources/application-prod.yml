@@ -1,0 +1,7 @@
+spring:
+  config:
+    activate:
+      on-profile: "prod"
+    import:
+      - "configtree:/run/secrets/"
+      - "file:/run/props/back_keys.properties"

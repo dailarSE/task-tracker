@@ -1,0 +1,335 @@
+services:
+  task-tracker-frontend:
+    image: ghcr.io/dailarse/task-tracker-frontend:${IMAGE_TAG}
+    container_name: task-tracker-frontend
+    environment:
+      - BACKEND_HOST=task-tracker-backend
+    ports:
+      - "80:80"
+    depends_on:
+      task-tracker-backend:
+        condition: service_healthy
+    networks:
+      - task-tracker-net
+    restart: always
+
+  task-tracker-backend:
+    image: ghcr.io/dailarse/task-tracker-task-tracker-backend:${IMAGE_TAG}
+    container_name: task-tracker-backend
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - MANAGEMENT_PORT=8081
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://task-tracker-postgres:5432/task_tracker_db
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=task-tracker-kafka:9092
+    secrets:
+      - postgres_user
+      - postgres_password
+      - jwt_secret
+      - api_key_scheduler
+      - source: back_keys
+        target: /run/props/back_keys.properties
+    healthcheck:
+      test: wget -qO- http://localhost:8081/actuator/health/readiness | grep -q "UP"
+      interval: 20s
+      start_period: 30s
+      retries: 5
+    depends_on:
+      task-tracker-postgres:
+        condition: service_healthy
+      task-tracker-kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - task-tracker-net
+    restart: always
+
+  task-tracker-scheduler:
+    image: ghcr.io/dailarse/task-tracker-task-tracker-scheduler:${IMAGE_TAG}
+    container_name: task-tracker-scheduler
+    environment:
+      - MANAGEMENT_PORT=8081
+      - SPRING_DATA_REDIS_HOST=task-tracker-redis
+      - APP_SCHEDULER_BACKEND_CLIENT_URL=http://task-tracker-backend:8080
+    secrets:
+      - api_key_scheduler
+    healthcheck:
+      test: wget -qO- http://localhost:8081/actuator/health/readiness | grep -q "UP"
+      interval: 20s
+      start_period: 30s
+      retries: 5
+    depends_on:
+      task-tracker-redis:
+        condition: service_healthy
+      task-tracker-backend:
+        condition: service_healthy
+    networks:
+      - task-tracker-net
+    restart: always
+
+  task-tracker-email-sender:
+    image: ghcr.io/dailarse/task-tracker-task-tracker-email-sender:${IMAGE_TAG}
+    container_name: task-tracker-email-sender
+    environment:
+      - MANAGEMENT_PORT=8081
+      - SPRING_DATA_REDIS_HOST=task-tracker-redis
+      - SPRING_MAIL_HOST=task-tracker-mailhog
+    healthcheck:
+      test: wget -qO- http://localhost:8081/actuator/health/readiness | grep -q "UP"
+      interval: 20s
+      start_period: 30s
+      retries: 5
+    depends_on:
+      task-tracker-kafka-init:
+        condition: service_completed_successfully
+    networks:
+      - task-tracker-net
+    restart: always
+
+  # === ХРАНИЛИЩА (Без внешних портов) ===
+
+  task-tracker-postgres:
+    image: postgres:17.4-alpine
+    container_name: task-tracker-postgres
+    environment:
+      POSTGRES_DB: task_tracker_db
+      POSTGRES_USER_FILE: /run/secrets/postgres_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    healthcheck:
+      test: >
+        USER=$$(cat /run/secrets/postgres_user) &&
+        DB=$${POSTGRES_DB:-task_tracker_db} &&
+        pg_isready -U $$USER -d $$DB
+      interval: 5s
+      retries: 3
+    volumes:
+      - prod_pgdata:/var/lib/postgresql/data
+    networks:
+      - task-tracker-net
+    secrets:
+      - postgres_user
+      - postgres_password
+    command:
+      - "postgres"
+      - "-c"
+      - "log_statement=all"
+      - "-c"
+      - "log_destination=stderr"
+      - "-c"
+      - "log_duration=on"
+      - "-c"
+      - "log_min_duration_statement=0"
+    restart: always
+
+  task-tracker-kafka-setup:
+    image: alpine:3.23.4
+    container_name: task-tracker-kafka-setup
+    user: "root"
+    volumes:
+      - prod_kafkadata:/var/lib/kafka/data
+    command: chown -R 1000:1000 /var/lib/kafka/data
+    networks:
+      - task-tracker-net
+
+  task-tracker-kafka:
+    image: apache/kafka-native:4.1.2
+    container_name: task-tracker-kafka
+    environment:
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_BROKER_ID: 1
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@task-tracker-kafka:9093
+      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://task-tracker-kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      CLUSTER_ID: '5dab7f5e-62be-4ea8-a502-9c202f75d710'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      ALLOW_PLAINTEXT_LISTENER: 'yes'
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - prod_kafkadata:/var/lib/kafka/data
+    depends_on:
+      task-tracker-kafka-setup:
+        condition: service_completed_successfully
+    networks:
+      - task-tracker-net
+    restart: always
+
+  task-tracker-kafka-init:
+    image: apache/kafka:4.0.0
+    container_name: task-tracker-kafka-init
+    networks:
+      - task-tracker-net
+    depends_on:
+      - task-tracker-kafka
+    entrypoint: [ "/bin/sh", "-c" ]
+    command:
+      - |
+        echo 'Waiting for Kafka to be fully ready...'
+        
+        until /opt/kafka/bin/kafka-topics.sh --bootstrap-server task-tracker-kafka:9092 --list > /dev/null 2>&1; do
+          echo 'Kafka is still initializing... (waiting 2s)'
+          sleep 2
+        done
+        
+        echo "Starting Kafka topics initialization..."
+        
+        # Список топиков
+        TOPICS="task_tracker.notifications.email_commands:3:1 
+                task_tracker.notifications.email_commands-recovery:3:1 
+                task_tracker.notifications.email_commands-dlt:1:1 
+                task_tracker.scheduler.events.user_selected_for_report:3:1 
+                task_tracker.reporting.events.daily_report_generated:3:1"
+        
+        for topic in $$TOPICS; do
+          # Исправлено: добавлен echo и двойные $$
+          NAME=$$(echo $$topic | cut -d: -f1)
+          PARTITIONS=$$(echo $$topic | cut -d: -f2)
+          REPLICAS=$$(echo $$topic | cut -d: -f3)
+        
+          echo "Checking topic: $$NAME"
+        
+          /opt/kafka/bin/kafka-topics.sh --create --if-not-exists \
+            --bootstrap-server task-tracker-kafka:9092 \
+            --topic "$$NAME" \
+            --partitions "$$PARTITIONS" \
+            --replication-factor "$$REPLICAS"
+        done
+        
+        echo "Kafka topics initialization completed successfully."
+
+  task-tracker-redis:
+    image: redis:8-alpine
+    container_name: task-tracker-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 3
+    networks:
+      - task-tracker-net
+    restart: always
+
+  task-tracker-otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.123.0
+    container_name: task-tracker-otel-collector
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+    networks:
+      - task-tracker-net
+    restart: always
+
+  task-tracker-prometheus:
+    image: prom/prometheus:v3.3.1
+    container_name: task-tracker-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-lifecycle"
+      - "--web.enable-remote-write-receiver"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prod_promdata:/prometheus
+    networks:
+      - task-tracker-net
+    restart: always
+
+  task-tracker-loki:
+    image: grafana/loki:main-23c4f8d
+    container_name: task-tracker-loki
+    command: [ "-config.file=/etc/loki/local-config.yaml" ]
+    volumes:
+      - ./observability/loki-config.yaml:/etc/loki/local-config.yaml
+      - prod_lokidata:/loki
+    networks:
+      - task-tracker-net
+    restart: always
+    
+  task-tracker-tempo-init:
+    image: alpine:3.23.4
+    container_name: task-tracker-tempo-init
+    user: root
+    volumes:
+      - prod_tempodata:/tmp/tempo
+    # Явно указываем entrypoint и команду
+    entrypoint: ["chown"]
+    command: ["-R", "10001:10001", "/tmp/tempo"]
+    
+  task-tracker-tempo:
+    image: grafana/tempo:main-2345116
+    container_name: task-tracker-tempo
+    command: ["-config.file=/etc/tempo/tempo-config.yaml"]
+    volumes:
+      - ./observability/tempo-config.yaml:/etc/tempo/tempo-config.yaml
+      - prod_tempodata:/tmp/tempo
+    networks:
+      - task-tracker-net
+    depends_on:
+      task-tracker-tempo-init:
+        condition: service_completed_successfully
+    restart: always
+
+  task-tracker-grafana:
+    image: grafana/grafana:12.0.0
+    container_name: task-tracker-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - prod_grafanadata:/var/lib/grafana
+      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    networks:
+      - task-tracker-net
+    depends_on:
+      - task-tracker-prometheus
+      - task-tracker-tempo
+      - task-tracker-loki
+    restart: always
+
+  task-tracker-kafka-ui:
+    image: docker.redpanda.com/redpandadata/console:latest
+    container_name: task-tracker-kafka-ui
+    ports:
+      - "8081:8080"
+    environment:
+      KAFKA_BROKERS: "task-tracker-kafka:9092"
+    networks:
+      - task-tracker-net
+    restart: always
+
+  task-tracker-mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: task-tracker-mailhog
+    ports:
+      - "8025:8025"
+    networks:
+      - task-tracker-net
+    restart: always
+
+volumes:
+  prod_pgdata:
+  prod_kafkadata:
+  prod_promdata:
+  prod_grafanadata:
+  prod_tempodata:
+  prod_lokidata:
+
+networks:
+  task-tracker-net:
+    driver: bridge
+
+secrets:
+  postgres_user:
+    file: ./secrets/.postgres_user
+  postgres_password:
+    file: ./secrets/.postgres_password
+  jwt_secret:
+    file: ./secrets/.jwt_secret
+  api_key_scheduler:
+    file: ./secrets/.api_key_scheduler
+  back_keys:
+    file: ./secrets/backend_api_keys.properties

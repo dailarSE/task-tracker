@@ -30,7 +30,7 @@ metrics_generator: # Tempo может генерировать метрики и
   storage:
     path: /tmp/tempo/generator/wal
     remote_write:
-      - url: http://prometheus:9090/api/v1/write # Отправляем метрики в Prometheus
+      - url: http://task-tracker-prometheus:9090/api/v1/write # Отправляем метрики в Prometheus
         send_exemplars: true
 
 overrides:

@@ -1,0 +1,14 @@
+server:
+  port: 8091
+app:
+  scheduler:
+    backend-client:
+      api-key: "${BACKEND_API_KEY:key-for-scheduler}"
+management:
+  server:
+    port: 9082
+
+logging:
+  structured:
+    format:
+      console:

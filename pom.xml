@@ -6,7 +6,7 @@
 
     <groupId>com.example.tasktracker</groupId>
     <artifactId>task-tracker</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <parent>
@@ -32,6 +32,10 @@
         <testcontainers.version>1.20.6</testcontainers.version>
         <jjwt.version>0.12.5</jjwt.version>
         <shedlock.version>6.9.0</shedlock.version>
+
+        <jib-maven-plugin.version>3.5.1</jib-maven-plugin.version>
+        <ghcr.username>dailarse</ghcr.username>
+        <image.tag>${project.version}</image.tag>
     </properties>
 
     <modules>
@@ -64,18 +68,30 @@
         <pluginManagement>
             <plugins>
                 <plugin>
-                    <groupId>org.springframework.boot</groupId>
-                    <artifactId>spring-boot-maven-plugin</artifactId>
-                    <executions>
-                        <execution>
-                            <id>build-info</id>
-                            <goals>
-                                <goal>build-info</goal>
-                            </goals>
-                        </execution>
-                    </executions>
+                    <groupId>com.google.cloud.tools</groupId>
+                    <artifactId>jib-maven-plugin</artifactId>
+                    <version>${jib-maven-plugin.version}</version>
+                    <configuration>
+                        <from>
+                            <image>eclipse-temurin:21.0.11_10-jre-alpine-3.23</image>
+                        </from>
+                        <to>
+                            <image>ghcr.io/${ghcr.username}/${project.artifactId}</image>
+                            <tags>
+                                <tag>${image.tag}</tag>
+                                <tag>${project.version}</tag>
+                            </tags>
+                            <auth>
+                                <username>${env.GHCR_USER}</username>
+                                <password>${env.GHCR_TOKEN}</password>
+                            </auth>
+                        </to>
+                        <container>
+                            <user>1000</user>
+                            <creationTime>USE_CURRENT_TIMESTAMP</creationTime>
+                        </container>
+                    </configuration>
                 </plugin>
-
                 <!-- Maven Compiler Plugin -->
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>

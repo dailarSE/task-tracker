@@ -4,6 +4,9 @@ pipeline {
     environment {
         SPRING_PROFILES_ACTIVE = 'ci'
         TZ = 'UTC'
+        REGISTRY = "ghcr.io/dailarse"
+        APP_VERSION = sh(script: "./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout", returnStdout: true).trim()
+        IMAGE_TAG = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
     }
 
     tools {
@@ -16,6 +19,41 @@ pipeline {
                 script {
                     echo "Running Maven build, all tests (unit & integration), and generating coverage report..."
                     sh "mvn clean verify -B"
+                }
+            }
+        }
+        stage('Build & Push OCI Images') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch pattern: ".*main", comparator: "REGEXP"
+                    expression { return env.GIT_BRANCH == 'origin/main' }
+                    expression { return env.GIT_BRANCH == 'main' }
+                }
+            }
+            steps {
+                script {
+                    def gitHash = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+
+                    withCredentials([usernamePassword(credentialsId: 'ghcr-credentials',
+                            usernameVariable: 'GHCR_USER',
+                            passwordVariable: 'GHCR_TOKEN')]) {
+
+                        sh "./mvnw compile jib:build -Dimage.tag=${gitHash} -DskipTests -Djib.serialize=true"
+
+                        sh 'echo ${GHCR_TOKEN} | docker login ghcr.io -u ${GHCR_USER} --password-stdin'
+
+                        def frontendImage = "${env.REGISTRY}/task-tracker-frontend"
+
+                        sh "docker build --build-arg VERSION=${env.IMAGE_TAG} \
+                            -t ${frontendImage}:${env.IMAGE_TAG} \
+                            -t ${frontendImage}:${env.APP_VERSION} \
+                            -t ${frontendImage}:latest ./task-tracker-frontend"
+
+                        sh "docker push ${frontendImage}:${env.IMAGE_TAG}"
+                        sh "docker push ${frontendImage}:${env.APP_VERSION}"
+                        sh "docker push ${frontendImage}:latest"
+                    }
                 }
             }
         }

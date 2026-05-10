@@ -1,11 +1,18 @@
 /* ==========================================================================
    Global & Layout Styles
    ========================================================================== */
+html, body {
+    height: 100%;
+    margin: 0;
+}
+
 body {
     font-family: sans-serif;
     background-color: #f0f0f0;
-    margin: 0;
-    padding: 20px;
+
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
 }
 
 header {
@@ -15,6 +22,25 @@ header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-shrink: 0;
+}
+
+main {
+    flex: 1 0 auto;
+    padding: 20px;
+}
+
+footer {
+    flex-shrink: 0;
+    background-color: #e9ecef;
+    border-top: 1px solid #dee2e6;
+    text-align: right;
+    padding: 5px 20px;
+}
+
+#app-version {
+    color: #999;
+    font-size: 0.75rem;
 }
 
 #userInfo {

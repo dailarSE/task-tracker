@@ -54,7 +54,7 @@ class RedisIdempotencyGuardIT extends ContainerizedIntegrationTest {
         assertNotNull(redisTemplate.opsForValue().get(reportKey));
 
         // 2. Имитируем успешную отправку первого письма (Finalization)
-        redisTemplate.opsForValue().set(welcomeKey, "SENT", Duration.ofHours(1));
+        redisTemplate.opsForValue().set(welcomeKey, IdempotencyStatus.SENT, Duration.ofHours(1));
 
         // 3. Повторный проход того же батча (например, ретрай Kafka)
         // Обнуляем статус для теста

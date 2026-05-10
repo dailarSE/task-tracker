@@ -1,6 +1,7 @@
 package com.example.tasktracker.emailsender.pipeline.sender;
 
 import com.example.tasktracker.emailsender.pipeline.model.PipelineItem;
+import lombok.NonNull;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -24,7 +25,7 @@ public interface Sender {
      * @param item Элемент, содержащий данные для отправки и контекст для записи результата.
      * @return Фьюча, сигнализирующая о завершении логической обработки элемента.
      */
-    CompletableFuture<Void> sendAsync(PipelineItem item);
+    CompletableFuture<Void> sendAsync(@NonNull PipelineItem item);
 
     /**
      * Группирует список элементов в единый асинхронный чанк.

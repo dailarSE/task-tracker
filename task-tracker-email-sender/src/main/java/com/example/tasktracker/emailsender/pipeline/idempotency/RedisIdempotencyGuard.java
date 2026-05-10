@@ -16,11 +16,12 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.example.tasktracker.emailsender.pipeline.idempotency.IdempotencyStatus.PROCESSING;
+import static com.example.tasktracker.emailsender.pipeline.idempotency.IdempotencyStatus.SENT;
+
 @Slf4j
 public class RedisIdempotencyGuard implements IdempotencyGuard {
-    private static final String STATUS_ACQUIRED = "ACQUIRED";
-    private static final String STATUS_SENT = "SENT";
-    private static final String STATUS_PROCESSING = "PROCESSING";
+    protected static final String STATUS_ACQUIRED = "ACQUIRED";
 
     private final StringRedisTemplate redisTemplate;
     private final TemplateKeyRegistry keyRegistry;
@@ -120,7 +121,7 @@ public class RedisIdempotencyGuard implements IdempotencyGuard {
         try {
             List<String> args = new ArrayList<>(leaseValues);
             args.add(String.valueOf(lockTtl.toSeconds()));
-            args.add(STATUS_SENT);
+            args.add(SENT);
 
             List<String> results = redisTemplate.execute(
                     idempotencyScript,
@@ -152,7 +153,7 @@ public class RedisIdempotencyGuard implements IdempotencyGuard {
     private void updateItemStateBasedOnLock(PipelineItem item, String key, String status) {
         switch (status) {
             case STATUS_ACQUIRED -> log.trace("Lock acquired for key: '{}'", key);
-            case STATUS_SENT -> {
+            case SENT -> {
                 item.tryReject(
                         PipelineItem.Status.SKIPPED,
                         RejectReason.DUPLICATE,
@@ -160,7 +161,7 @@ public class RedisIdempotencyGuard implements IdempotencyGuard {
                 );
                 log.trace("Deduplication: key '{}' already processed (SENT).", key);
             }
-            case STATUS_PROCESSING -> {
+            case PROCESSING -> {
                 item.tryReject(
                         PipelineItem.Status.RETRY,
                         RejectReason.CONCURRENT_LOCK,

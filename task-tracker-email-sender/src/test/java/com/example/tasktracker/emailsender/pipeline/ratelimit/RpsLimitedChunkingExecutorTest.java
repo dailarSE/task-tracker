@@ -5,6 +5,7 @@ import com.example.tasktracker.emailsender.exception.infrastructure.Infrastructu
 import com.example.tasktracker.emailsender.pipeline.model.PipelineItem;
 import com.example.tasktracker.emailsender.pipeline.sender.Sender;
 import com.example.tasktracker.emailsender.util.MutableClock;
+import jakarta.validation.constraints.NotNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -49,7 +50,7 @@ class RpsLimitedChunkingExecutorTest {
         props.setBudget(budget);
 
         sender = new Sender() {
-            @Override public CompletableFuture<Void> sendAsync(PipelineItem item) { return null; }
+            @Override public CompletableFuture<Void> sendAsync(@NotNull PipelineItem item) { return null; }
 
             @Override
             public CompletableFuture<Void> sendChunkAsync(List<PipelineItem> chunk) {
@@ -61,7 +62,7 @@ class RpsLimitedChunkingExecutorTest {
 
     @Test
     @DisplayName("Success: All items processed when futures complete instantly")
-    void shouldProcessAllItems() throws Exception {
+    void shouldProcessAllItems() {
         // Given
         var items = createItems(TOTAL_ITEMS);
         RpsLimiter limiter = (req) -> Math.min(req, CHUNK_SIZE);

@@ -17,6 +17,9 @@ app:
         retention-policies:
           USER_WELCOME: 7d
           DAILY_TASK_REPORT: 30h
+      kafka-retry:
+        blocking-retry-interval: 60s
+        max-attempts: -1
 
     message-validity:
       default-duration: 7d

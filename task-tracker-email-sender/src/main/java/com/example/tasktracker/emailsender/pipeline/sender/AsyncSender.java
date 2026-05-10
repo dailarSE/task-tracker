@@ -5,6 +5,7 @@ import com.example.tasktracker.emailsender.exception.RetryableProcessingExceptio
 import com.example.tasktracker.emailsender.pipeline.model.PipelineItem;
 import com.example.tasktracker.emailsender.pipeline.model.PipelineItem.Status;
 import com.example.tasktracker.emailsender.pipeline.model.RejectReason;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -19,7 +20,7 @@ public class AsyncSender implements Sender {
     private final EmailClient emailClient;
 
     @Override
-    public CompletableFuture<Void> sendAsync(PipelineItem item) {
+    public CompletableFuture<Void> sendAsync(@NonNull PipelineItem item) {
         return emailClient.send(item.getPayload())
                 .handle((result, throwable) -> {
                     if (throwable == null)

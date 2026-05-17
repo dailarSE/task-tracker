@@ -1,3 +1,5 @@
+#disabled: false
+
 receivers:
   otlp:
     protocols:
@@ -7,11 +9,52 @@ receivers:
           allowed_origins:
             - "http://*"
             - "https://*"
+  postgresql:
+    endpoint: task-tracker-postgres:5432
+    username: ${file:/run/secrets/postgres_user}
+    password: ${file:/run/secrets/postgres_password}
+    tls:
+      insecure: true
+    databases: [ task_tracker_db ]
+    collection_interval: 15s
+    initial_delay: 10s
+
+  kafkametrics:
+    cluster_alias: task-tracker-kafka
+    protocol_version: 2.0.0
+    brokers: task-tracker-kafka:9092
+    #      groups:
+    #        - scheduler-daily-report-group
+    #        - daily-report-consumer
+    #        - task-tracker-email-sender-v1
+    #        - task-tracker-email-sender-v1-retry
+    collection_interval: 15s
+    scrapers:
+      - brokers
+      - topics
+      - consumers
+
+  hostmetrics:
+    collection_interval: 15s
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled:
+              true
 
 processors:
   batch:
     send_batch_size: 1024
     timeout: 10s
+
+  transform/normalize_db_attributes:
+    error_mode: propagate
+    trace_statements:
+      - context: span
+        statements:
+          - set(span.attributes["db.system.name"], span.attributes["db.system"]) where span.attributes["db.system"] != nil
+          - delete_key(span.attributes, "db.system") where span.attributes["db.system"] != nil
 
 exporters:
   # --- Экспортер для МЕТРИК ---
@@ -30,22 +73,47 @@ exporters:
   debug:
     verbosity: detailed # Уровни: basic, normal, detailed
 
+connectors:
+  spanmetrics:
+    metrics_flush_interval: 15s
+    histogram:
+      explicit:
+        buckets: [ 1ms, 5ms, 10ms, 50ms, 100ms, 250ms, 500ms, 1s, 2s, 5s, 10s ]
+    dimensions:
+      - name: http.request.method
+      - name: http.response.status_code
+      - name: http.route
+      - name: messaging.system
+      - name: messaging.destination.name
+      - name: messaging.operation
+      - name: db.system.name
+      - name: db.operation
+      - name: db.name
+      - name: db.statement
+      - name: peer.service
+    exclude_dimensions: [ 'service.name' ]
+    events:
+      enabled: true
+      dimensions:
+        - name: exception.type
+
+
 service:
   pipelines:
     # --- Pipeline для МЕТРИК ---
     metrics:
-      receivers: [otlp]
-      processors: [batch]
-      exporters: [prometheus, debug]
+      receivers: [ otlp, spanmetrics, kafkametrics , postgresql, hostmetrics ]
+      processors: [ batch ]
+      exporters: [ prometheus, debug ]
 
     # --- Pipeline для ТРЕЙСОВ ---
     traces:
-      receivers: [otlp]
-      processors: [batch]
-      exporters: [otlphttp/tempo, debug]
+      receivers: [ otlp ]
+      processors: [ transform/normalize_db_attributes, batch ]
+      exporters: [ spanmetrics, otlphttp/tempo, debug ]
 
     # --- Pipeline для ЛОГОВ ---
     logs:
-      receivers: [otlp]
-      processors: [batch]
-      exporters: [loki, debug]
+      receivers: [ otlp ]
+      processors: [ batch ]
+      exporters: [ loki, debug ]

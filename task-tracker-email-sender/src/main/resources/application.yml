@@ -32,7 +32,7 @@ spring:
     name: task-tracker-email-sender
 
   mail:
-    host: mailhog
+    host: task-tracker-mailhog
     port: 1025
     username: ""
     password: ""

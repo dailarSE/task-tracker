@@ -174,10 +174,13 @@ services:
     container_name: task-tracker-otel-collector
     command:
       - "--config=/etc/otelcol-contrib/config.yaml"
+    secrets:
+      - postgres_user
+      - postgres_password
     volumes:
-      - ./observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml # Мапим конфиг
+      - ./observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
     ports:
-      - "4318:4318" # OTLP HTTP receiver
+      - "4318:4318"
       - "8889:8889" # Prometheus exporter port (для сбора метрик самим Prometheus)
     networks:
       - task-tracker-net
@@ -231,13 +234,13 @@ services:
     container_name: task-tracker-grafana
     volumes:
       - grafana_data:/var/lib/grafana
-      # Мапим папку для автоматического провижининга Data Sources
+      - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
       - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
     environment:
-      - GF_AUTH_ANONYMOUS_ENABLED=true # Разрешить анонимный доступ для простоты
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin # Дать админские права анониму
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
     ports:
-      - "3000:3000" # UI Grafana
+      - "3000:3000"
     networks:
       - task-tracker-net
     depends_on:

@@ -51,6 +51,7 @@ public class KafkaContextFactory {
                 records.getFirst().topic();
 
         fillConnectionDetails(context, topic);
+        context.setRemoteServiceName(resolver.getRemoteServiceName());
 
         context.setBatchSize(records.size());
 
@@ -79,6 +80,8 @@ public class KafkaContextFactory {
                 () -> context.setConversationId("unset"));
         context.setPartition(String.valueOf(record.partition()));
         context.setOffset(String.valueOf(record.offset()));
+
+        context.setRemoteServiceName(resolver.getRemoteServiceName());
 
         if (doCaptureSizes) {
             context.setBodySize(calculateBodySize(record));
@@ -142,8 +145,8 @@ public class KafkaContextFactory {
     }
 
     public <T extends KafkaRecordPublishContext> T createPublishContext(ProducerRecord<byte[], byte[]> record,
-                                                                        Supplier<T> contextSupplier,
-                                                                        BiConsumer<T, ProducerRecord<byte[], byte[]>> dataEnhancer) {
+                                                                                                                        Supplier<T> contextSupplier,
+                                                                                                                        BiConsumer<T, ProducerRecord<byte[], byte[]>> dataEnhancer) {
         T context = contextSupplier.get();
 
         context.setCarrier(record);
@@ -157,6 +160,8 @@ public class KafkaContextFactory {
                 () -> context.setConversationId("unset"));
 
         context.setTopic(record.topic());
+
+        context.setRemoteServiceName(resolver.getRemoteServiceName());
 
         if (doCaptureSizes) {
             context.setBodySize(calculateBodySize(record));
@@ -181,6 +186,7 @@ public class KafkaContextFactory {
         context.setServerAddress(resolver.getServerAddress());
         context.setServerPort(resolver.getServerPort());
         context.setTopic(topic);
+
     }
 
 // --- Счётчики байтов ---

@@ -37,6 +37,11 @@ spring:
     username: ""
     password: ""
 
+  data:
+    redis:
+      host: task-tracker-redis
+      port: 6379
+
   kafka:
     bootstrap-servers: task-tracker-kafka:9092
     consumer:

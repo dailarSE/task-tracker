@@ -24,7 +24,7 @@ spring:
     deserialization:
       FAIL_ON_UNKNOWN_PROPERTIES: true
   kafka:
-    bootstrap-servers: task-tracker-kafka:9092 # Адрес Kafka-брокера из docker-compose.yml
+    bootstrap-servers: task-tracker-kafka:9092
     admin:
       fail-fast: true
     producer:
@@ -33,11 +33,10 @@ spring:
       acks: all
       retries: 2
       properties:
-        spring.json.add.type.headers: false # Не добавлять заголовки с информацией о типе Java-класса
-        # Таймауты и надежность
-        delivery.timeout.ms: 50000 # общий таймаут на доставку сообщения, включая ретраи
-        request.timeout.ms: 15000   # 30 секунд - таймаут на один запрос к брокеру
-        max.block.ms: 30000       # 1 минута - максимальное время блокировки send()
+        spring.json.add.type.headers: false
+        delivery.timeout.ms: 50000
+        request.timeout.ms: 15000
+        max.block.ms: 30000
         enable.idempotence: false
 
 server:
@@ -68,7 +67,6 @@ management:
     web:
       exposure:
         include: health, info
-  # Отключим метрики JMX, если не нужны
   jmx:
     metrics:
       export:
@@ -79,7 +77,7 @@ otel:
     name: ${spring.application.name}
   exporter:
     otlp:
-      endpoint: http://task-tracker-otel-collector:4318 # OTLP/HTTP
+      endpoint: http://task-tracker-otel-collector:4318
   instrumentation:
     common:
       default-enabled: true

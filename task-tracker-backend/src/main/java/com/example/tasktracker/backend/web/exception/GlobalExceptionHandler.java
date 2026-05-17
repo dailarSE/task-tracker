@@ -5,6 +5,7 @@ import com.example.tasktracker.backend.security.exception.BadJwtException;
 import com.example.tasktracker.backend.security.jwt.JwtValidator;
 import com.example.tasktracker.backend.web.ApiConstants;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import io.opentelemetry.api.trace.Span;
 import jakarta.validation.ConstraintViolationException;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -632,13 +633,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     /**
+     * Обрабатывает все прочие исключения.
+     */
+    @ExceptionHandler(Exception.class)
+    public ProblemDetail handleAllExceptions(Exception ex, WebRequest request) {
+        return handleInternalServerError(ex, request, "internal.unhandled", null);
+    }
+
+    /**
      * Централизованно обрабатывает непредвиденные исключения, приводящие к HTTP 500.
      * Генерирует уникальный errorRef, логирует его вместе с полным исключением
      * и возвращает клиенту стандартизированный ProblemDetail.
      *
-     * @param ex             Исключение, вызвавшее ошибку.
-     * @param request        Текущий веб-запрос.
-     * @param typeSuffix     Суффикс для ключей MessageSource и URI типа проблемы.
+     * @param ex              Исключение, вызвавшее ошибку.
+     * @param request         Текущий веб-запрос.
+     * @param typeSuffix      Суффикс для ключей MessageSource и URI типа проблемы.
      * @param additionalProps Дополнительные properties (кроме errorRef).
      * @return Сконфигурированный ProblemDetail.
      */
@@ -670,7 +679,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         problemDetail.setProperties(properties);
 
         setInstanceUriIfAbsent(problemDetail, request);
+
+        captureExceptionInTrace(ex);
+
         return problemDetail;
+    }
+
+    private void captureExceptionInTrace(Exception ex) {
+        Span current = Span.current();
+        if (current != null && current.isRecording())
+            current.recordException(ex);
     }
 
     /**
@@ -698,7 +716,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      * @param propertyPath Полный путь к свойству.
      * @return Имя поля или исходный путь, если точка не найдена.
      */
-     String getFieldNameFromPath(String propertyPath) {
+    String getFieldNameFromPath(String propertyPath) {
         // propertyPath может быть сложным, например, "methodName.arg0.fieldName"
         // Пытаемся извлечь последнюю часть.
         if (propertyPath.contains(".")) {
@@ -714,7 +732,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
      * @param problemDetail Объект {@link ProblemDetail} для модификации.
      * @param request       Текущий веб-запрос.
      */
-     void setInstanceUriIfAbsent(ProblemDetail problemDetail, WebRequest request) {
+    void setInstanceUriIfAbsent(ProblemDetail problemDetail, WebRequest request) {
         if (problemDetail.getInstance() == null && request instanceof ServletWebRequest swr) {
             problemDetail.setInstance(URI.create(swr.getRequest().getRequestURI()));
         }

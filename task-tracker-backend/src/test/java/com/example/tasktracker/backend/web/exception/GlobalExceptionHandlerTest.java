@@ -4,6 +4,7 @@ import com.example.tasktracker.backend.security.exception.BadJwtException;
 import com.example.tasktracker.backend.security.jwt.JwtErrorType;
 import com.example.tasktracker.backend.security.jwt.JwtValidator;
 import com.example.tasktracker.backend.web.ApiConstants;
+import io.opentelemetry.api.trace.Span;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
@@ -16,6 +17,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -332,5 +334,40 @@ public class GlobalExceptionHandlerTest {
         when(mockHttpServletRequest.getHeader(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer " + fullToken);
         String snippet = globalExceptionHandler.extractTokenSnippetFromRequest(mockServletWebRequest);
         assertThat(snippet).isEqualTo(expectedSnippet);
+    }
+
+    @Test
+    @DisplayName("handleAllExceptions: должен вернуть 500 и записать исключение в OTel Span")
+    void handleAllExceptions_shouldReturn500AndRecordExceptionInSpan() {
+        // Arrange
+        Exception exception = new RuntimeException("Unexpected crash");
+        String typeSuffix = "internal.unhandled";
+
+        when(mockMessageSource.getMessage(eq("problemDetail." + typeSuffix + ".title"), isNull(), eq(TEST_LOCALE)))
+                .thenReturn("Internal Server Error");
+        when(mockMessageSource.getMessage(eq("problemDetail." + typeSuffix + ".detail"), any(Object[].class), eq(TEST_LOCALE)))
+                .thenAnswer(invocation -> "Ref: " + ((Object[])invocation.getArgument(1))[0]);
+
+        Span mockSpan = mock(Span.class);
+        when(mockSpan.isRecording()).thenReturn(true);
+
+        try (MockedStatic<Span> mockedSpanStatic = mockStatic(Span.class)) {
+            mockedSpanStatic.when(Span::current).thenReturn(mockSpan);
+
+            // Act
+            ProblemDetail problemDetail = globalExceptionHandler.handleAllExceptions(exception, mockServletWebRequest);
+
+            // Assert
+            // 1. Проверяем структуру ProblemDetail
+            assertProblemDetailBase(problemDetail, HttpStatus.INTERNAL_SERVER_ERROR, "internal/unhandled", TEST_REQUEST_URI);
+            assertThat(problemDetail.getProperties()).containsKey("errorRef");
+
+            // 2. Проверяем взаимодействие с OTel
+            // Проверяем, что recordException был вызван именно с нашим исключением
+            verify(mockSpan, times(1)).recordException(exception);
+
+            // Дополнительно: проверяем, что Span.current() вообще вызывался
+            mockedSpanStatic.verify(Span::current, times(1));
+        }
     }
 }

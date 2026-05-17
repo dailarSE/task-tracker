@@ -18,10 +18,6 @@ server:
     include-exception: true
     whitelabel.enabled: true
 
-otel:
-  service:
-    name: ${spring.application.name}
-
 springdoc:
   swagger-ui:
     enabled: false

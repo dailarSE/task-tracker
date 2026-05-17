@@ -29,7 +29,7 @@ public class RedisContextFactory {
                 redisPropertiesResolver.getDatabaseIndex()
         );
 
-        context.setRemoteServiceName("redis");
+        context.setRemoteServiceName(redisPropertiesResolver.getAddress());
 
         if (batchSize != null) context.setBatchSize(batchSize);
         if (scriptSha1 != null) context.setScriptSha1(scriptSha1);

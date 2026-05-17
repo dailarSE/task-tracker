@@ -28,6 +28,9 @@ public class KafkaPropertiesResolver {
     private final String serverAddress;
 
     @Getter
+    private final String remoteServiceName;
+
+    @Getter
     private final int serverPort;
 
     public KafkaPropertiesResolver(
@@ -47,6 +50,8 @@ public class KafkaPropertiesResolver {
         ServerEndpoint endpoint = determineServerEndpoint(bootstrapServers);
         this.serverAddress = endpoint.host();
         this.serverPort = endpoint.port();
+
+        this.remoteServiceName = serverAddress;
     }
 
     private String determineClientId(KafkaProperties props, String appName, String instanceId) {
@@ -118,5 +123,6 @@ public class KafkaPropertiesResolver {
         return new ServerEndpoint(host, port);
     }
 
-    private record ServerEndpoint(String host, int port) {}
+    private record ServerEndpoint(String host, int port) {
+    }
 }

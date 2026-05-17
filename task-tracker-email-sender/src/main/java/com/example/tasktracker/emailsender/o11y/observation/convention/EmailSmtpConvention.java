@@ -38,7 +38,7 @@ public class EmailSmtpConvention extends BaseO11yConvention<EmailSendContext> {
 
     @Override
     public String getContextualName(EmailSendContext context) {
-        return "email.send";
+        return context.getTemplateId() + " send";
     }
 
     public enum LowCardinalityTags implements KeyName {

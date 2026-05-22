@@ -233,7 +233,6 @@ services:
     image: grafana/grafana:12.0.0
     container_name: task-tracker-grafana
     volumes:
-      - grafana_data:/var/lib/grafana
       - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
       - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
     environment:
@@ -296,7 +295,6 @@ volumes:
   pgdata:
   kafkadata:
   prometheus_data:
-  grafana_data:
   tempo_data:
   loki_data:
 

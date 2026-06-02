@@ -45,7 +45,14 @@ public class EmailErrorResolver {
             log.debug("Fatal data/template error: {}.", t.getMessage());
             return new FatalProcessingException(RejectReason.INVALID_PAYLOAD, "Email content preparation failed", t);
         }
-        if (t instanceof MessagingException) {
+        if (t instanceof MessagingException me) {
+            Throwable cause = me.getCause();
+
+            if (cause instanceof java.net.SocketTimeoutException || cause instanceof java.net.SocketException) {
+                log.debug("Temporary SMTP socket timeout during transport operation.");
+                return new InfrastructureException("SMTP socket timeout during transport operation", t);
+            }
+
             log.debug("Exception during message preparation: {}. ", t.getMessage());
             return new FatalProcessingException(RejectReason.INVALID_PAYLOAD, "MIME message creation failed", t);
         }

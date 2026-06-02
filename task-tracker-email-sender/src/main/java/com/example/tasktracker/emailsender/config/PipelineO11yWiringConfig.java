@@ -18,6 +18,7 @@ import io.github.bucket4j.BlockingBucket;
 import io.micrometer.observation.ObservationRegistry;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.mail.MailProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -25,6 +26,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.mail.javamail.JavaMailSender;
 
 import java.util.List;
+import java.util.Properties;
 
 @Configuration
 public class PipelineO11yWiringConfig {
@@ -36,9 +38,12 @@ public class PipelineO11yWiringConfig {
             ObservationRegistry registry,
             EmailSmtpConvention smtpConvention,
             SmtpContextFactory smtpContextFactory,
-            EmailSenderProperties emailSenderProperties
+            EmailSenderProperties emailSenderProperties,
+            MailProperties mailProperties,
+            ReliabilityProperties reliabilityProperties
     ) {
-        EmailTransport delegate = smtpEmailTransport(javaMailSender, emailSenderProperties, emailErrorResolver);
+        EmailTransport delegate =
+                smtpEmailTransport(javaMailSender, emailSenderProperties, emailErrorResolver, mailProperties, reliabilityProperties);
         return new ObservedEmailTransport(
                 delegate,
                 registry,
@@ -52,14 +57,24 @@ public class PipelineO11yWiringConfig {
     @ConditionalOnProperty(value = "app.observation.enabled", havingValue = "false")
     public EmailTransport rawEmailTransport(JavaMailSender javaMailSender,
                                             EmailSenderProperties emailSenderProperties,
-                                            EmailErrorResolver emailErrorResolver) {
-        return smtpEmailTransport(javaMailSender, emailSenderProperties, emailErrorResolver);
+                                            EmailErrorResolver emailErrorResolver,
+                                            MailProperties mailProperties,
+                                            ReliabilityProperties reliabilityProperties) {
+
+        return smtpEmailTransport(javaMailSender, emailSenderProperties, emailErrorResolver, mailProperties, reliabilityProperties);
     }
 
-    public SmtpEmailTransport smtpEmailTransport(JavaMailSender javaMailSender,
+    public EmailTransport smtpEmailTransport(JavaMailSender javaMailSender,
                                              EmailSenderProperties emailSenderProperties,
-                                             EmailErrorResolver emailErrorResolver) {
-        return new SmtpEmailTransport(javaMailSender, emailSenderProperties, emailErrorResolver);
+                                             EmailErrorResolver emailErrorResolver,
+                                             MailProperties mailProperties,
+                                             ReliabilityProperties reliabilityProperties) {
+        SmtpEmailTransport baseTransport = new SmtpEmailTransport(javaMailSender, emailSenderProperties, emailErrorResolver);
+        Properties javamailProperties = ((org.springframework.mail.javamail.JavaMailSenderImpl) javaMailSender).getJavaMailProperties();
+
+        SmtpTransportFactory factory = new SmtpTransportFactory(mailProperties, javamailProperties);
+
+        return new PooledEmailTransport(baseTransport, factory, reliabilityProperties, emailErrorResolver);
     }
 
     @Bean

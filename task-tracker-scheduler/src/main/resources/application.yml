@@ -107,7 +107,8 @@ app:
       daily-report:
         enabled: true
         topic-name: "task_tracker.scheduler.events.user_selected_for_report"
-        sink-topic-name: "task_tracker.reporting.events.daily_report_generated"
+#        sink-topic-name: "task_tracker.reporting.events.daily_report_generated"
+        sink-topic-name: "task_tracker.notifications.email_commands"
         group-id: "scheduler-daily-report-group"
         concurrency: 3
         max-poll-records: 500

@@ -28,7 +28,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -51,7 +50,6 @@ public class DailyTaskReportProducerJob {
     private final JobStateRepository jobStateRepository;
     private final UserIdsFetcherClient userIdsFetcherClient;
     private final KafkaTemplate<String, UserSelectedForDailyReportEvent> kafkaTemplate;
-    private final Executor kafkaCallbackExecutor;
     private final DailyReportJobProperties jobProperties;
     private final String producerTopicName;
     private final MetricsReporter metrics;
@@ -65,13 +63,11 @@ public class DailyTaskReportProducerJob {
     public DailyTaskReportProducerJob(JobStateRepository jobStateRepository,
                                       UserIdsFetcherClient userIdsFetcherClient,
                                       KafkaTemplate<String, UserSelectedForDailyReportEvent> kafkaTemplate,
-                                      Executor kafkaCallbackExecutor,
                                       DailyReportJobProperties jobProperties,
                                       MetricsReporter metrics) {
         this.jobStateRepository = jobStateRepository;
         this.userIdsFetcherClient = userIdsFetcherClient;
         this.kafkaTemplate = kafkaTemplate;
-        this.kafkaCallbackExecutor = kafkaCallbackExecutor;
         this.jobProperties = jobProperties;
         this.producerTopicName = jobProperties.getKafkaTopicName();
         this.metrics = metrics;
@@ -139,8 +135,7 @@ public class DailyTaskReportProducerJob {
                 log.error("Job '{}' for report date {} failed critically. It will be retried on the next schedule.",
                         jobName, reportDate, e);
                 // НЕ сохраняем JobStatus.FAILED, чтобы разрешить автоматический ретрай при следующем запуске по cron.
-            }
-            finally {
+            } finally {
                 Tags finalTags = Tags.of("job_name", jobName, "status", finalStatus);
                 sample.stop(metrics.getTimer(Metric.JOB_RUN_DURATION, finalTags));
             }
@@ -183,7 +178,7 @@ public class DailyTaskReportProducerJob {
                     UserSelectedForDailyReportEvent event =
                             new UserSelectedForDailyReportEvent(userId, jobRunId, reportDate);
                     return kafkaTemplate.send(producerTopicName, event)
-                            .whenCompleteAsync((result, ex) -> {
+                            .whenComplete((result, ex) -> {
                                 if (ex != null) {
                                     hasFailures.set(true);
                                     metrics.incrementCounter(Metric.JOB_KAFKA_SEND_FAILURE, Tags.of("job_name", jobName));
@@ -192,7 +187,7 @@ public class DailyTaskReportProducerJob {
                                 } else {
                                     successCount.incrementAndGet();
                                 }
-                            }, kafkaCallbackExecutor);
+                            });
                 })
                 .map(f -> f.<Void>thenApply(res -> null))
                 .toList();

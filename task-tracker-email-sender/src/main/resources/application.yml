@@ -84,6 +84,7 @@ management:
       export:
         enabled: true
         url: http://task-tracker-otel-collector:4318/v1/metrics
+        base-time-unit: seconds
     logging:
       export:
         enabled: true

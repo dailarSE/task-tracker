@@ -1,13 +1,13 @@
 package com.example.tasktracker.scheduler.job.dailyreport;
 
 import com.example.tasktracker.scheduler.client.dto.PageInfo;
-import com.example.tasktracker.scheduler.job.JobStateRepository;
-import com.example.tasktracker.scheduler.job.dto.JobExecutionState;
 import com.example.tasktracker.scheduler.config.SchedulerAppProperties;
+import com.example.tasktracker.scheduler.job.JobStateRepository;
 import com.example.tasktracker.scheduler.job.dailyreport.client.UserIdsFetcherClient;
 import com.example.tasktracker.scheduler.job.dailyreport.client.dto.PaginatedUserIdsResponse;
 import com.example.tasktracker.scheduler.job.dailyreport.config.DailyReportJobProperties;
 import com.example.tasktracker.scheduler.job.dailyreport.messaging.event.UserSelectedForDailyReportEvent;
+import com.example.tasktracker.scheduler.job.dto.JobExecutionState;
 import com.example.tasktracker.scheduler.metrics.Metric;
 import com.example.tasktracker.scheduler.metrics.MetricsReporter;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -29,7 +29,6 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -43,7 +42,6 @@ class DailyTaskReportProducerJobTest {
     @Mock private JobStateRepository mockJobStateRepository;
     @Mock private UserIdsFetcherClient mockUserIdsFetcherClient;
     @Mock private KafkaTemplate<String, UserSelectedForDailyReportEvent> mockKafkaTemplate;
-    @Mock private Executor mockKafkaCallbackExecutor;
     @Mock private DailyReportJobProperties mockJobProperties;
     @Mock private Timer mockTimer;
     @Mock private MetricsReporter mockMetrics;
@@ -69,17 +67,10 @@ class DailyTaskReportProducerJobTest {
 
         when(mockMetrics.getTimer(any(), any())).thenReturn(mockTimer);
 
-        doAnswer(invocation -> {
-            Runnable r = invocation.getArgument(0);
-            r.run();
-            return null;
-        }).when(mockKafkaCallbackExecutor).execute(any(Runnable.class));
-
         job = new DailyTaskReportProducerJob(
                 mockJobStateRepository,
                 mockUserIdsFetcherClient,
                 mockKafkaTemplate,
-                mockKafkaCallbackExecutor,
                 mockJobProperties,
                 mockMetrics
         );

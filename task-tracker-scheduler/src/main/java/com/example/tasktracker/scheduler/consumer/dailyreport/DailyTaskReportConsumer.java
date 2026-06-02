@@ -36,7 +36,6 @@ public class DailyTaskReportConsumer {
     private record JobRunKey(String jobRunId, LocalDate reportDate) {}
 
     @KafkaListener(
-            id = "daily-report-consumer",
             topics = "${app.scheduler.consumers.daily-report.topic-name}",
             containerFactory = "dailyReportBatchContainerFactory"
     )

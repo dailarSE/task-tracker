@@ -9,6 +9,8 @@ import com.example.tasktracker.emailsender.o11y.observation.util.TelemetryTracke
 import io.micrometer.context.ContextRegistry;
 import io.micrometer.context.ContextSnapshotFactory;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tags;
+import io.micrometer.core.instrument.binder.commonspool2.CommonsObjectPool2Metrics;
 import io.micrometer.java21.instrument.binder.jdk.VirtualThreadMetrics;
 import io.micrometer.observation.Observation;
 import io.micrometer.tracing.Tracer;
@@ -108,5 +110,10 @@ public class ObservabilityCoreConfig {
     @Bean
     public TelemetryTracker telemetryTracker() {
         return new TelemetryTracker();
+    }
+
+    @Bean(destroyMethod = "close")
+    public CommonsObjectPool2Metrics commonsObjectPool2Metrics() {
+        return new CommonsObjectPool2Metrics(Tags.empty());
     }
 }

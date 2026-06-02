@@ -35,13 +35,13 @@ public class ExecutorObservabilityEnabler implements BeanPostProcessor {
         if (bean instanceof ExecutorService executor) {
             ObservedExecutor ann = findAnnotation(beanName);
             if (ann != null) {
-                if (ann.propagation()) {
-                    executor = ContextExecutorService.wrap(executor,
-                            Objects.requireNonNull(contextSnapshotFactoryProvider.getIfAvailable()));
-                }
                 if (ann.metrics()) {
                     executor = ExecutorServiceMetrics.monitor(Objects.requireNonNull(meterRegistryProvider.getIfAvailable()),
                             executor, ann.value(), Tags.empty());
+                }
+                if (ann.propagation()) {
+                    executor = ContextExecutorService.wrap(executor,
+                            Objects.requireNonNull(contextSnapshotFactoryProvider.getIfAvailable()));
                 }
                 return executor;
             }

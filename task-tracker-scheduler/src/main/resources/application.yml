@@ -55,7 +55,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info
+        include: health, info, dailyreport
 
 otel:
   service:

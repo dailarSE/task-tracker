@@ -1,6 +1,7 @@
 package com.example.tasktracker.emailsender.config;
 
 import com.example.tasktracker.emailsender.exception.FatalProcessingException;
+import com.example.tasktracker.emailsender.o11y.observation.annotation.ObservedExecutor;
 import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.bulkhead.BulkheadConfig;
 import io.github.resilience4j.bulkhead.BulkheadRegistry;
@@ -15,8 +16,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.lang.NonNull;
 
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -78,18 +79,22 @@ public class ResilienceConfig {
     }
 
     @Bean(name = "resilienceScheduler", destroyMethod = "shutdown")
+    @ObservedExecutor(value = "email.sender.resil.executor", propagation = false)
     public ScheduledExecutorService resilienceScheduler() {
-        return Executors.newScheduledThreadPool(1, new ThreadFactory() {
-            private final AtomicInteger counter = new AtomicInteger(1);
+        ScheduledThreadPoolExecutor scheduledExecutorService =
+                new ScheduledThreadPoolExecutor(1, new ThreadFactory() {
+                    private final AtomicInteger counter = new AtomicInteger(1);
 
-            @Override
-            public Thread newThread(@NonNull Runnable r) {
-                Thread t = new Thread(r, "resilience-timer-" + counter.getAndIncrement());
-                t.setDaemon(true);
-                t.setPriority(Thread.MIN_PRIORITY);
-                return t;
-            }
-        });
+                    @Override
+                    public Thread newThread(@NonNull Runnable r) {
+                        Thread t = new Thread(r, "resilience-timer-" + counter.getAndIncrement());
+                        t.setDaemon(true);
+                        t.setPriority(Thread.MIN_PRIORITY);
+                        return t;
+                    }
+                });
+        scheduledExecutorService.setRemoveOnCancelPolicy(true);
+        return scheduledExecutorService;
     }
 
     private boolean shouldCBIgnoreFailure(Throwable throwable) {

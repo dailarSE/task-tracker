@@ -34,8 +34,11 @@ spring:
   mail:
     host: task-tracker-mailhog
     port: 1025
-    username: ""
-    password: ""
+    properties:
+      mail.smtp.auth: false
+      mail.smtp.class: org.eclipse.angus.mail.smtp.SMTPTransport
+      mail.smtps.class: org.eclipse.angus.mail.smtp.SMTPSSLTransport
+      mail.smtp.localhost: localhost
 
   data:
     redis:

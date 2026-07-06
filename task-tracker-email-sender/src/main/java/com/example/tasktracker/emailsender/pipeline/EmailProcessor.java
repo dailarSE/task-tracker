@@ -38,7 +38,7 @@ public class EmailProcessor {
 
     public PipelineBatch processSingle(ConsumerRecord<byte[], byte[]> rawRecord) {
         if (rawRecord == null) return new PipelineBatch(Collections.emptyList());
-        log.info("Starting single-item processing: {}", formatCoordinates(rawRecord));
+        log.debug("Starting single-item processing: {}", formatCoordinates(rawRecord));
         return process(List.of(rawRecord), batch ->
                 batch.items()
                         .getFirst()

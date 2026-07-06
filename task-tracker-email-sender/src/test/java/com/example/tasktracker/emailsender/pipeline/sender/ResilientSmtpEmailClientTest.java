@@ -39,7 +39,7 @@ class ResilientSmtpEmailClientTest {
         var bulkhead = Bulkhead.ofDefaults("test");
         var timeLimiter = TimeLimiter.ofDefaults("test");
 
-        return new ResilientSmtpEmailClient(transport, engine, cb, bulkhead, timeLimiter, scheduler, directExecutor);
+        return new ResilientSmtpEmailClient(transport, engine, cb, bulkhead, timeLimiter, scheduler, directExecutor, directExecutor);
     }
 
     @AfterEach

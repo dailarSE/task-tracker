@@ -4,15 +4,14 @@ import com.example.tasktracker.emailsender.config.EmailSenderProperties;
 import com.example.tasktracker.emailsender.exception.FatalProcessingException;
 import com.example.tasktracker.emailsender.exception.RetryableProcessingException;
 import com.example.tasktracker.emailsender.exception.infrastructure.InfrastructureException;
+import jakarta.mail.Message;
 import jakarta.mail.MessagingException;
+import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.NonNull;
 import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
-
-import java.nio.charset.StandardCharsets;
 
 @RequiredArgsConstructor
 @Slf4j
@@ -40,12 +39,12 @@ public class SmtpEmailTransport implements EmailTransport {
     @NonNull
     MimeMessage createMimeMessage(SendInstructions instructions) throws MessagingException {
         MimeMessage mimeMessage = mailSender.createMimeMessage();
-        MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, StandardCharsets.UTF_8.name());
 
-        helper.setFrom(properties.getSenderAddress());
-        helper.setTo(instructions.to());
-        helper.setSubject(instructions.subject());
-        helper.setText(instructions.body(), instructions.isHtml());
+        mimeMessage.setFrom(new InternetAddress(properties.getSenderAddress()));
+        mimeMessage.setRecipient(Message.RecipientType.TO, new InternetAddress(instructions.to()));
+        mimeMessage.setSubject(instructions.subject(), "UTF-8");
+
+        mimeMessage.setContent(instructions.body(), "text/html; charset=UTF-8");
 
         instructions.headers().forEach((k, v) -> {
             try {

@@ -10,14 +10,13 @@ import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.decorators.Decorators;
 import io.github.resilience4j.timelimiter.TimeLimiter;
-import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
 import java.util.concurrent.*;
-import java.util.function.Function;
 import java.util.function.Supplier;
 
 import static com.example.tasktracker.emailsender.config.ResilienceConfig.*;
@@ -34,7 +33,7 @@ public class ResilientSmtpEmailClient implements EmailClient {
     private final TimeLimiter timeLimiter;
     private final ScheduledExecutorService scheduledExecutor;
     private final ExecutorService vThreadExecutor;
-
+    private final ExecutorService smtpExecutor;
 
     public ResilientSmtpEmailClient(EmailTransport transport,
                                     EmailTemplateEngine templateEngine,
@@ -42,7 +41,8 @@ public class ResilientSmtpEmailClient implements EmailClient {
                                     @Qualifier(EMAIL_BULKHEAD) Bulkhead bulkhead,
                                     @Qualifier(EMAIL_TIME_LIMITER) TimeLimiter timeLimiter,
                                     @Qualifier("resilienceScheduler") ScheduledExecutorService scheduledExecutor,
-                                    @Qualifier("virtualThreadExecutor") ExecutorService vThreadExecutor) {
+                                    @Qualifier("virtualThreadExecutor") ExecutorService vThreadExecutor,
+                                    @Qualifier("smtpExecutor") ExecutorService smtpExecutor) {
         this.transport = transport;
         this.templateEngine = templateEngine;
         this.circuitBreaker = circuitBreaker;
@@ -50,73 +50,53 @@ public class ResilientSmtpEmailClient implements EmailClient {
         this.timeLimiter = timeLimiter;
         this.scheduledExecutor = scheduledExecutor;
         this.vThreadExecutor = vThreadExecutor;
+        this.smtpExecutor = smtpExecutor;
     }
 
-    /**
-     * Асинхронно выполняет подготовку (рендеринг) и отправку письма в изолированном контексте
-     * с применением политик надежности (TimeLimiter, CircuitBreaker, Bulkhead).
-     * <p>
-     * supplyAsync для того, чтобы Bulkhead.acquirePermission() выполнился внутри Виртуального Потока,
-     * а не заблокировал вызывающий поток.
-     *
-     * @param sendCommand DTO с входными данными для формирования письма.
-     * @return {@link CompletableFuture}, который успешно завершается при доставке письма провайдеру,
-     * или завершается со следующими типами ошибок:
-     * <ul>
-     *   <li>{@link RetryableProcessingException} — если сработала защита (Circuit Breaker OPEN,
-     *       Bulkhead FULL, Timeout), или транспорт сообщил о временной недоступности.</li>
-     *   <li>{@link FatalProcessingException} — если данные письма или шаблона некорректны,
-     *   или произошел критический программный сбой.</li>
-     *   <li>{@link InfrastructureSuspendedException} — если выполнение было принудительно прервано.</li>
-     * </ul>
-     */
-
     public CompletableFuture<Void> send(@NonNull TriggerCommand sendCommand) {
-        return CompletableFuture
-                .supplyAsync(() -> decorateWithResilience(sendCommand), vThreadExecutor)
-                .thenCompose(Function.identity())
+
+        return CompletableFuture.runAsync(() -> {
+                    bulkhead.acquirePermission();
+
+                    try {
+                        SendInstructions sendInstructions = buildSendInstructions(sendCommand);
+
+                        Supplier<CompletionStage<Void>> physicalSendTask = () ->
+                                CompletableFuture.runAsync(() -> transport.send(sendInstructions), smtpExecutor);
+
+                        Decorators.ofCompletionStage(physicalSendTask)
+                                .withTimeLimiter(timeLimiter, scheduledExecutor)
+                                .withCircuitBreaker(circuitBreaker)
+                                .get()
+                                .toCompletableFuture()
+                                .join();
+
+                    } finally {
+                        bulkhead.onComplete();
+                    }
+
+                }, vThreadExecutor)
                 .handle(this::translateException);
     }
 
-    private CompletionStage<Void> decorateWithResilience(@NonNull TriggerCommand sendCommand) {
-        Supplier<CompletionStage<Void>> task = () -> startAsyncExecution(sendCommand);
+    private @NonNull SendInstructions buildSendInstructions(@NonNull TriggerCommand sendCommand) {
+        var renderingResult = templateEngine.process(
+                sendCommand.templateId(),
+                sendCommand.templateContext(),
+                sendCommand.localeTag()
+        );
 
-        return Decorators.ofCompletionStage(task)
-                .withTimeLimiter(timeLimiter, scheduledExecutor)
-                .withCircuitBreaker(circuitBreaker)
-                .withBulkhead(bulkhead)
-                .get();
-    }
+        HashMap<String, String> headers = new HashMap<>();
+        headers.put(EmailHeaders.X_CORRELATION_ID, sendCommand.correlationId());
+        headers.put(EmailHeaders.X_TEMPLATE_ID, sendCommand.templateId());
 
-    /**
-     * Реализует мост между синхронным транспортом и асинхронным контрактом.
-     * <p>
-     * Данный уровень вложенности является вынужденным решением для обеспечения корректного жизненного цикла задачи
-     * внутри "луковицы" декораторов. Это позволяет избежать конфликтов между моделью исполнения JVM и логикой
-     * стороннего лимитера, чья реализация накладывает нетривиальные ограничения на оркестрацию потоков.
-     */
-    private CompletableFuture<Void> startAsyncExecution(@NonNull TriggerCommand sendCommand) {
-        return CompletableFuture.runAsync(() -> {
-                    var renderingResult = templateEngine.process(
-                            sendCommand.templateId(),
-                            sendCommand.templateContext(),
-                            sendCommand.localeTag()
-                    );
-
-                    HashMap<String, String> headers = new HashMap<>();
-                    headers.put(EmailHeaders.X_CORRELATION_ID, sendCommand.correlationId());
-                    headers.put(EmailHeaders.X_TEMPLATE_ID, sendCommand.templateId());
-
-                    transport.send(new SendInstructions(
-                            sendCommand.recipientEmail(),
-                            renderingResult.subject(),
-                            renderingResult.body(),
-                            true,
-                            headers
-                    ));
-
-                },
-                vThreadExecutor);
+        return new SendInstructions(
+                sendCommand.recipientEmail(),
+                renderingResult.subject(),
+                renderingResult.body(),
+                true,
+                headers
+        );
     }
 
     /**

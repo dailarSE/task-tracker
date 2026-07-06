@@ -23,12 +23,24 @@ public class SmtpTransportFactory extends BasePooledObjectFactory<Transport> {
     public Transport create() throws Exception {
         Session session = Session.getInstance(javamailProperties);
         Transport transport = session.getTransport(mailProperties.getProtocol());
-        transport.connect(
-                mailProperties.getHost(),
-                mailProperties.getPort(),
-                mailProperties.getUsername(),
-                mailProperties.getPassword()
-        );
+        String username = mailProperties.getUsername();
+        String password = mailProperties.getPassword();
+
+        if (username != null && !username.isBlank()) {
+            transport.connect(
+                    mailProperties.getHost(),
+                    mailProperties.getPort(),
+                    username,
+                    password
+            );
+        } else {
+            transport.connect(
+                    mailProperties.getHost(),
+                    mailProperties.getPort(),
+                    null,
+                    null
+            );
+        }
         return transport;
     }
 

@@ -36,16 +36,18 @@ public class DispatcherStep {
     private final Duration sendTimeout;
     protected final String retryTopic;
     protected final String dltTopicName;
+    private final RetryHandOffBridge retryBridge;
 
     public DispatcherStep(
             KafkaMetadataEnricher metadataEnricher,
             @Qualifier("rawKafkaTemplate") KafkaTemplate<byte[], byte[]> kafkaTemplate,
-            EmailSenderProperties properties
-    ) {
+            EmailSenderProperties properties,
+            RetryHandOffBridge retryBridge) {
         this.metadataEnricher = metadataEnricher;
         this.kafkaTemplate = kafkaTemplate;
         this.retryTopic = properties.getRetryTopic();
         this.dltTopicName = properties.getDltTopic();
+        this.retryBridge = retryBridge;
 
         this.sendTimeout = determineSendTimeout(
                 kafkaTemplate.getProducerFactory().getConfigurationProperties(),
@@ -116,11 +118,10 @@ public class DispatcherStep {
     }
 
     protected CompletableFuture<?> handleTransient(PipelineItem item, PipelineItem.ExecutionStage failedStage) {
-        log.info("Sending item [{}] to RETRY topic. Reason: {}",
+        log.debug("Sending item [{}] to RETRY topic. Reason: {}",
                 item.getCoordinates(), failedStage.rejectDescription());
 
-        ProducerRecord<byte[], byte[]> record = buildProducerRecord(retryTopic, item, failedStage);
-        return doSend(record);
+        return retryBridge.handOff(item, failedStage);
     }
 
     protected CompletableFuture<?> handleFatal(PipelineItem item, PipelineItem.ExecutionStage failedStage) {

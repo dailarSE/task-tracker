@@ -82,7 +82,7 @@ public class KafkaSupport {
         extractCorrelationId(record).ifPresent(id -> dltRecords.put(id, record));
     }
 
-    @KafkaListener(id = "spy-sup-recovery", topics = "${app.email.retry-topic}", containerFactory = "rawSingleRetryFactory", groupId = "spy")
+    @KafkaListener(id = "spy-sup-recovery", topics = "${app.email.retry-topic}-retry-60000", containerFactory = "rawSingleRetryFactory", groupId = "spy")
     void listenRetry(ConsumerRecord<byte[], byte[]> record) {
         log.info("[DIAG-KAFKA-SUP] retry listener - record cid - '{}'", extractCorrelationId(record));
         extractCorrelationId(record).ifPresent(id -> retryRecords.put(id, record));

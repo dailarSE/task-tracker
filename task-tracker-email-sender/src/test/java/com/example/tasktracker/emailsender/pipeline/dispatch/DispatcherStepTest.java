@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -42,6 +43,17 @@ class DispatcherStepTest {
     };
     private final KafkaTemplate<byte[], byte[]> fakeKafkaTemplate = createFakeTemplate();
 
+    Function<KafkaTemplate<byte[], byte[]>, RetryHandOffBridge> bridgeFactory = (KafkaTemplate<byte[], byte[]> template) ->
+            (item, failedStage) -> {
+                ConsumerRecord<byte[], byte[]> orig = item.getOriginalRecord();
+                ProducerRecord<byte[], byte[]> record = new ProducerRecord<>(
+                        retryTopic,
+                        orig.value()
+                );
+
+                return template.send(record);
+            };
+
     private DispatcherStep dispatcher;
 
     @BeforeEach
@@ -51,7 +63,7 @@ class DispatcherStepTest {
         props.setRetryTopic(retryTopic);
         props.setDltTopic(dltTopic);
 
-        dispatcher = new DispatcherStep(stubEnricher, fakeKafkaTemplate, props);
+        dispatcher = new DispatcherStep(stubEnricher, fakeKafkaTemplate, props, bridgeFactory.apply(fakeKafkaTemplate));
     }
 
     @Test
@@ -63,7 +75,6 @@ class DispatcherStepTest {
 
         assertEquals(1, sentRecords.size());
         assertEquals(retryTopic, sentRecords.getFirst().topic());
-        assertNotNull(sentRecords.getFirst().headers().lastHeader("stub-enriched"));
     }
 
     @Test
@@ -102,7 +113,7 @@ class DispatcherStepTest {
         EmailSenderProperties props = new EmailSenderProperties();
         props.setRetryTopic(retryTopic);
         props.setDltTopic(dltTopic);
-        var throwingDispatcher = new DispatcherStep(stubEnricher, brokenKafka, props);
+        var throwingDispatcher = new DispatcherStep(stubEnricher, brokenKafka, props, bridgeFactory.apply(brokenKafka));
 
         var item = createItem(PipelineItem.Status.FAILED, RejectReason.INVALID_PAYLOAD, null);
         var batch = new PipelineBatch(List.of(item));

@@ -191,7 +191,7 @@
                     </from>
                     <container>
                         <jvmFlags>
-                            <jvmFlag>-Djakarta.mail.util.StreamProvider=org.eclipse.angus.mail.util.StreamProviderImpl</jvmFlag>
+                            <jvmFlag>-Djakarta.mail.util.StreamProvider=org.eclipse.angus.mail.util.MailStreamProvider</jvmFlag>
                         </jvmFlags>
                     </container>
                 </configuration>

@@ -4,6 +4,7 @@ import com.example.tasktracker.emailsender.exception.FatalProcessingException;
 import com.example.tasktracker.emailsender.exception.RetryableProcessingException;
 import com.example.tasktracker.emailsender.exception.infrastructure.InfrastructureException;
 import com.example.tasktracker.emailsender.pipeline.model.RejectReason;
+import jakarta.mail.AuthenticationFailedException;
 import jakarta.mail.MessagingException;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.angus.mail.smtp.SMTPAddressFailedException;
@@ -35,7 +36,10 @@ public class EmailErrorResolver {
     public RuntimeException resolve(Throwable t) {
 
         // Ошибки авторизации и физического коннекта (Infrastructure)
-        if (t instanceof MailConnectException || t instanceof MailAuthenticationException) {
+        if (t instanceof MailConnectException ||
+                t instanceof MailAuthenticationException ||
+                t instanceof AuthenticationFailedException
+        ) {
             log.debug("Infrastructure failure detected: {}.", t.getClass().getSimpleName());
             return new InfrastructureException("SMTP connection or authentication failure", t);
         }

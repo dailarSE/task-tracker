@@ -46,6 +46,7 @@ services:
     image: ghcr.io/dailarse/task-tracker-scheduler:${IMAGE_TAG}
     container_name: task-tracker-scheduler
     environment:
+      - SPRING_PROFILES_ACTIVE=prod
       - MANAGEMENT_PORT=8081
       - SPRING_DATA_REDIS_HOST=task-tracker-redis
       - APP_SCHEDULER_BACKEND_CLIENT_URL=http://task-tracker-backend:8080
@@ -69,6 +70,7 @@ services:
     image: ghcr.io/dailarse/task-tracker-email-sender:${IMAGE_TAG}
     container_name: task-tracker-email-sender
     environment:
+      - SPRING_PROFILES_ACTIVE=prod
       - MANAGEMENT_PORT=8081
       - SPRING_DATA_REDIS_HOST=task-tracker-redis
       - SPRING_MAIL_HOST=task-tracker-mailhog
